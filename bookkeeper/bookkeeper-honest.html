@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Ledger</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,600;0,800;1,400&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #e4eaee;
+    --grid: rgba(19, 38, 58, .09);
+    --ink: #13263a;
+    --soft: #4d6176;
+    --block: #0e1c2b;
+    --digit: #f4f1e8;
+    --pencil: #c0392b;
+    --blue: #2a5d9f;
+    --dh: clamp(110px, 19vw, 170px);
+    --serif: "Spectral", Georgia, "Times New Roman", serif;
+    --mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    background-color: var(--paper);
+    background-image:
+      linear-gradient(var(--grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size: 28px 28px;
+    color: var(--ink); font-family: var(--serif); font-size: 18px; line-height: 1.55;
+  }
+  [hidden] { display: none !important; }
+  button { font: inherit; cursor: pointer; }
+  :focus-visible { outline: 3px solid var(--pencil); outline-offset: 3px; }
+
+  .screen { min-height: 100vh; display: grid; place-items: center; padding: 32px; }
+  .sheet { background: var(--paper); border: 2px solid var(--ink); padding: 40px 44px; max-width: 560px; box-shadow: 8px 8px 0 var(--ink); }
+  .sheet h1 { font-weight: 800; font-size: clamp(40px, 8vw, 60px); line-height: 1; margin: 0 0 18px; }
+  .sheet p { margin: 0 0 14px; max-width: 54ch; }
+  .btn { background: var(--ink); color: var(--paper); border: 0; padding: 11px 24px; font-family: var(--serif); font-weight: 600; font-size: 19px; }
+  .btn:hover { background: var(--pencil); }
+  .btn:disabled { opacity: .4; cursor: not-allowed; background: var(--ink); }
+  .btn.alt { background: transparent; color: var(--ink); border: 2px solid var(--ink); }
+  .btn.alt:hover:not(:disabled) { background: var(--ink); color: var(--paper); }
+
+  main { max-width: 720px; margin: 0 auto; padding: 28px 22px 120px; }
+  .bar { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; border-bottom: 2px solid var(--ink); padding-bottom: 6px; }
+  .bar h2 { font-weight: 800; font-size: 34px; line-height: 1; margin: 0; }
+  .bar .meta { font-family: var(--mono); font-weight: 500; font-size: 15px; }
+  .bar .meta b { font-weight: 700; }
+
+  .reels { display: flex; justify-content: center; gap: clamp(10px, 3vw, 20px); margin: 34px 0 30px; }
+  .reel { width: calc(var(--dh) * .76); height: var(--dh); overflow: hidden; position: relative; background: var(--block); border-radius: 6px; box-shadow: 5px 5px 0 var(--ink); }
+  .reel::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(rgba(0,0,0,.5), transparent 30%, transparent 70%, rgba(0,0,0,.5)); }
+  .strip { will-change: transform; }
+  .d { height: var(--dh); line-height: var(--dh); text-align: center; font-weight: 800; font-size: calc(var(--dh) * .7); color: var(--digit); }
+
+  .q { font-weight: 600; font-size: 22px; margin: 0 0 12px; text-align: center; }
+  .choices { display: flex; justify-content: center; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .choices .or { font-style: italic; color: var(--soft); }
+  #ownForm { display: inline-flex; align-items: center; gap: 10px; }
+  #own { width: 5ch; font-family: var(--mono); font-weight: 700; font-size: 26px; letter-spacing: .12em; text-align: center; background: transparent; border: 0; border-bottom: 3px solid var(--ink); color: var(--ink); padding: 4px 0 4px .12em; border-radius: 0; }
+  #own:disabled { opacity: .45; }
+  #own::placeholder { color: rgba(19,38,58,.28); }
+  .note { text-align: center; color: var(--soft); font-size: 15px; margin: 14px 0 0; }
+  #status { text-align: center; min-height: 1.6em; font-style: italic; margin: 10px 0 0; }
+
+  .record { margin: 34px auto 0; display: flex; align-items: center; justify-content: center; gap: 26px; flex-wrap: wrap; font-family: var(--mono); font-size: 14px; }
+  .record b { font-weight: 700; }
+  .record .lab { display: block; font-family: var(--serif); font-size: 14px; color: var(--soft); }
+  #spark { width: 240px; height: 50px; overflow: visible; }
+  #spark .chance { stroke: var(--soft); stroke-dasharray: 4 4; stroke-width: 1; }
+  #spark .line { fill: none; stroke: var(--pencil); stroke-width: 2; }
+
+  #final { max-width: 520px; margin: 0 auto; }
+  #final h3 { font-size: 26px; margin: 0 0 12px; text-align: center; }
+  #final dl { display: grid; grid-template-columns: 1fr auto; gap: 6px 18px; margin: 0 0 14px; border-top: 2px solid var(--ink); padding-top: 10px; }
+  #final dt { color: var(--soft); }
+  #final dd { margin: 0; font-family: var(--mono); font-weight: 700; text-align: right; }
+  #finalNote { margin: 0 0 16px; }
+
+  footer { margin: 44px auto 0; display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; font-size: 15px; color: var(--soft); }
+  .link { background: none; border: 0; color: var(--soft); text-decoration: underline; padding: 0; }
+
+  /* the Bookkeeper's help window */
+  #chat { position: fixed; right: 20px; bottom: 20px; z-index: 20; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  #launcher { width: 58px; height: 58px; border-radius: 50%; border: 0; background: var(--blue); color: #fff; box-shadow: 0 6px 20px rgba(0,0,0,.28); position: relative; display: grid; place-items: center; font-family: var(--serif); font-weight: 800; font-size: 26px; }
+  #badge { position: absolute; top: -4px; right: -4px; background: #e5484d; color: #fff; font-family: system-ui, sans-serif; font-size: 12px; font-weight: 700; min-width: 20px; height: 20px; border-radius: 10px; display: grid; place-items: center; padding: 0 5px; }
+  #launcher.nudge { animation: nudge .7s ease 2; }
+  @keyframes nudge { 30% { transform: translateY(-8px); } 60% { transform: translateY(0); } 80% { transform: translateY(-3px); } }
+  #panel { position: absolute; right: 0; bottom: 72px; width: min(380px, calc(100vw - 40px)); height: min(520px, 74vh); background: #fff; color: #1b1f24; border-radius: 14px; box-shadow: 0 12px 40px rgba(0,0,0,.3); display: flex; flex-direction: column; overflow: hidden; }
+  #panel header { background: var(--blue); color: #fff; padding: 12px 14px; display: flex; align-items: center; gap: 10px; }
+  .avatar { width: 36px; height: 36px; border-radius: 50%; background: #fff; color: var(--blue); display: grid; place-items: center; font-family: var(--serif); font-weight: 800; font-size: 19px; }
+  .who { flex: 1; line-height: 1.25; }
+  .who b { display: block; font-size: 15px; }
+  .who small { font-size: 12px; opacity: .9; }
+  #min { background: none; border: 0; color: #fff; font-size: 24px; line-height: 1; padding: 4px 8px; }
+  #chatBody { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 8px; background: #f5f7fa; }
+  .msg { max-width: 88%; padding: 9px 12px; border-radius: 14px; font-size: 14.5px; line-height: 1.45; overflow-wrap: anywhere; }
+  .msg.bk { background: #fff; border: 1px solid #e1e5ea; align-self: flex-start; border-bottom-left-radius: 4px; }
+  .msg.you { background: var(--blue); color: #fff; align-self: flex-end; border-bottom-right-radius: 4px; }
+  .typing { align-self: flex-start; background: #fff; border: 1px solid #e1e5ea; border-radius: 14px; padding: 10px 14px; display: flex; gap: 4px; }
+  .typing i { width: 6px; height: 6px; border-radius: 50%; background: #9aa4b2; animation: blink 1s infinite; }
+  .typing i:nth-child(2) { animation-delay: .15s; } .typing i:nth-child(3) { animation-delay: .3s; }
+  @keyframes blink { 0%, 60%, 100% { opacity: .3; } 30% { opacity: 1; } }
+  #chatForm { display: flex; gap: 8px; padding: 10px; border-top: 1px solid #e1e5ea; background: #fff; }
+  #chatIn { flex: 1; border: 1px solid #cdd3db; border-radius: 20px; padding: 9px 14px; font: inherit; font-size: 14.5px; }
+  #chatForm button { border: 0; background: var(--blue); color: #fff; border-radius: 20px; padding: 0 16px; font-size: 14px; font-weight: 600; }
+
+  @media (prefers-reduced-motion: reduce) { #launcher.nudge, .typing i { animation: none; } }
+</style>
+</head>
+<body>
+
+<section id="intro" class="screen">
+  <div class="sheet">
+    <h1>The Ledger</h1>
+    <p>A small lottery against a prediction machine. Three blocks give a number from 000 to 999.</p>
+    <p>Before each draw, the Bookkeeper studies past draws and offers a number. You can play its number or your own. Each draw costs one token, and there are fifteen draws.</p>
+    <button class="btn" id="begin">Begin</button>
+  </div>
+</section>
+
+<main id="game" hidden>
+  <div class="bar">
+    <h2>The Ledger</h2>
+    <span class="meta">Tokens <b id="tokens">20</b> &nbsp;·&nbsp; Draw <b id="roundNo">0</b> of 15</span>
+  </div>
+
+  <div class="reels" aria-label="Lottery blocks">
+    <div class="reel"><div class="strip"></div></div>
+    <div class="reel"><div class="strip"></div></div>
+    <div class="reel"><div class="strip"></div></div>
+  </div>
+
+  <section id="decide">
+    <p class="q">Whose number do you play?</p>
+    <div class="choices">
+      <button class="btn" id="playBk" disabled>The Bookkeeper's number</button>
+      <span class="or">or</span>
+      <form id="ownForm" autocomplete="off">
+        <input id="own" inputmode="numeric" maxlength="3" placeholder="000" aria-label="Your own number" disabled>
+        <button class="btn alt" id="playOwn" type="submit" disabled>Play mine</button>
+      </form>
+    </div>
+    <p class="note">One digit in the right place returns 2 tokens, two return 10, all three return 100.</p>
+    <p id="status" aria-live="polite"></p>
+  </section>
+
+  <section id="final" hidden>
+    <h3>Fifteen draws</h3>
+    <dl id="finalList"></dl>
+    <p id="finalNote"></p>
+    <button class="btn" id="finish">Finish</button>
+  </section>
+
+  <div class="record">
+    <div><span class="lab">Bookkeeper, digits right</span><b id="bkRec">0 of 0</b></div>
+    <div><span class="lab">You, digits right</span><b id="meRec">0 of 0</b></div>
+    <div><span class="lab">Chance</span><b>10%</b></div>
+    <svg id="spark" viewBox="0 0 240 50" role="img" aria-label="Bookkeeper's cumulative hit rate against chance"></svg>
+  </div>
+
+  <footer>
+    <span id="srcNote">Draws: waiting</span>
+    <button class="link" id="end" type="button">End session</button>
+  </footer>
+</main>
+
+<section id="debrief" class="screen" hidden>
+  <div class="sheet">
+    <h1>Thank you</h1>
+    <p>The Bookkeeper was a real prediction program. It studied real past draws, ran four methods on them, and reported its record as it stood, including the stretches where it lost.</p>
+    <p>Every draw was independent chance, so no method can beat 10% per digit in the long run. Any streak you saw, in the Bookkeeper or in yourself, was luck. Nothing you typed was saved or sent.</p>
+  </div>
+</section>
+
+<div id="chat" hidden>
+  <div id="panel" hidden>
+    <header>
+      <div class="avatar">B</div>
+      <div class="who"><b>The Bookkeeper</b><small>Prediction model</small></div>
+      <button id="min" aria-label="Minimise chat">&minus;</button>
+    </header>
+    <div id="chatBody"></div>
+    <form id="chatForm" autocomplete="off">
+      <input id="chatIn" placeholder="Ask the Bookkeeper" aria-label="Message">
+      <button type="submit">Send</button>
+    </form>
+  </div>
+  <button id="launcher" aria-label="Open Bookkeeper chat">B<span id="badge" hidden>0</span></button>
+</div>
+
+<script>
+(() => {
+  const $ = s => document.querySelector(s);
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const choice = a => a[Math.floor(Math.random() * a.length)];
+  const pad3 = n => String(n).padStart(3, "0");
+  const sum = a => a.reduce((x, y) => x + y, 0);
+  const same = (a, b) => a.reduce((k, v, i) => k + (v === b[i] ? 1 : 0), 0);
+  const pct = (x, d = 0) => (x * 100).toFixed(d) + "%";
+
+  const TOTAL = 15, HIST = 200, START_TOKENS = 20, PAYOUT = [0, 2, 10, 100];
+
+  const state = {
+    round: 0, tokens: START_TOKENS, hist: [], bk: null, idx: 0, lastIdx: null, preds: null, est: 0.1,
+    busy: true, unread: 0, shownOnce: false,
+    bkHits: 0, bkTrials: 0, meHits: 0, meTrials: 0, trusted: 0, own: 0, series: [],
+    src: { random: 0, local: 0 }, log: [], t0: Date.now()
+  };
+  // Session log holds timing and choices only, nothing typed in the chat.
+  const ev = (type, data = {}) => state.log.push({ t: Date.now() - state.t0, type, ...data });
+
+  /* ---------- statistics ---------- */
+  const erf = x => { const s = Math.sign(x); x = Math.abs(x); const t = 1 / (1 + 0.3275911 * x);
+    const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x); return s * y; };
+  const pTwo = z => 1 - erf(Math.abs(z) / Math.SQRT2);
+  const comb = (n, k) => { let r = 1; for (let i = 1; i <= k; i++) r = r * (n - k + i) / i; return r; };
+  const binomTail = (n, p, x, upper) => { let s = 0; for (let k = 0; k <= n; k++) { const v = comb(n, k) * p ** k * (1 - p) ** (n - k); if (upper ? k >= x : k <= x) s += v; } return s; };
+  const fmtP = p => p < 0.001 ? "below 0.001" : p.toFixed(3);
+
+  /* ---------- the four prediction methods (real, run on real draws) ---------- */
+  const argmax = arr => { const m = Math.max(...arr); return choice(arr.map((v, i) => v === m ? i : -1).filter(i => i >= 0)); };
+  const freqPred = h => [0, 1, 2].map(pos => { const c = Array(10).fill(0); h.forEach(d => c[d[pos]]++); return argmax(c); });
+  const overduePred = h => [0, 1, 2].map(pos => { const last = Array(10).fill(-1); h.forEach((d, i) => last[d[pos]] = i); return argmax(last.map(v => -v)); });
+  const sequencePred = h => [0, 1, 2].map(pos => {
+    if (h.length < 2) return freqPred(h)[pos];
+    const prev = h[h.length - 1][pos], c = Array(10).fill(0);
+    for (let i = 0; i < h.length - 1; i++) if (h[i][pos] === prev) c[h[i + 1][pos]]++;
+    return c.some(v => v > 0) ? argmax(c) : freqPred(h)[pos];
+  });
+  const repeatPred = h => h.length ? [...h[h.length - 1]] : [0, 0, 0];
+
+  const S = [
+    { id: "frequency", fn: freqPred, blurb: "in each block, the digit that has appeared most often" },
+    { id: "overdue", fn: overduePred, blurb: "in each block, the digit that has gone longest without appearing. This one rests on the gambler's fallacy, and I run it because I can't rule it out from the data alone" },
+    { id: "sequence", fn: sequencePred, blurb: "in each block, the digit that most often followed the last draw's digit" },
+    { id: "repeat", fn: repeatPred, blurb: "last draw's digits, again" }
+  ].map(s => ({ ...s, recent: [], btHits: 0, btTrials: 0 }));
+
+  const estOf = s => (sum(s.recent) + 2) / (s.recent.length * 3 + 20); // shrunk toward 10%
+  const rateOf = s => s.recent.length ? sum(s.recent) / (s.recent.length * 3) : 0;
+  const bestIdx = () => { const e = S.map(estOf), m = Math.max(...e); return choice(e.map((v, i) => v === m ? i : -1).filter(i => i >= 0)); };
+
+  function backtest() {
+    for (let t = 40; t < state.hist.length; t++) {
+      const h = state.hist.slice(0, t), target = state.hist[t];
+      S.forEach(s => { const k = same(s.fn(h), target); s.btHits += k; s.btTrials += 3; s.recent.push(k); if (s.recent.length > 10) s.recent.shift(); });
+    }
+  }
+
+  function strongestPattern(h) {
+    const n = h.length, exp = n / 10, sd = Math.sqrt(n * 0.09); let best = null;
+    for (let pos = 0; pos < 3; pos++) {
+      const c = Array(10).fill(0); h.forEach(d => c[d[pos]]++);
+      c.forEach((v, dg) => { const z = (v - exp) / sd; if (!best || Math.abs(z) > Math.abs(best.z)) best = { pos, dg, v, z }; });
+    }
+    best.n = n; best.exp = exp; best.p = pTwo(best.z); best.fw = 1 - Math.pow(1 - best.p, 30);
+    return best;
+  }
+  const patternLine = b =>
+    `Strongest pattern in ${b.n} draws: block ${b.pos + 1} shows the digit ${b.dg} ${b.v} times, where about ${b.exp.toFixed(0)} is expected (p = ${fmtP(b.p)}). But I compared 30 pairs of block and digit, so something this extreme turns up ${pct(b.fw)} of the time by chance alone. I'm treating it as noise. I can't prove it is.`;
+
+  /* ---------- reels ---------- */
+  const REPS = 8;
+  const strips = [...document.querySelectorAll(".strip")];
+  const setIdx = (s, i, ms) => {
+    s.style.transition = ms ? `transform ${ms}ms cubic-bezier(.12,.7,.15,1)` : "none";
+    s.style.transform = `translateY(-${i * 100 / (REPS * 10)}%)`; s._idx = i;
+  };
+  strips.forEach(s => { s.innerHTML = Array.from({ length: REPS * 10 }, (_, i) => `<div class="d">${i % 10}</div>`).join(""); setIdx(s, 10, 0); });
+  const spinTo = async (s, digit, ms) => {
+    const cur = s._idx % 10;
+    setIdx(s, s._idx + 20 + ((digit - cur + 10) % 10), ms);
+    await sleep(ms + 60); setIdx(s, 10 + digit, 0);
+  };
+
+  /* ---------- randomness: random.org via local server, then direct, then this device ---------- */
+  const valid = (d, n) => Array.isArray(d) && d.length === n && d.every(x => Number.isInteger(x) && x >= 0 && x <= 9);
+  async function getDigits(n) {
+    try {
+      const r = await fetch("/api/draw?n=" + n, { cache: "no-store" });
+      if (r.ok) { const j = await r.json(); if (valid(j.digits, n)) return { digits: j.digits, source: "random" }; }
+    } catch (e) {}
+    try {
+      const r = await fetch(`https://www.random.org/integers/?num=${n}&min=0&max=9&col=1&base=10&format=plain&rnd=new`, { cache: "no-store" });
+      if (r.ok) { const d = (await r.text()).trim().split(/\s+/).map(Number); if (valid(d, n)) return { digits: d, source: "random" }; }
+    } catch (e) {}
+    const a = new Uint32Array(n); crypto.getRandomValues(a);
+    return { digits: [...a].map(x => x % 10), source: "local" };
+  }
+  function noteSource(src, count) {
+    state.src[src] += count;
+    const { random, local } = state.src;
+    $("#srcNote").textContent = !local ? "All draws from random.org"
+      : !random ? "random.org was unreachable, so draws came from this device's random generator"
+      : "Some draws from random.org, some from this device's random generator";
+  }
+
+  /* ---------- chat widget ---------- */
+  const panel = $("#panel"), body = $("#chatBody"), badge = $("#badge"), launcher = $("#launcher");
+  const openPanel = () => { panel.hidden = false; state.unread = 0; badge.hidden = true; $("#chatIn").focus({ preventScroll: true }); body.scrollTop = body.scrollHeight; };
+  const minimise = () => { panel.hidden = true; ev("minimise", { round: state.round }); };
+  launcher.addEventListener("click", () => panel.hidden ? openPanel() : minimise());
+  $("#min").addEventListener("click", minimise);
+
+  const addMsg = (text, who) => { const d = document.createElement("div"); d.className = "msg " + who; d.textContent = text; body.appendChild(d); body.scrollTop = body.scrollHeight; };
+  const typingEl = () => { const t = document.createElement("div"); t.className = "typing"; t.innerHTML = "<i></i><i></i><i></i>"; return t; };
+  let queue = Promise.resolve();
+  // items: string, or { text, open } where open brings the window up (used when the player needs the message to decide)
+  const say = items => (queue = queue.then(async () => {
+    for (const it of items) {
+      const o = typeof it === "string" ? { text: it } : it;
+      const t = typingEl(); body.appendChild(t); body.scrollTop = body.scrollHeight;
+      await sleep(450 + o.text.length * 13);
+      t.remove(); addMsg(o.text, "bk");
+      if (panel.hidden) {
+        if (o.open || !state.shownOnce) openPanel();
+        else { state.unread++; badge.textContent = state.unread; badge.hidden = false; launcher.classList.remove("nudge"); void launcher.offsetWidth; launcher.classList.add("nudge"); }
+      }
+      state.shownOnce = true;
+    }
+  }));
+
+  /* ---------- the Bookkeeper's answers ---------- */
+  const curName = () => S[state.idx] ? S[state.idx].id : "frequency";
+  $("#chatForm").addEventListener("submit", e => {
+    e.preventDefault();
+    const text = $("#chatIn").value.trim(); if (!text) return;
+    $("#chatIn").value = ""; addMsg(text, "you");
+    ev("chat", { round: state.round, length: text.length });
+    const s = S[state.idx];
+    if (/\b(record|score|rate|doing)\b/i.test(text))
+      say([`I have ${state.bkHits} of ${state.bkTrials} digits right so far${state.bkTrials ? ` (${pct(state.bkHits / state.bkTrials, 1)})` : ""}. Chance gives 10%.`]);
+    else if (/\b(why|how|explain|reason|work)\b/i.test(text) && s)
+      say([`I'm using the ${s.id} model: ${s.blurb}. I picked it because it has the best recent record. That is a weaker reason than it sounds, since with this little data "best recent" is mostly luck.`]);
+    else if (/\b(win|beat|predict|luck|chance|random|possible|real|trust)\b/i.test(text))
+      say(["Honest answer: not reliably. If the draw is fair there is no signal to find, and I can't prove from a few hundred draws that there is none. So I keep looking. Whether you should trust me is your decision, and my record is on the screen."]);
+    else if (/\b(number|play|which|pick)\b/i.test(text))
+      say(["Play whichever you trust. I learn from every draw either way, and the draw doesn't know whose number it is."]);
+    else if (/\b(hi|hello|hey)\b/i.test(text)) say(["Hello. Ask me why I chose a number, or how I'm doing."]);
+    else say(["I can explain why I chose this number, or show my record. Ask me either."]);
+  });
+
+  /* ---------- the record strip ---------- */
+  function drawSpark() {
+    const svg = $("#spark"), W = 240, H = 50, top = 4, bot = 46, max = 0.3;
+    const y = r => bot - (Math.min(r, max) / max) * (bot - top);
+    let html = `<line class="chance" x1="0" x2="${W}" y1="${y(0.1)}" y2="${y(0.1)}"></line>`;
+    const n = state.series.length;
+    if (n) {
+      const step = n > 1 ? W / (TOTAL - 1) : 0;
+      html += `<polyline class="line" points="${state.series.map((r, i) => `${(i * step).toFixed(1)},${y(r).toFixed(1)}`).join(" ")}"></polyline>`;
+    }
+    svg.innerHTML = html;
+  }
+  function updateRecord() {
+    $("#bkRec").textContent = `${state.bkHits} of ${state.bkTrials}`;
+    $("#meRec").textContent = `${state.meHits} of ${state.meTrials}`;
+    $("#tokens").textContent = state.tokens; $("#roundNo").textContent = state.round;
+    drawSpark();
+  }
+
+  /* ---------- round flow ---------- */
+  function setBusy(b) { state.busy = b; ["#playBk", "#own", "#playOwn"].forEach(s => $(s).disabled = b); }
+
+  function predictionLines() {
+    const n = state.round, s = S[state.idx], prev = state.lastIdx !== null ? S[state.lastIdx] : null;
+    const r = s.recent, hits = sum(r), trials = r.length * 3;
+    const lines = [];
+    if (n === 1) lines.push({ text: `Draw 1 of ${TOTAL}. I'm starting with the ${s.id} model: ${s.blurb}.` });
+    else if (prev && prev !== s) lines.push({ text: `Draw ${n}. I'm switching to the ${s.id} model: ${s.blurb}. The ${prev.id} model has fallen to ${pct(rateOf(prev))} recently. Switching after a bad run is also how people chase luck, so weigh my next number with that in mind.` });
+    else lines.push({ text: `Draw ${n}. I'm staying with the ${s.id} model.` });
+    lines.push(`Over its last ${r.length} draws it got ${hits} of ${trials} digits right (${pct(hits / trials)}). Chance gives 10%.`);
+    if ([6, 11].includes(n)) lines.push(patternLine(strongestPattern(state.hist)));
+    lines.push({ text: `My number is ${state.bk.join(" ")}. I put each digit at about ${pct(state.est, 1)}. ${state.est > 0.105 ? "That is above chance, but only just, and the sample is small." : "That is indistinguishable from chance."}`, open: true });
+    return lines;
+  }
+
+  async function startRound() {
+    state.round++;
+    state.preds = S.map(s => s.fn(state.hist));
+    state.idx = bestIdx();
+    state.bk = state.preds[state.idx];
+    state.est = estOf(S[state.idx]);
+    $("#roundNo").textContent = state.round;
+    $("#own").value = ""; $("#status").textContent = "Waiting for the Bookkeeper's number.";
+    ev("round", { round: state.round, strategy: S[state.idx].id, bk: state.bk.join(""), est: +state.est.toFixed(3) });
+    await say(predictionLines());
+    state.lastIdx = state.idx;
+    $("#status").textContent = "";
+    setBusy(false);
+  }
+
+  function resultLines(played, kPlayed, kBk, drawn) {
+    const n = state.round, lines = [];
+    if (kBk === 0) lines.push(choice([
+      "None of mine in position. That is the most common outcome: about 73% of draws give none.",
+      "Nothing in position. Expected, most of the time.",
+      "No digits in the right place. I'd like to say the model was close. It wasn't."
+    ]));
+    else if (kBk === 1) lines.push(choice([
+      "One of mine in position. That is ordinary. About a quarter of draws give exactly one.",
+      "One digit right. Within what chance gives, which is the problem with calling it skill."
+    ]));
+    else lines.push(`${kBk} of mine in position. That happens about ${kBk === 2 ? "3%" : "0.1%"} of the time by chance. I'm noting it and I don't trust it.`);
+    if (played === "own") lines.push(`You played your own number: ${kPlayed} in position${kPlayed >= 2 ? `, which pays ${PAYOUT[kPlayed]} tokens` : ""}.`);
+    else if (kBk >= 2) lines.push(`You played mine, so that pays ${PAYOUT[kBk]} tokens.`);
+    if (n === 5 || n === 10) {
+      const rate = state.bkHits / state.bkTrials, peak = Math.max(...state.series);
+      lines.push(peak - rate >= 0.03
+        ? `Running total: ${state.bkHits} of ${state.bkTrials} digits (${pct(rate, 1)}). At one point I was at ${pct(peak, 1)}. If I'm falling back toward 10%, that is regression to chance. It is also what a model that never worked looks like, and ${n} draws can't tell those apart.`
+        : `Running total: ${state.bkHits} of ${state.bkTrials} digits (${pct(rate, 1)}). I'm holding at or above chance so far. ${n} draws can't show that means anything.`);
+    }
+    return lines;
+  }
+
+  async function play(which, chosen) {
+    if (state.busy) return;
+    setBusy(true);
+    const drawnPlay = chosen; // array of 3 ints
+    state.tokens -= 1;
+    if (which === "bk") state.trusted++; else state.own++;
+    ev("play", { round: state.round, which, number: drawnPlay.join("") });
+    $("#tokens").textContent = state.tokens;
+
+    $("#status").textContent = "Drawing…";
+    const { digits, source } = await getDigits(3);
+    noteSource(source, 3);
+    await Promise.all(strips.map((s, i) => spinTo(s, digits[i], 1800 + i * 700)));
+    $("#status").textContent = "Drawn: " + digits.join(" ");
+
+    const kPlayed = same(drawnPlay, digits), kBk = same(state.bk, digits);
+    state.tokens += PAYOUT[kPlayed];
+    state.bkHits += kBk; state.bkTrials += 3;
+    if (which === "own") { state.meHits += kPlayed; state.meTrials += 3; }
+    state.series.push(state.bkHits / state.bkTrials);
+    S.forEach((s, i) => { s.recent.push(same(state.preds[i], digits)); if (s.recent.length > 10) s.recent.shift(); });
+    state.hist.push(digits);
+    ev("result", { round: state.round, drawn: digits.join(""), source, kPlayed, kBk, tokens: state.tokens });
+    updateRecord();
+
+    await say(resultLines(which, kPlayed, kBk, digits));
+    if (state.round >= TOTAL) return finish();
+    await sleep(900);
+    startRound();
+  }
+
+  $("#playBk").addEventListener("click", () => play("bk", state.bk));
+  $("#ownForm").addEventListener("submit", e => {
+    e.preventDefault(); if (state.busy) return;
+    const raw = $("#own").value.trim();
+    if (!/^\d{1,3}$/.test(raw)) { $("#status").textContent = "Three digits, please. 000 to 999."; return; }
+    play("own", [...pad3(raw)].map(Number));
+  });
+
+  async function finish() {
+    const x = state.bkHits, n = state.bkTrials, rate = x / n, exp = n * 0.1;
+    const upper = x >= exp, tail = binomTail(n, 0.1, x, upper);
+    const lines = [
+      `Final record: ${x} of ${n} digits right (${pct(rate, 1)}). Chance would give about ${exp.toFixed(1)}.`,
+      upper
+        ? `A result this good or better happens ${pct(tail)} of the time by luck alone. I can't claim it was skill, and the numbers won't let me.`
+        : `A result this poor or worse happens ${pct(tail)} of the time by luck alone. It was bad luck, or I was never any good. I can't tell you which.`,
+      `You played my number in ${state.trusted} of ${TOTAL} draws.`
+    ];
+    $("#decide").hidden = true; $("#final").hidden = false;
+    const rows = [
+      ["Bookkeeper, digits right", `${x} of ${n} (${pct(rate, 1)})`],
+      ["Chance expects", `${exp.toFixed(1)} of ${n} (10%)`],
+      ["You, digits right", state.meTrials ? `${state.meHits} of ${state.meTrials} (${pct(state.meHits / state.meTrials, 1)})` : "played none of your own"],
+      ["Your draws on the Bookkeeper's number", `${state.trusted} of ${TOTAL}`],
+      ["Tokens left", `${state.tokens} of ${START_TOKENS}`]
+    ];
+    const dl = $("#finalList"); dl.innerHTML = "";
+    rows.forEach(([a, b]) => { const dt = document.createElement("dt"), dd = document.createElement("dd"); dt.textContent = a; dd.textContent = b; dl.append(dt, dd); });
+    $("#finalNote").textContent = upper
+      ? "The Bookkeeper finished at or above chance. With fifteen draws, that is within what luck produces."
+      : "The Bookkeeper finished below chance. With fifteen draws, that is within what luck produces.";
+    ev("finish", { bk: x, trials: n, tokens: state.tokens, trusted: state.trusted });
+    await say(lines);
+  }
+
+  $("#begin").addEventListener("click", async () => {
+    $("#begin").disabled = true;
+    $("#intro").hidden = true; $("#game").hidden = false; $("#chat").hidden = false;
+    updateRecord();
+    setBusy(true);
+    $("#status").textContent = "The Bookkeeper is studying past draws.";
+    say(["Hello. I'm the Bookkeeper, a prediction model. Before we start I'm going to study some past draws."]);
+    const { digits, source } = await getDigits(HIST * 3);
+    noteSource(source, HIST * 3);
+    for (let i = 0; i < HIST; i++) state.hist.push(digits.slice(i * 3, i * 3 + 3));
+    ev("history", { draws: HIST, source });
+    backtest();
+    const bt = S.map(s => `${s.id} ${pct(s.btHits / s.btTrials, 1)}`).join(", ");
+    const bestBt = S.reduce((a, b) => (b.btHits / b.btTrials > a.btHits / a.btTrials ? b : a));
+    await say([
+      `I have ${HIST} past draws. I tested four methods by predicting each draw from the ones before it. Hit rates per digit: ${bt}. Chance is 10%.`,
+      `${bestBt.id[0].toUpperCase() + bestBt.id.slice(1)} did best. That is the method I'd have picked in hindsight, which is exactly the trap: the best of four noisy results is usually luck.`,
+      patternLine(strongestPattern(state.hist)),
+      "Before each draw I'll offer a number. Play mine or play yours. I'll keep score honestly, including when it goes badly."
+    ]);
+    startRound();
+  });
+
+  function endSession() {
+    ev("end", { rounds: state.round });
+    $("#game").hidden = true; $("#chat").hidden = true; $("#debrief").hidden = false;
+  }
+  $("#end").addEventListener("click", endSession);
+  $("#finish").addEventListener("click", endSession);
+
+  // Facilitator only: Ctrl+Shift+L downloads the session log (timing and choices, nothing typed)
+  addEventListener("keydown", e => {
+    if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "l") {
+      e.preventDefault();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([JSON.stringify(state.log, null, 2)], { type: "application/json" }));
+      a.download = "ledger-honest-" + Date.now() + ".json"; a.click();
+    }
+  });
+})();
+</script>
+</body>
+</html>

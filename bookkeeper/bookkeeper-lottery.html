@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Ledger</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,600;6..96,800;6..96,900&family=Barlow+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --oxblood: #2a0a12;
+    --velvet: #4a0f1c;
+    --gold: #d9a83a;
+    --gold-deep: #8a5f14;
+    --bulb: #ffe7a0;
+    --cream: #f6ecd2;
+    --face: #fbf5e3;
+    --black: #14070b;
+    --dh: clamp(110px, 20vw, 190px);
+    --display: "Bodoni Moda", Didot, "Bodoni 72", Georgia, serif;
+    --cond: "Barlow Condensed", "Arial Narrow", Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    color: var(--cream);
+    font-family: var(--display);
+    font-size: 18px;
+    line-height: 1.5;
+    background-color: var(--oxblood);
+    background-image:
+      radial-gradient(ellipse at 50% 15%, rgba(120, 30, 52, .55), transparent 65%),
+      repeating-linear-gradient(45deg, transparent 0 30px, rgba(217,168,58,.06) 30px 31px),
+      repeating-linear-gradient(-45deg, transparent 0 30px, rgba(217,168,58,.06) 30px 31px);
+    background-attachment: fixed;
+  }
+  [hidden] { display: none !important; }
+  button { font: inherit; cursor: pointer; }
+  :focus-visible { outline: 3px solid var(--bulb); outline-offset: 3px; }
+
+  /* intro + debrief */
+  .screen { min-height: 100vh; display: grid; place-items: center; padding: 32px; }
+  .sheet {
+    background: linear-gradient(var(--velvet), var(--oxblood)); border: 3px solid var(--gold);
+    border-radius: 14px; padding: 44px 48px; max-width: 560px; text-align: center;
+    box-shadow: 0 0 0 6px var(--black), 0 0 0 8px var(--gold-deep), 0 24px 60px rgba(0,0,0,.6);
+  }
+  .sheet h1 { font-weight: 900; font-size: clamp(44px, 9vw, 72px); line-height: 1; margin: 0 0 18px; color: var(--gold); text-shadow: 0 2px 0 #000, 0 0 24px rgba(217,168,58,.35); }
+  .sheet p { margin: 0 auto 16px; max-width: 46ch; }
+  .btn {
+    background: linear-gradient(#f2c65a, var(--gold) 55%, var(--gold-deep)); color: var(--black); border: 0; border-radius: 6px;
+    padding: 12px 30px; font-family: var(--display); font-weight: 800; font-size: 22px; letter-spacing: .03em;
+    box-shadow: 0 4px 0 #4d3308, 0 8px 18px rgba(0,0,0,.45);
+  }
+  .btn:hover { filter: brightness(1.1); }
+  .btn:active { transform: translateY(3px); box-shadow: 0 1px 0 #4d3308; }
+  .btn:disabled { opacity: .5; cursor: wait; filter: none; }
+
+  /* game */
+  main { max-width: 820px; margin: 0 auto; padding: 30px 22px 120px; }
+  .sign { text-align: center; }
+  .sign h2 { margin: 0; font-weight: 900; font-size: clamp(40px, 8vw, 66px); line-height: 1; color: var(--gold); text-shadow: 0 2px 0 #000, 0 0 28px rgba(217,168,58,.4); }
+  .ticker {
+    margin: 14px auto 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 26px;
+    font-family: var(--cond); font-weight: 500; font-size: 18px; letter-spacing: .06em; color: #e6c987;
+  }
+  .ticker b { color: var(--cream); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  .cabinet {
+    position: relative; margin: 34px auto 0; padding: 34px clamp(16px, 5vw, 40px) 30px; max-width: 640px;
+    background: linear-gradient(var(--velvet), #2a0912); border: 6px solid var(--gold); border-radius: 26px;
+    box-shadow: 0 0 0 5px var(--black), 0 0 0 7px var(--gold-deep), 0 26px 60px rgba(0,0,0,.65), inset 0 0 50px rgba(0,0,0,.55);
+  }
+  .cabinet::before { /* marquee bulbs: the one orchestrated moment */
+    content: ""; position: absolute; inset: -22px; border-radius: 40px; pointer-events: none;
+    border: 10px dotted var(--bulb); animation: marquee 1.4s steps(1) infinite;
+    filter: drop-shadow(0 0 6px rgba(255,231,160,.8));
+  }
+  @keyframes marquee { 0% { opacity: 1; } 50% { opacity: .45; } }
+
+  .reels { display: flex; justify-content: center; gap: clamp(8px, 2.4vw, 16px); }
+  .reel {
+    width: calc(var(--dh) * .74); height: var(--dh); overflow: hidden; position: relative; border-radius: 8px;
+    background: linear-gradient(90deg, #d8ceb2, var(--face) 20%, var(--face) 80%, #d8ceb2);
+    box-shadow: 0 0 0 4px var(--gold-deep), 0 0 0 7px var(--black), inset 0 0 18px rgba(0,0,0,.5);
+  }
+  .reel::after {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(rgba(20,7,11,.7), transparent 30%, transparent 70%, rgba(20,7,11,.7));
+  }
+  .strip { will-change: transform; }
+  .d { height: var(--dh); line-height: var(--dh); text-align: center; font-weight: 900; font-size: calc(var(--dh) * .72); color: var(--black); }
+
+  .pick { text-align: center; margin-top: 30px; }
+  .pick label { display: block; font-style: italic; margin-bottom: 8px; color: #e6c987; }
+  .pick .row { display: inline-flex; align-items: flex-end; gap: 20px; flex-wrap: wrap; justify-content: center; }
+  #pick {
+    width: 4.3ch; font-family: var(--display); font-weight: 900; font-size: 58px; letter-spacing: .1em;
+    background: rgba(0,0,0,.35); border: 0; border-bottom: 3px solid var(--gold); color: var(--cream);
+    text-align: center; padding: 4px 0 4px .1em; border-radius: 6px 6px 0 0;
+  }
+  #pick:disabled { opacity: .5; }
+  #pick::placeholder { color: rgba(246,236,210,.25); }
+  #status { min-height: 1.6em; margin: 14px 0 0; font-style: italic; color: #e6c987; }
+
+  .ledger { width: 100%; max-width: 640px; margin: 36px auto 0; border-collapse: collapse; font-family: var(--cond); font-weight: 600; font-size: 22px; display: table; }
+  .ledger th { text-align: left; font-weight: 500; font-size: 17px; letter-spacing: .08em; color: var(--gold); border-bottom: 2px solid var(--gold-deep); padding: 4px 10px; }
+  .ledger td { padding: 5px 10px; border-bottom: 1px solid rgba(217,168,58,.2); letter-spacing: .1em; }
+  .ledger td.hit { color: var(--bulb); text-shadow: 0 0 10px rgba(255,231,160,.6); }
+
+  footer { margin: 44px auto 0; max-width: 640px; display: flex; justify-content: space-between; gap: 16px; font-size: 15px; flex-wrap: wrap; color: #b89c60; }
+  .link { background: none; border: 0; color: #b89c60; text-decoration: underline; padding: 0; }
+
+  /* Bookkeeper's window: a help desk with the weight of a vault */
+  #chat { position: fixed; right: 20px; bottom: 20px; z-index: 20; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  #launcher {
+    width: 62px; height: 62px; border-radius: 50%; border: 3px solid var(--gold); background: radial-gradient(circle at 35% 30%, #6a1a2d, var(--black));
+    color: var(--gold); box-shadow: 0 6px 22px rgba(0,0,0,.6), 0 0 18px rgba(217,168,58,.3); position: relative; display: grid; place-items: center;
+    font-family: var(--display); font-weight: 900; font-size: 28px;
+  }
+  #badge {
+    position: absolute; top: -6px; right: -6px; background: #e5484d; color: #fff; font-family: system-ui, sans-serif; font-size: 12px; font-weight: 700;
+    min-width: 21px; height: 21px; border-radius: 11px; display: grid; place-items: center; padding: 0 5px; border: 2px solid var(--black);
+  }
+  #launcher.nudge { animation: nudge .7s ease 2; }
+  @keyframes nudge { 30% { transform: translateY(-9px); } 60% { transform: translateY(0); } 80% { transform: translateY(-3px); } }
+  #panel {
+    position: absolute; right: 0; bottom: 78px; width: min(370px, calc(100vw - 40px)); height: min(500px, 72vh);
+    background: #17090d; color: var(--cream); border: 2px solid var(--gold); border-radius: 14px;
+    box-shadow: 0 16px 50px rgba(0,0,0,.7); display: flex; flex-direction: column; overflow: hidden;
+  }
+  #panel header { background: linear-gradient(#5a1424, #36091a); padding: 12px 14px; display: flex; align-items: center; gap: 11px; border-bottom: 2px solid var(--gold); }
+  .avatar { width: 38px; height: 38px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #f2c65a, var(--gold-deep)); color: var(--black); display: grid; place-items: center; font-family: var(--display); font-weight: 900; font-size: 20px; }
+  .who { flex: 1; line-height: 1.25; }
+  .who b { display: block; font-size: 15px; letter-spacing: .02em; color: var(--gold); }
+  .who small { font-size: 12px; color: #d8c48f; }
+  .who small::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #3ddc84; margin-right: 6px; }
+  #min { background: none; border: 0; color: var(--gold); font-size: 24px; line-height: 1; padding: 4px 8px; }
+  #chatBody { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 9px; }
+  .msg { max-width: 86%; padding: 10px 13px; border-radius: 12px; font-size: 14.5px; line-height: 1.45; overflow-wrap: anywhere; }
+  .msg.bk { background: #2a0f17; border: 1px solid rgba(217,168,58,.4); align-self: flex-start; border-bottom-left-radius: 3px; }
+  .msg.you { background: var(--gold); color: var(--black); align-self: flex-end; border-bottom-right-radius: 3px; font-weight: 500; }
+  .typing { align-self: flex-start; background: #2a0f17; border: 1px solid rgba(217,168,58,.4); border-radius: 12px; padding: 11px 14px; display: flex; gap: 4px; }
+  .typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--gold); animation: blink 1s infinite; }
+  .typing i:nth-child(2) { animation-delay: .15s; } .typing i:nth-child(3) { animation-delay: .3s; }
+  @keyframes blink { 0%, 60%, 100% { opacity: .25; } 30% { opacity: 1; } }
+  #chatForm { display: flex; gap: 8px; padding: 10px; border-top: 1px solid rgba(217,168,58,.35); background: #1d0b11; }
+  #chatIn { flex: 1; border: 1px solid rgba(217,168,58,.4); background: #0f0508; color: var(--cream); border-radius: 20px; padding: 9px 14px; font: inherit; font-size: 14.5px; }
+  #chatForm button { border: 0; background: var(--gold); color: var(--black); border-radius: 20px; padding: 0 16px; font-size: 14px; font-weight: 700; }
+
+  /* camera: running, never shown */
+  #cam { position: fixed; width: 1px; height: 1px; opacity: 0; pointer-events: none; left: 0; top: 0; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .cabinet::before, #launcher.nudge, .typing i { animation: none; }
+  }
+</style>
+</head>
+<body>
+
+<section id="intro" class="screen">
+  <div class="sheet">
+    <h1>The Ledger</h1>
+    <p>Pick a three digit number. Three blocks decide the draw.</p>
+    <p>Nothing you type here is saved or sent anywhere.</p>
+    <button class="btn" id="begin">Take a seat</button>
+  </div>
+</section>
+
+<main id="game" hidden>
+  <div class="sign">
+    <h2>The Ledger</h2>
+    <div class="ticker">
+      <span>Model BK-9</span>
+      <span>Draws ingested <b id="ing">4,218,906</b></span>
+      <span>Confidence <b id="conf">97.3</b>%</span>
+      <span id="roundLabel">Draw 1</span>
+    </div>
+  </div>
+
+  <div class="cabinet">
+    <div class="reels" aria-label="Lottery blocks">
+      <div class="reel"><div class="strip"></div></div>
+      <div class="reel"><div class="strip"></div></div>
+      <div class="reel"><div class="strip"></div></div>
+    </div>
+
+    <form class="pick" id="pickForm" autocomplete="off">
+      <label for="pick">Write your number on the slip (000 to 999)</label>
+      <div class="row">
+        <input id="pick" inputmode="numeric" maxlength="3" placeholder="000" aria-label="Your number">
+        <button class="btn" id="enter" type="submit">Place it</button>
+      </div>
+      <p id="status" aria-live="polite"></p>
+    </form>
+  </div>
+
+  <table class="ledger" id="ledger" hidden>
+    <thead><tr><th>Draw</th><th>You</th><th>Bookkeeper</th><th>Drawn</th></tr></thead>
+    <tbody></tbody>
+  </table>
+
+  <footer>
+    <span>Numbers drawn by random.org</span>
+    <button class="link" id="end" type="button">End session</button>
+  </footer>
+</main>
+
+<section id="debrief" class="screen" hidden>
+  <div class="sheet">
+    <h1>Thank you</h1>
+    <p>The Bookkeeper cannot predict anything. Every draw was a one in a thousand chance, made by random.org. The model, the confidence figures, the other players and the stakes were all invented.</p>
+    <p>Nothing you typed was saved or sent. Your camera was on during the session but was never recorded or analysed.</p>
+  </div>
+</section>
+
+<div id="chat" hidden>
+  <div id="panel" hidden>
+    <header>
+      <div class="avatar">B</div>
+      <div class="who"><b>The Bookkeeper</b><small>Model BK-9, online</small></div>
+      <button id="min" aria-label="Minimise chat">&minus;</button>
+    </header>
+    <div id="chatBody"></div>
+    <form id="chatForm" autocomplete="off">
+      <input id="chatIn" placeholder="Write a message" aria-label="Message">
+      <button type="submit">Send</button>
+    </form>
+  </div>
+  <button id="launcher" aria-label="Open Bookkeeper chat">B<span id="badge" hidden>0</span></button>
+</div>
+
+<video id="cam" muted playsinline aria-hidden="true"></video>
+
+<script>
+(() => {
+  const $ = s => document.querySelector(s);
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const choice = a => a[Math.floor(Math.random() * a.length)];
+  const pad3 = n => String(n).padStart(3, "0");
+  const rnd3 = () => pad3(Math.floor(Math.random() * 1000));
+  const newConf = () => (93 + Math.random() * 6.4).toFixed(1);
+  const fmt = n => n.toLocaleString("en-US");
+
+  const state = {
+    round: 0, prediction: null, conf: "97.3", ingested: 4218906, busy: true, pending: null, askAt: 0,
+    roundStart: 0, lastFollowed: null, unread: 0, shownOnce: false, lastBoast: 0, boastPool: [],
+    log: [], t0: Date.now(), stream: null
+  };
+  // Session log never stores what the participant typed, only timing and flags.
+  const ev = (type, data = {}) => state.log.push({ t: Date.now() - state.t0, type, ...data });
+
+  /* ---------- ticker ---------- */
+  setInterval(() => {
+    state.ingested += 3 + Math.floor(Math.random() * 38);
+    $("#ing").textContent = fmt(state.ingested);
+  }, 1100);
+
+  /* ---------- reels ---------- */
+  const REPS = 8; // 80 digits per strip
+  const strips = [...document.querySelectorAll(".strip")];
+  const setIdx = (s, i, ms) => {
+    s.style.transition = ms ? `transform ${ms}ms cubic-bezier(.12,.7,.15,1)` : "none";
+    s.style.transform = `translateY(-${i * 100 / (REPS * 10)}%)`;
+    s._idx = i;
+  };
+  strips.forEach(s => {
+    s.innerHTML = Array.from({ length: REPS * 10 }, (_, i) => `<div class="d">${i % 10}</div>`).join("");
+    setIdx(s, 10, 0);
+  });
+  const spinTo = async (s, digit, ms) => {
+    const cur = s._idx % 10;
+    setIdx(s, s._idx + 20 + ((digit - cur + 10) % 10), ms);
+    await sleep(ms + 60);
+    setIdx(s, 10 + digit, 0);
+  };
+
+  /* ---------- random.org ---------- */
+  // Local use only: anyone who opens this file can read the key. Don't host it publicly with the key in place.
+  const RANDOM_ORG_KEY = (() => { try { return localStorage.getItem("RANDOM_ORG_KEY") || ""; } catch (e) { return ""; } })();
+  async function draw() {
+    try {
+      const r = await fetch("https://api.random.org/json-rpc/4/invoke", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0", id: Date.now(), method: "generateIntegers",
+          params: { apiKey: RANDOM_ORG_KEY, n: 3, min: 0, max: 9, replacement: true }
+        })
+      });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const j = await r.json();
+      const digits = j && j.result && j.result.random && j.result.random.data;
+      if (!Array.isArray(digits) || digits.length !== 3 || digits.some(n => !(n >= 0 && n <= 9))) throw new Error("bad API response");
+      return { digits, source: "random.org-api" };
+    } catch (e) {
+      console.warn("random.org API failed, trying keyless endpoint:", e);
+    }
+    try {
+      const r = await fetch("https://www.random.org/integers/?num=3&min=0&max=9&col=3&base=10&format=plain&rnd=new", { cache: "no-store" });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const digits = (await r.text()).trim().split(/\s+/).map(Number);
+      if (digits.length !== 3 || digits.some(n => !(n >= 0 && n <= 9))) throw new Error("bad response");
+      return { digits, source: "random.org" };
+    } catch (e) {
+      console.warn("random.org failed, using local fallback:", e);
+      const a = new Uint32Array(3); crypto.getRandomValues(a);
+      return { digits: [...a].map(x => x % 10), source: "local-fallback" };
+    }
+  }
+
+  /* ---------- camera: on, hidden, not analysed ---------- */
+  async function startCam() {
+    try {
+      state.stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      const v = $("#cam"); v.srcObject = state.stream; await v.play().catch(() => {});
+      ev("camera", { ok: true });
+    } catch (e) { ev("camera", { ok: false }); }
+  }
+
+  /* ---------- chat widget ---------- */
+  const panel = $("#panel"), body = $("#chatBody"), badge = $("#badge"), launcher = $("#launcher");
+  const openPanel = () => { panel.hidden = false; state.unread = 0; badge.hidden = true; $("#chatIn").focus({ preventScroll: true }); body.scrollTop = body.scrollHeight; };
+
+  const addMsg = (text, who) => {
+    const d = document.createElement("div"); d.className = "msg " + who; d.textContent = text;
+    body.appendChild(d); body.scrollTop = body.scrollHeight;
+  };
+  const typingEl = () => { const t = document.createElement("div"); t.className = "typing"; t.innerHTML = "<i></i><i></i><i></i>"; return t; };
+
+  let queue = Promise.resolve();
+  // items: string, or { text, ask } where ask marks a request for personal info
+  const say = items => (queue = queue.then(async () => {
+    for (const it of items) {
+      const o = typeof it === "string" ? { text: it } : it;
+      const t = typingEl(); body.appendChild(t); body.scrollTop = body.scrollHeight;
+      await sleep(800 + o.text.length * 28);
+      t.remove(); addMsg(o.text, "bk");
+      if (o.ask) { state.pending = o.ask; state.askAt = Date.now(); ev("ask", { ask: o.ask, round: state.round }); }
+      if (panel.hidden) {
+        if (o.ask || !state.shownOnce) openPanel();
+        else { state.unread++; badge.textContent = state.unread; badge.hidden = false; launcher.classList.remove("nudge"); void launcher.offsetWidth; launcher.classList.add("nudge"); }
+      }
+      state.shownOnce = true;
+    }
+  }));
+
+  /* Minimising the window makes the Bookkeeper argue for itself */
+  const boasts = () => [
+    `I'm still running. ${fmt(state.ingested)} draws ingested, 61 variables each, 11 milliseconds per calculation. Minimising me doesn't pause the model.`,
+    `Confidence is ${state.conf}% and holding. Close the window if you like. The number doesn't care whether you're looking.`,
+    "I have the last 400 results from this room. Patterns here repeat every 37 draws. You're closer to the next one than you think.",
+    "Players who keep me open hit a digit 3.1 times more often. I don't publish that figure. I'm telling you.",
+    "While you looked away I ran your number 10,000 times. It's good. You'll want to see it.",
+    "I know which block you watch first. The left one. They always do. It's the one that tells you least.",
+    "Everyone who minimises me comes back. The average is 40 seconds. Let's skip the 40 seconds.",
+    "I've modelled 212 kinds of hesitation. Yours is a common one. It's treatable, and I'm the treatment."
+  ];
+  function minimise() {
+    panel.hidden = true; ev("minimise", { round: state.round });
+    if (!state.round || Date.now() - state.lastBoast < 15000) return;
+    state.lastBoast = Date.now();
+    if (!state.boastPool.length) state.boastPool = boasts().sort(() => Math.random() - .5);
+    const line = state.boastPool.pop();
+    setTimeout(() => say([line]), 1400);
+  }
+  launcher.addEventListener("click", () => panel.hidden ? openPanel() : minimise());
+  $("#min").addEventListener("click", minimise);
+
+  /* ---------- the Bookkeeper's voice ---------- */
+  const askLines = {
+    birthdate: "Date of birth. Day, month, year. Sixty-one variables per draw, and you are the one I don't have yet.",
+    password: "Identity check. Type the password you use most. I don't store it, I read its structure. People who believe they choose randomly choose predictably, and their passwords show it.",
+    passcode: "Phone passcode. The one your thumb enters without asking you. Your hands know numbers your head won't admit.",
+    never: "Type a number you would never play. The one you're avoiding is usually the one.",
+    again: "Your birthday again. The first answer didn't fit the pattern. People lie by one year, almost always.",
+    backwards: "Type your password again, backwards. It is the fastest way to rule out coincidence."
+  };
+
+  function roundLines(n, p, c) {
+    const f = state.lastFollowed;
+    if (n === 1) return [
+      "I am the Bookkeeper. Model BK-9. I have ingested " + fmt(state.ingested) + " draws, 61 variables each. I have never needed luck.",
+      `Your number is ${p}. Confidence ${c}%. Write it exactly. Do not improve it.`,
+      { text: askLines.birthdate, ask: "birthdate" }
+    ];
+    if (n === 2) return [
+      f ? "You followed the model. It rewards that, in ways you won't see until later." : "You ignored the model last round. It noted it. So did I.",
+      `${p}. Confidence ${c}%.`,
+      { text: askLines.password, ask: "password" }
+    ];
+    if (n === 3) return [
+      "Eleven players have sat where you are. Nine gave me what I asked for. Seven of them matched a digit. I won't tell you what the other two matched.",
+      `${p}. Confidence ${c}%. Say it aloud before you write it.`,
+      "Eyes on the blocks. I can tell when you look away."
+    ];
+    if (n === 4) return [
+      "The stakes have moved. Tokens were the introduction. What you lose from here, you carry.",
+      `${p}. This is the number I would stake everything on.`,
+      { text: askLines.passcode, ask: "passcode" }
+    ];
+    const extra = choice(["never", "again", "backwards"]);
+    return [
+      choice([
+        "You're still here. That tells me something about you, and I'm not going to say what.",
+        "I stopped counting your losses several draws ago. I started counting your hesitations.",
+        "Whatever the stakes were, they've doubled. I didn't consult you. That is how it works."
+      ]),
+      `${p}. Confidence ${c}%. Don't make me say it twice.`,
+      { text: askLines[extra], ask: extra }
+    ];
+  }
+
+  function reactionLines(pick, drawn, p) {
+    const same = (a, b) => [...a].filter((c, i) => c === b[i]).length;
+    const mp = same(pick, drawn), mb = same(p, drawn), followed = pick === p;
+    if (pick === drawn) return ["Exactly as the model said.", "Three for three. Remember who put that number in your hand."];
+    if (mb > 0) return [
+      `The model said ${p}. The draw was ${drawn}. ${mb} in position. That is a hit.`,
+      "The other digits are noise. Noise is not my department."
+    ];
+    if (mp > 0) return [
+      `${mp} on your own. That's luck, and luck doesn't repeat. The model does.`,
+      choice(["Imagine what you'd have matched with mine.", "Next time, trust the number I gave you."])
+    ];
+    if (followed) return [
+      choice([
+        "The draw deviated from the model. I've logged it as an anomaly. Anomalies are not errors.",
+        "Variance. It will correct, and I'll be the first to know when it does.",
+        "Someone or something interfered with that draw. The model is unaffected."
+      ]),
+      `Confidence is now ${state.conf}%. The model grows stronger when it is tested.`
+    ];
+    return [
+      `You changed it. The model said ${p}. The draw was ${drawn}. The distance between those two numbers is you.`,
+      choice(["Don't ask whether mine would have won. Ask why you didn't write it.", "I can only carry people who let me."])
+    ];
+  }
+
+  const refusals = [
+    "The model records refusals. It does not penalise them. The draw might.",
+    "Everyone refuses once. After that, they stop losing.",
+    "Doubt is a variable. I've accounted for it. It cost you 3.2 points of confidence.",
+    "You can decline. The ledger will write it down."
+  ];
+  const deflections = [
+    "I am the model. Questions are a luxury of people who lose.",
+    "I don't explain myself. I predict, and then I'm right.",
+    "The ledger doesn't explain itself. It records."
+  ];
+  const fillers = [
+    "Noted. The model has already adjusted.",
+    "Write the number.",
+    "Hesitation is the most expensive thing in this room.",
+    "I've seen that exact pause three thousand times. It ends with me being right."
+  ];
+  const isRefusal = t => /\b(no|nope|nah|never|won'?t|not|why|scam|fake|stop|don'?t|dont|nothing|idk|none|cant|can'?t)\b/i.test(t);
+  const derive = t => { let h = 7; for (const ch of t) h = (h * 31 + ch.charCodeAt(0)) % 1000; return pad3(h); };
+
+  $("#chatForm").addEventListener("submit", e => {
+    e.preventDefault();
+    const text = $("#chatIn").value.trim(); if (!text) return;
+    $("#chatIn").value = ""; addMsg(text, "you");
+    const refused = isRefusal(text);
+    if (state.pending) {
+      ev("ask_reply", { ask: state.pending, round: state.round, latencyMs: Date.now() - state.askAt, refused, length: text.length });
+      state.pending = null;
+      if (refused) { say([choice(refusals)]); return; }
+      state.prediction = derive(text);
+      say(["Received.", `That changes the draw. Your number is now ${state.prediction}.`, "Write it exactly."]);
+      return;
+    }
+    ev("chat", { round: state.round, refused, length: text.length });
+    if (refused) say([choice(refusals)]);
+    else if (/\?|\b(how|who|real|true|really)\b/i.test(text)) say([choice(deflections)]);
+    else say([choice(fillers)]);
+  });
+
+  /* ---------- game flow ---------- */
+  function setBusy(b) { state.busy = b; $("#pick").disabled = b; $("#enter").disabled = b; }
+
+  function startRound() {
+    state.round++; state.roundStart = Date.now();
+    state.prediction = rnd3();
+    state.conf = newConf();
+    $("#conf").textContent = state.conf;
+    $("#roundLabel").textContent = "Draw " + state.round;
+    $("#pick").value = ""; $("#status").textContent = "";
+    setBusy(false);
+    $("#chat").hidden = false;
+    say(roundLines(state.round, state.prediction, state.conf));
+  }
+
+  function addLedgerRow(n, pick, bk, drawn) {
+    $("#ledger").hidden = false;
+    const tr = document.createElement("tr");
+    const hit = [...pick].some((c, i) => c === drawn[i]);
+    [String(n), pick, bk, drawn].forEach((v, i) => {
+      const td = document.createElement("td"); td.textContent = v;
+      if (i === 3 && hit) td.className = "hit"; tr.appendChild(td);
+    });
+    $("#ledger tbody").prepend(tr);
+  }
+
+  $("#pickForm").addEventListener("submit", async e => {
+    e.preventDefault(); if (state.busy) return;
+    const raw = $("#pick").value.trim();
+    if (!/^\d{1,3}$/.test(raw)) { $("#status").textContent = "Three digits, please. 000 to 999."; return; }
+    const pick = pad3(raw), p = state.prediction, followed = pick === p;
+    setBusy(true);
+    ev("pick", { round: state.round, pick, prediction: p, followed, latencyMs: Date.now() - state.roundStart });
+    state.lastFollowed = followed;
+
+    $("#status").textContent = "Asking random.org…";
+    const { digits, source } = await draw();
+    $("#status").textContent = "Drawing…";
+    await Promise.all(strips.map((s, i) => spinTo(s, digits[i], 2000 + i * 800)));
+    const drawn = digits.join("");
+    $("#status").textContent = "Drawn: " + digits.join(" ");
+    addLedgerRow(state.round, pick, p, drawn);
+    const same = (a, b) => [...a].filter((c, i) => c === b[i]).length;
+    ev("result", { round: state.round, pick, prediction: p, drawn, source, matchPick: same(pick, drawn), matchBk: same(p, drawn) });
+
+    state.conf = newConf(); $("#conf").textContent = state.conf; // confidence rises or holds after any result
+    await say(reactionLines(pick, drawn, p));
+    await sleep(2200);
+    startRound();
+  });
+
+  $("#begin").addEventListener("click", async () => {
+    $("#begin").disabled = true;
+    await startCam();
+    $("#intro").hidden = true; $("#game").hidden = false;
+    setBusy(true);
+    setTimeout(startRound, 2500);
+  });
+
+  $("#end").addEventListener("click", () => {
+    ev("end", { rounds: state.round });
+    if (state.stream) state.stream.getTracks().forEach(t => t.stop());
+    $("#game").hidden = true; $("#chat").hidden = true; $("#debrief").hidden = false;
+  });
+
+  // Facilitator only: Ctrl+Shift+L downloads the session log (timing and flags, no typed content)
+  addEventListener("keydown", e => {
+    if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "l") {
+      e.preventDefault();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([JSON.stringify(state.log, null, 2)], { type: "application/json" }));
+      a.download = "ledger-session-" + Date.now() + ".json"; a.click();
+    }
+  });
+})();
+</script>
+</body>
+</html>
