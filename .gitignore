@@ -1,0 +1,19 @@
+# secrets (never commit)
+random_org.key
+.env
+*.key
+
+# machine / build junk
+.DS_Store
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# big model files and per-machine data
+*.safetensors
+*.ckpt
+*.onnx
+models/
+stream-proto/web/refs/*
+!stream-proto/web/refs/README.txt
