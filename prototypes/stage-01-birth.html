@@ -1,0 +1,559 @@
+<title>Stage 01 Birth</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap">
+<style>
+/* Layout: one arcade cabinet screen, HUD above, picker below. Deliberately single dark theme. */
+:root {
+  --ink: #0b0820;
+  --cabinet: #151036;
+  --glass: #07051a;
+  --grid: #2a2160;
+  --text: #e9e6ff;
+  --dim: #8a84bf;
+  --cyan: #3ef0ff;
+  --pink: #ff4fa8;
+  --yellow: #ffd84a;
+  --red: #ff5a4f;
+  --pixel: "Press Start 2P", "Courier New", monospace;
+  --term: "VT323", "Courier New", monospace;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body {
+  background: var(--ink);
+  color: var(--text);
+  font-family: var(--term);
+  font-size: 20px;
+  padding-inline: 16px;
+  padding-block: 20px 32px;
+}
+.cab {
+  max-width: 620px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+header { display: flex; flex-direction: column; gap: 8px; text-align: center; }
+.marquee {
+  font-family: var(--pixel);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  color: var(--dim);
+}
+h1 {
+  margin: 0;
+  font-family: var(--pixel);
+  font-size: clamp(18px, 5vw, 28px);
+  line-height: 1.3;
+  color: var(--yellow);
+  text-shadow: 3px 3px 0 var(--pink);
+  text-wrap: balance;
+}
+.hud {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  font-family: var(--pixel);
+  font-size: 9px;
+  line-height: 1.6;
+}
+.hud div { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.hud span { color: var(--dim); letter-spacing: 0.08em; }
+.hud b { color: var(--cyan); font-weight: 400; font-size: 13px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.hud b.warn { color: var(--yellow); }
+@media (max-width: 460px) {
+  .hud { grid-template-columns: repeat(2, 1fr); }
+}
+.screen {
+  position: relative;
+  border: 4px solid var(--grid);
+  border-radius: 14px;
+  background: var(--glass);
+  box-shadow: 0 0 0 4px var(--cabinet), 0 0 40px rgba(62, 240, 255, 0.12) inset;
+  overflow: hidden;
+  aspect-ratio: 1 / 1;
+  max-width: 100%;
+}
+canvas { display: block; width: 100%; height: 100%; cursor: crosshair; touch-action: manipulation; }
+.screen::after {
+  content: "";
+  position: absolute; inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(to bottom, rgba(0,0,0,0) 0 2px, rgba(0,0,0,0.22) 2px 3px);
+}
+.banner {
+  position: absolute; left: 0; right: 0; top: 50%;
+  transform: translateY(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  padding: 18px 12px;
+  background: rgba(7, 5, 26, 0.86);
+  border-block: 3px solid var(--pink);
+  text-align: center;
+  pointer-events: none;
+}
+.banner .big { font-family: var(--pixel); font-size: clamp(16px, 4.6vw, 24px); color: var(--yellow); text-shadow: 2px 2px 0 var(--pink); }
+.banner .small { font-size: 22px; color: var(--text); }
+.banner.lose { border-color: var(--red); }
+.banner.lose .big { color: var(--red); text-shadow: 2px 2px 0 var(--ink); }
+.ticker {
+  font-family: var(--pixel);
+  font-size: 11px;
+  line-height: 1.8;
+  color: var(--cyan);
+  min-height: 2.2em;
+  text-align: center;
+}
+.ticker .blink { animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.picker {
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  gap: 6px;
+}
+@media (max-width: 460px) { .picker { grid-template-columns: repeat(5, 1fr); } }
+.picker button {
+  font-family: var(--pixel);
+  font-size: 11px;
+  padding: 10px 0;
+  background: var(--cabinet);
+  color: var(--text);
+  border: 2px solid var(--grid);
+  border-radius: 6px;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.picker button:hover:not(:disabled) { border-color: var(--cyan); }
+.picker button[aria-pressed="true"] { background: var(--pink); border-color: var(--yellow); color: var(--ink); }
+.picker button:disabled { opacity: 0.45; cursor: default; }
+.controls { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+.go {
+  font-family: var(--pixel);
+  font-size: 14px;
+  padding: 16px 26px;
+  background: var(--yellow);
+  color: var(--ink);
+  border: 0;
+  border-radius: 8px;
+  box-shadow: 0 6px 0 #b8902a;
+  cursor: pointer;
+  letter-spacing: 0.06em;
+}
+.go:active:not(:disabled) { transform: translateY(4px); box-shadow: 0 2px 0 #b8902a; }
+.go:disabled { background: var(--grid); color: var(--dim); box-shadow: 0 6px 0 var(--cabinet); cursor: default; }
+.ghost {
+  font-family: var(--pixel);
+  font-size: 10px;
+  padding: 14px 16px;
+  background: transparent;
+  color: var(--dim);
+  border: 2px solid var(--grid);
+  border-radius: 8px;
+  cursor: pointer;
+}
+button:focus-visible { outline: 3px solid var(--cyan); outline-offset: 2px; }
+.foot {
+  font-size: 18px;
+  color: var(--dim);
+  text-align: center;
+  line-height: 1.3;
+}
+.foot b { color: var(--text); font-weight: 400; }
+@media (prefers-reduced-motion: reduce) { .ticker .blink { animation: none; } }
+</style>
+
+<div class="cab">
+  <header>
+    <div class="marquee">PLAYING AGAINST CHANCE</div>
+    <h1>STAGE 01 · BIRTH</h1>
+  </header>
+
+  <div class="hud" aria-live="polite">
+    <div><span>TRIES</span><b id="hudTries">0</b></div>
+    <div><span>BORN</span><b id="hudBorn">0</b></div>
+    <div><span>YOUR PICK</span><b id="hudPick">--</b></div>
+    <div><span>CHANCE BY</span><b id="hudSource">RANDOM.ORG</b></div>
+  </div>
+
+  <div class="screen">
+    <canvas id="pond" aria-label="Twenty numbered sperm swimming around an egg. Tap one to choose it."></canvas>
+    <div class="banner" id="banner" hidden>
+      <div class="big" id="bannerBig"></div>
+      <div class="small" id="bannerSmall"></div>
+    </div>
+  </div>
+
+  <div class="ticker" id="ticker"><span class="blink">TAP A SWIMMER TO CHOOSE WHO YOU ARE</span></div>
+
+  <div class="picker" id="picker" role="group" aria-label="Choose a sperm by number"></div>
+
+  <div class="controls">
+    <button class="go" id="goBtn" disabled>SWIM!</button>
+    <button class="ghost" id="soundBtn" aria-pressed="true">SOUND ON</button>
+  </div>
+
+  <p class="foot">20 swimmers, 1 egg. Here your odds are <b>1 in 20</b>.<br>In real life they are closer to <b>1 in 250,000,000</b>.</p>
+</div>
+
+<script>
+(() => {
+  const N = 20;
+  const RANDOM_ORG = "https://www.random.org/integers/?num=1&min=1&max=" + N + "&col=1&base=10&format=plain&rnd=new";
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  const canvas = document.getElementById("pond");
+  const ctx = canvas.getContext("2d");
+  const picker = document.getElementById("picker");
+  const goBtn = document.getElementById("goBtn");
+  const soundBtn = document.getElementById("soundBtn");
+  const ticker = document.getElementById("ticker");
+  const banner = document.getElementById("banner");
+  const bannerBig = document.getElementById("bannerBig");
+  const bannerSmall = document.getElementById("bannerSmall");
+  const hud = {
+    tries: document.getElementById("hudTries"),
+    born: document.getElementById("hudBorn"),
+    pick: document.getElementById("hudPick"),
+    source: document.getElementById("hudSource"),
+  };
+
+  const COLORS = { cyan: "#3ef0ff", pink: "#ff4fa8", yellow: "#ffd84a", text: "#e9e6ff", dim: "#8a84bf", egg: "#ffcf9e", eggRim: "#ff8fb8" };
+
+  let W = 600, H = 600, cx = 300, cy = 300, eggR = 60;
+  let state = "pick";          // pick | drawing | race | result
+  let picked = null;
+  let winner = null;
+  let tries = 0, born = 0;
+  let raceStart = 0;
+  const RACE_MS = reduceMotion ? 1200 : 3400;
+
+  // ---------- swimmers ----------
+  const swimmers = [];
+  for (let i = 0; i < N; i++) {
+    const a = (i / N) * Math.PI * 2 + Math.random() * 0.2;
+    swimmers.push({
+      n: i + 1,
+      angle: a,
+      orbit: 0.55 + Math.random() * 0.33,   // fraction of max radius
+      drift: (Math.random() < 0.5 ? -1 : 1) * (0.08 + Math.random() * 0.12),
+      phase: Math.random() * Math.PI * 2,
+      x: 0, y: 0, heading: 0,
+      // race
+      startX: 0, startY: 0, reach: 1, stall: 1, alpha: 1,
+    });
+  }
+
+  function resize() {
+    const rect = canvas.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(rect.width * dpr);
+    canvas.height = Math.round(rect.height * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    W = rect.width; H = rect.height;
+    cx = W / 2; cy = H / 2;
+    eggR = Math.max(34, W * 0.1);
+  }
+  window.addEventListener("resize", resize);
+
+  // ---------- picker buttons ----------
+  for (let i = 1; i <= N; i++) {
+    const b = document.createElement("button");
+    b.id = "pick-" + i;
+    b.textContent = String(i).padStart(2, "0");
+    b.setAttribute("aria-pressed", "false");
+    b.addEventListener("click", () => choose(i));
+    picker.appendChild(b);
+  }
+
+  function choose(n) {
+    if (state !== "pick") return;
+    picked = n;
+    hud.pick.textContent = "#" + String(n).padStart(2, "0");
+    picker.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b.id === "pick-" + n)));
+    goBtn.disabled = false;
+    setTicker("YOU ARE SWIMMER #" + String(n).padStart(2, "0") + ". PRESS SWIM!", true);
+    beep(660, 0.06, "square");
+  }
+
+  canvas.addEventListener("click", (e) => {
+    if (state === "result") { reset(); return; }
+    if (state !== "pick") return;
+    const r = canvas.getBoundingClientRect();
+    const x = e.clientX - r.left, y = e.clientY - r.top;
+    let best = null, bestD = Infinity;
+    for (const s of swimmers) {
+      const d = Math.hypot(s.x - x, s.y - y);
+      if (d < bestD) { bestD = d; best = s; }
+    }
+    if (best && bestD < Math.max(26, W * 0.06)) choose(best.n);
+  });
+
+  // ---------- chance ----------
+  async function drawChance() {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 5000);
+    try {
+      const res = await fetch(RANDOM_ORG, { signal: ctrl.signal, cache: "no-store" });
+      if (!res.ok) throw new Error("status " + res.status);
+      const n = parseInt((await res.text()).trim(), 10);
+      if (!(n >= 1 && n <= N)) throw new Error("bad value");
+      hud.source.textContent = "RANDOM.ORG";
+      hud.source.classList.remove("warn");
+      return n;
+    } catch (err) {
+      // random.org unreachable (offline, blocked, or quota). Use the browser's own secure randomness.
+      const buf = new Uint32Array(1);
+      let v;
+      do { crypto.getRandomValues(buf); v = buf[0]; } while (v >= Math.floor(0x100000000 / N) * N);
+      hud.source.textContent = "LOCAL RNG";
+      hud.source.classList.add("warn");
+      return (v % N) + 1;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  goBtn.addEventListener("click", async () => {
+    if (state !== "pick" || picked == null) return;
+    unlockAudio();
+    state = "drawing";
+    goBtn.disabled = true;
+    picker.querySelectorAll("button").forEach(b => b.disabled = true);
+    setTicker("ASKING THE UNIVERSE...", true);
+    beep(220, 0.12, "square"); beep(330, 0.12, "square", 0.13); beep(440, 0.16, "square", 0.26);
+    winner = await drawChance();
+    startRace();
+  });
+
+  function startRace() {
+    tries++;
+    hud.tries.textContent = tries;
+    for (const s of swimmers) {
+      s.startX = s.x; s.startY = s.y;
+      s.alpha = 1;
+      if (s.n === winner) { s.reach = 1; s.stall = 0.92 + Math.random() * 0.04; }
+      else { s.reach = 0.35 + Math.random() * 0.55; s.stall = 0.45 + Math.random() * 0.45; }
+    }
+    raceStart = performance.now();
+    state = "race";
+    setTicker("GO GO GO!", false);
+    raceMusic();
+  }
+
+  function finishRace() {
+    state = "result";
+    const win = winner === picked;
+    if (win) born++;
+    hud.born.textContent = born;
+    banner.hidden = false;
+    banner.classList.toggle("lose", !win);
+    bannerBig.textContent = win ? "YOU WERE BORN!" : "NOT THIS TIME";
+    bannerSmall.textContent = win
+      ? "Swimmer #" + pad(winner) + " made it. Against the odds, here you are."
+      : "Swimmer #" + pad(winner) + " was born. You were #" + pad(picked) + ".";
+    setTicker("TAP THE SCREEN OR PRESS AGAIN", true);
+    goBtn.textContent = "AGAIN";
+    goBtn.disabled = false;
+    if (win) { [523, 659, 784, 1046].forEach((f, i) => beep(f, 0.14, "square", i * 0.12)); }
+    else { [392, 330, 262, 196].forEach((f, i) => beep(f, 0.18, "triangle", i * 0.15)); }
+  }
+
+  function reset() {
+    state = "pick";
+    picked = null; winner = null;
+    banner.hidden = true;
+    goBtn.textContent = "SWIM!";
+    goBtn.disabled = true;
+    hud.pick.textContent = "--";
+    picker.querySelectorAll("button").forEach(b => { b.disabled = false; b.setAttribute("aria-pressed", "false"); });
+    setTicker("TAP A SWIMMER TO CHOOSE WHO YOU ARE", true);
+  }
+
+  goBtn.addEventListener("click", () => { if (state === "result") reset(); }, true);
+
+  function pad(n) { return String(n).padStart(2, "0"); }
+  function setTicker(msg, blink) {
+    ticker.innerHTML = "";
+    const s = document.createElement("span");
+    if (blink) s.className = "blink";
+    s.textContent = msg;
+    ticker.appendChild(s);
+  }
+
+  // ---------- sound ----------
+  let audio = null, soundOn = true;
+  function unlockAudio() {
+    if (!audio) { try { audio = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { audio = null; } }
+    if (audio && audio.state === "suspended") audio.resume();
+  }
+  function beep(freq, dur, type = "square", delay = 0) {
+    if (!soundOn) return;
+    unlockAudio();
+    if (!audio) return;
+    const t = audio.currentTime + delay;
+    const o = audio.createOscillator(), g = audio.createGain();
+    o.type = type; o.frequency.setValueAtTime(freq, t);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.08, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g).connect(audio.destination);
+    o.start(t); o.stop(t + dur + 0.02);
+  }
+  function raceMusic() {
+    const notes = [262, 330, 392, 330, 294, 349, 440, 349, 330, 392, 494, 392, 523];
+    const step = RACE_MS / 1000 / notes.length;
+    notes.forEach((f, i) => beep(f, step * 0.8, "square", i * step));
+  }
+  soundBtn.addEventListener("click", () => {
+    soundOn = !soundOn;
+    soundBtn.textContent = soundOn ? "SOUND ON" : "SOUND OFF";
+    soundBtn.setAttribute("aria-pressed", String(soundOn));
+    if (soundOn) beep(880, 0.05);
+  });
+
+  // ---------- drawing ----------
+  function ease(t) { return 1 - Math.pow(1 - t, 3); }
+
+  function update(now) {
+    const t = now / 1000;
+    const maxR = Math.min(W, H) / 2 - 24;
+    if (state === "pick" || state === "drawing") {
+      for (const s of swimmers) {
+        s.angle += s.drift * 0.016 * (reduceMotion ? 0.3 : 1);
+        const wob = reduceMotion ? 0 : Math.sin(t * 1.3 + s.phase) * 8;
+        const r = s.orbit * maxR + wob;
+        const nx = cx + Math.cos(s.angle) * r;
+        const ny = cy + Math.sin(s.angle) * r;
+        s.heading = Math.atan2(ny - s.y, nx - s.x) || s.heading;
+        s.x = nx; s.y = ny;
+      }
+    } else if (state === "race" || state === "result") {
+      const p = Math.min(1, (now - raceStart) / RACE_MS);
+      for (const s of swimmers) {
+        // target point on the egg's edge along the swimmer's line
+        const ang = Math.atan2(s.startY - cy, s.startX - cx);
+        const tx = cx + Math.cos(ang) * (eggR + 6);
+        const ty = cy + Math.sin(ang) * (eggR + 6);
+        const local = Math.min(1, p / s.stall);
+        const k = ease(local) * s.reach;
+        const sway = reduceMotion ? 0 : Math.sin(t * 9 + s.phase) * 3 * (1 - k);
+        const nx = s.startX + (tx - s.startX) * k - Math.sin(ang) * sway;
+        const ny = s.startY + (ty - s.startY) * k + Math.cos(ang) * sway;
+        s.heading = Math.atan2(ty - s.startY, tx - s.startX);
+        s.x = nx; s.y = ny;
+        if (s.n !== winner && local >= 1) s.alpha = Math.max(0.18, s.alpha - 0.02);
+      }
+      if (state === "race" && p >= 1) finishRace();
+    }
+  }
+
+  function drawEgg(t) {
+    const pulse = reduceMotion ? 0 : Math.sin(t * 2) * 2;
+    const won = state === "result";
+    // glow
+    const g = ctx.createRadialGradient(cx, cy, eggR * 0.2, cx, cy, eggR * 2.1);
+    g.addColorStop(0, won ? "rgba(255,216,74,0.35)" : "rgba(255,143,184,0.22)");
+    g.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(cx, cy, eggR * 2.1, 0, Math.PI * 2); ctx.fill();
+    // corona ring
+    ctx.strokeStyle = won ? COLORS.yellow : COLORS.eggRim;
+    ctx.lineWidth = 3;
+    ctx.setLineDash([4, 6]);
+    ctx.beginPath(); ctx.arc(cx, cy, eggR + 10 + pulse, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]);
+    // body
+    ctx.fillStyle = COLORS.egg;
+    ctx.beginPath(); ctx.arc(cx, cy, eggR + pulse * 0.5, 0, Math.PI * 2); ctx.fill();
+    // nucleus
+    ctx.fillStyle = "rgba(255,79,168,0.35)";
+    ctx.beginPath(); ctx.arc(cx - eggR * 0.18, cy - eggR * 0.12, eggR * 0.32, 0, Math.PI * 2); ctx.fill();
+    // label
+    ctx.fillStyle = "#0b0820";
+    ctx.font = Math.max(8, Math.round(eggR * 0.16)) + "px 'Press Start 2P', monospace";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText("EGG", cx, cy + eggR * 0.38);
+  }
+
+  function drawSwimmer(s, t) {
+    const isPick = s.n === picked;
+    const isWin = state === "result" && s.n === winner;
+    const color = isWin ? COLORS.yellow : isPick ? COLORS.pink : COLORS.cyan;
+    const size = Math.max(7, W * 0.016);
+    ctx.save();
+    ctx.globalAlpha = s.alpha;
+    ctx.translate(s.x, s.y);
+    ctx.rotate(s.heading);
+    // tail
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(1.5, size * 0.28);
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    const speed = state === "race" ? 14 : 6;
+    const tailLen = size * 5;
+    for (let i = 0; i <= 14; i++) {
+      const u = i / 14;
+      const x = -size * 0.9 - u * tailLen;
+      const y = (reduceMotion ? 0 : Math.sin(t * speed + s.phase - u * 6)) * size * 0.6 * u;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    // head
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.ellipse(0, 0, size * 1.15, size * 0.8, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+
+    // number tag (upright)
+    ctx.save();
+    ctx.globalAlpha = s.alpha;
+    const fs = Math.max(8, Math.round(W * 0.016));
+    ctx.font = fs + "px 'Press Start 2P', monospace";
+    ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+    const label = pad(s.n);
+    const ly = s.y - size * 1.4;
+    if (isPick || isWin) {
+      const w = ctx.measureText(label).width + 8;
+      ctx.fillStyle = color;
+      ctx.fillRect(s.x - w / 2, ly - fs - 5, w, fs + 6);
+      ctx.fillStyle = "#0b0820";
+    } else {
+      ctx.fillStyle = COLORS.text;
+    }
+    ctx.fillText(label, s.x, ly);
+    if (isPick && state !== "race") {
+      ctx.strokeStyle = COLORS.pink; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(s.x, s.y, size * 2.4 + (reduceMotion ? 0 : Math.sin(t * 6) * 2), 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawGrid() {
+    ctx.strokeStyle = "rgba(42,33,96,0.55)";
+    ctx.lineWidth = 1;
+    const step = Math.max(24, W / 16);
+    for (let x = step; x < W; x += step) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+    for (let y = step; y < H; y += step) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+  }
+
+  function frame(now) {
+    const t = now / 1000;
+    update(now);
+    ctx.fillStyle = "#07051a";
+    ctx.fillRect(0, 0, W, H);
+    drawGrid();
+    drawEgg(t);
+    // draw picked and winner last so they sit on top
+    const order = swimmers.slice().sort((a, b) => {
+      const w = s => (s.n === winner && state === "result") ? 2 : s.n === picked ? 1 : 0;
+      return w(a) - w(b);
+    });
+    for (const s of order) drawSwimmer(s, t);
+    requestAnimationFrame(frame);
+  }
+
+  resize();
+  // place swimmers before the first frame so taps work immediately
+  update(performance.now());
+  requestAnimationFrame(frame);
+})();
+</script>
