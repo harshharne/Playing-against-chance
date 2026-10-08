@@ -82,20 +82,13 @@ canvas { display: block; width: 100%; height: 100%; cursor: crosshair; touch-act
   pointer-events: none;
   background: repeating-linear-gradient(to bottom, rgba(0,0,0,0) 0 2px, rgba(0,0,0,0.22) 2px 3px);
 }
-.banner {
-  position: absolute; left: 0; right: 0; top: 50%;
-  transform: translateY(-50%);
-  display: flex; flex-direction: column; align-items: center; gap: 10px;
-  padding: 18px 12px;
-  background: rgba(7, 5, 26, 0.86);
-  border-block: 3px solid var(--pink);
+.result {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
   text-align: center;
-  pointer-events: none;
 }
-.banner .big { font-family: var(--pixel); font-size: clamp(16px, 4.6vw, 24px); color: var(--yellow); text-shadow: 2px 2px 0 var(--pink); }
-.banner .small { font-size: 22px; color: var(--text); }
-.banner.lose { border-color: var(--red); }
-.banner.lose .big { color: var(--red); text-shadow: 2px 2px 0 var(--ink); }
+.result .big { font-family: var(--pixel); font-size: clamp(16px, 4.6vw, 22px); color: var(--yellow); text-shadow: 2px 2px 0 var(--pink); }
+.result .small { font-size: 22px; color: var(--text); }
+.result.lose .big { color: var(--red); text-shadow: 2px 2px 0 var(--ink); }
 .ticker {
   font-family: var(--pixel);
   font-size: 11px;
@@ -177,10 +170,11 @@ button:focus-visible { outline: 3px solid var(--cyan); outline-offset: 2px; }
 
   <div class="screen">
     <canvas id="pond" aria-label="Twenty numbered sperm swimming around an egg. Tap one to choose it."></canvas>
-    <div class="banner" id="banner" hidden>
-      <div class="big" id="bannerBig"></div>
-      <div class="small" id="bannerSmall"></div>
-    </div>
+  </div>
+
+  <div class="result" id="result" hidden aria-live="polite">
+    <div class="big" id="resultBig"></div>
+    <div class="small" id="resultSmall"></div>
   </div>
 
   <div class="ticker" id="ticker"><span class="blink">TAP A SWIMMER TO CHOOSE WHO YOU ARE</span></div>
@@ -198,7 +192,10 @@ button:focus-visible { outline: 3px solid var(--cyan); outline-offset: 2px; }
 <script>
 (() => {
   const N = 20;
-  const RANDOM_ORG = "https://www.random.org/integers/?num=1&min=1&max=" + N + "&col=1&base=10&format=plain&rnd=new";
+  // random.org JSON-RPC API (v4). Anyone who can open this file can read this key.
+  const RANDOM_ORG_API_KEY = (() => { try { return localStorage.getItem("RANDOM_ORG_KEY") || ""; } catch (e) { return ""; } })();
+  const RANDOM_ORG_API = "https://api.random.org/json-rpc/4/invoke";
+  const RANDOM_ORG_PLAIN = "https://www.random.org/integers/?num=1&min=1&max=" + N + "&col=1&base=10&format=plain&rnd=new";
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   const canvas = document.getElementById("pond");
@@ -207,9 +204,9 @@ button:focus-visible { outline: 3px solid var(--cyan); outline-offset: 2px; }
   const goBtn = document.getElementById("goBtn");
   const soundBtn = document.getElementById("soundBtn");
   const ticker = document.getElementById("ticker");
-  const banner = document.getElementById("banner");
-  const bannerBig = document.getElementById("bannerBig");
-  const bannerSmall = document.getElementById("bannerSmall");
+  const resultBox = document.getElementById("result");
+  const resultBig = document.getElementById("resultBig");
+  const resultSmall = document.getElementById("resultSmall");
   const hud = {
     tries: document.getElementById("hudTries"),
     born: document.getElementById("hudBorn"),
@@ -225,7 +222,9 @@ button:focus-visible { outline: 3px solid var(--cyan); outline-offset: 2px; }
   let winner = null;
   let tries = 0, born = 0;
   let raceStart = 0;
-  const RACE_MS = reduceMotion ? 1200 : 3400;
+  const SWIM_MS = reduceMotion ? 900 : 2600;     // winner swims to the egg
+  const ENTER_MS = reduceMotion ? 400 : 1100;    // winner pushes through the membrane
+  const RACE_MS = SWIM_MS + ENTER_MS;
 
   // ---------- swimmers ----------
   const swimmers = [];
@@ -289,28 +288,67 @@ button:focus-visible { outline: 3px solid var(--cyan); outline-offset: 2px; }
   });
 
   // ---------- chance ----------
-  async function drawChance() {
+  async function withTimeout(fn, ms) {
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 5000);
-    try {
-      const res = await fetch(RANDOM_ORG, { signal: ctrl.signal, cache: "no-store" });
+    const timer = setTimeout(() => ctrl.abort(), ms);
+    try { return await fn(ctrl.signal); } finally { clearTimeout(timer); }
+  }
+
+  // 1st choice: random.org API with your key
+  async function fromApi() {
+    if (!RANDOM_ORG_API_KEY) throw new Error("no key");
+    return withTimeout(async (signal) => {
+      const res = await fetch(RANDOM_ORG_API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          method: "generateIntegers",
+          params: { apiKey: RANDOM_ORG_API_KEY, n: 1, min: 1, max: N, replacement: true },
+          id: Date.now(),
+        }),
+        signal,
+      });
+      const json = await res.json();
+      if (json.error) throw new Error(json.error.message);
+      return json.result.random.data[0];
+    }, 5000);
+  }
+
+  // 2nd choice: random.org's public (keyless) endpoint
+  async function fromPlain() {
+    return withTimeout(async (signal) => {
+      const res = await fetch(RANDOM_ORG_PLAIN, { signal, cache: "no-store" });
       if (!res.ok) throw new Error("status " + res.status);
-      const n = parseInt((await res.text()).trim(), 10);
-      if (!(n >= 1 && n <= N)) throw new Error("bad value");
-      hud.source.textContent = "RANDOM.ORG";
-      hud.source.classList.remove("warn");
-      return n;
-    } catch (err) {
-      // random.org unreachable (offline, blocked, or quota). Use the browser's own secure randomness.
-      const buf = new Uint32Array(1);
-      let v;
-      do { crypto.getRandomValues(buf); v = buf[0]; } while (v >= Math.floor(0x100000000 / N) * N);
-      hud.source.textContent = "LOCAL RNG";
-      hud.source.classList.add("warn");
-      return (v % N) + 1;
-    } finally {
-      clearTimeout(timer);
+      return parseInt((await res.text()).trim(), 10);
+    }, 4000);
+  }
+
+  // Last resort: the browser's own secure randomness (unbiased)
+  function fromLocal() {
+    const buf = new Uint32Array(1);
+    let v;
+    do { crypto.getRandomValues(buf); v = buf[0]; } while (v >= Math.floor(0x100000000 / N) * N);
+    return (v % N) + 1;
+  }
+
+  async function drawChance() {
+    const sources = [["RANDOM.ORG API", fromApi], ["RANDOM.ORG", fromPlain]];
+    for (const [label, fn] of sources) {
+      try {
+        const n = await fn();
+        if (n >= 1 && n <= N) {
+          hud.source.textContent = label;
+          hud.source.classList.remove("warn");
+          return n;
+        }
+      } catch (err) {
+        console.warn(label + " failed:", err.message || err);
+      }
     }
+    hud.source.textContent = "LOCAL RNG";
+    hud.source.classList.add("warn");
+    return fromLocal();
   }
 
   goBtn.addEventListener("click", async () => {
@@ -328,15 +366,20 @@ button:focus-visible { outline: 3px solid var(--cyan); outline-offset: 2px; }
   function startRace() {
     tries++;
     hud.tries.textContent = tries;
-    for (const s of swimmers) {
-      s.startX = s.x; s.startY = s.y;
-      s.alpha = 1;
-      if (s.n === winner) { s.reach = 1; s.stall = 0.92 + Math.random() * 0.04; }
-      else { s.reach = 0.35 + Math.random() * 0.55; s.stall = 0.45 + Math.random() * 0.45; }
-    }
+    const w = swimmers.find(s => s.n === winner);
+    w.startX = w.x; w.startY = w.y;
+    w.entryAngle = Math.atan2(w.y - cy, w.x - cx);   // where it meets the egg
+    // control point for a gentle curved approach
+    const side = Math.random() < 0.5 ? -1 : 1;
+    const mx = (w.x + cx) / 2, my = (w.y + cy) / 2;
+    const off = Math.hypot(w.x - cx, w.y - cy) * 0.35 * side;
+    w.ctrlX = mx - Math.sin(w.entryAngle) * off;
+    w.ctrlY = my + Math.cos(w.entryAngle) * off;
+    for (const s of swimmers) s.alpha = 1;
+    fertilizedAt = 0;
     raceStart = performance.now();
     state = "race";
-    setTicker("GO GO GO!", false);
+    setTicker("SWIMMER #" + pad(winner) + " IS ON ITS WAY...", false);
     raceMusic();
   }
 
@@ -345,10 +388,10 @@ button:focus-visible { outline: 3px solid var(--cyan); outline-offset: 2px; }
     const win = winner === picked;
     if (win) born++;
     hud.born.textContent = born;
-    banner.hidden = false;
-    banner.classList.toggle("lose", !win);
-    bannerBig.textContent = win ? "YOU WERE BORN!" : "NOT THIS TIME";
-    bannerSmall.textContent = win
+    resultBox.hidden = false;
+    resultBox.classList.toggle("lose", !win);
+    resultBig.textContent = win ? "YOU WERE BORN!" : "NOT THIS TIME";
+    resultSmall.textContent = win
       ? "Swimmer #" + pad(winner) + " made it. Against the odds, here you are."
       : "Swimmer #" + pad(winner) + " was born. You were #" + pad(picked) + ".";
     setTicker("TAP THE SCREEN OR PRESS AGAIN", true);
