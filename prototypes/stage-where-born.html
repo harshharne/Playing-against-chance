@@ -1,0 +1,416 @@
+<title>Where You're Born</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap">
+<style>
+/* Layout: same arcade cabinet; the screen is "100 babies born today", a 10x10 grid weighted by real births. Single dark theme. */
+:root {
+  --ink: #0b0820;
+  --cabinet: #151036;
+  --glass: #07051a;
+  --grid: #2a2160;
+  --text: #e9e6ff;
+  --dim: #8a84bf;
+  --cyan: #3ef0ff;
+  --pink: #ff4fa8;
+  --yellow: #ffd84a;
+  --r1: #ff8a3d;   /* Sub-Saharan Africa */
+  --r2: #ffd84a;   /* South & Central Asia */
+  --r3: #3ef0ff;   /* East & Southeast Asia, Oceania */
+  --r4: #6dff9c;   /* Middle East & North Africa */
+  --r5: #c38bff;   /* Latin America & Caribbean */
+  --r6: #6f97ff;   /* Europe & North America */
+  --pixel: "Press Start 2P", "Courier New", monospace;
+  --term: "VT323", "Courier New", monospace;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body { background: var(--ink); color: var(--text); font-family: var(--term); font-size: 20px; padding-inline: 16px; padding-block: 20px 32px; }
+.cab { max-width: 620px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+header { display: flex; flex-direction: column; gap: 8px; text-align: center; }
+.marquee { font-family: var(--pixel); font-size: 10px; letter-spacing: 0.18em; color: var(--dim); }
+h1 { margin: 0; font-family: var(--pixel); font-size: clamp(16px, 4.6vw, 26px); line-height: 1.4; color: var(--yellow); text-shadow: 3px 3px 0 var(--pink); text-wrap: balance; }
+.hud { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; font-family: var(--pixel); font-size: 9px; line-height: 1.6; }
+.hud div { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.hud span { color: var(--dim); letter-spacing: 0.08em; }
+.hud b { color: var(--cyan); font-weight: 400; font-size: 12px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.hud b.warn { color: var(--yellow); }
+@media (max-width: 460px) { .hud { grid-template-columns: repeat(2, 1fr); } }
+
+.screen { position: relative; border: 4px solid var(--grid); border-radius: 14px; background: var(--glass); box-shadow: 0 0 0 4px var(--cabinet), 0 0 40px rgba(255, 216, 74, 0.08) inset; overflow: hidden; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.screen::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(to bottom, rgba(0,0,0,0) 0 2px, rgba(0,0,0,0.2) 2px 3px); }
+.screen-title { font-family: var(--pixel); font-size: 10px; color: var(--dim); text-align: center; letter-spacing: 0.1em; }
+.babies { display: grid; grid-template-columns: repeat(10, 1fr); gap: 4px; }
+.baby { aspect-ratio: 1 / 1; border-radius: 3px; position: relative; background: var(--c); opacity: 0.55; transition: opacity 0.15s, transform 0.15s; }
+.baby::before { content: ""; position: absolute; left: 33%; top: 18%; width: 34%; height: 34%; border-radius: 50%; background: var(--glass); opacity: 0.55; }
+.baby::after { content: ""; position: absolute; left: 22%; bottom: 14%; width: 56%; height: 22%; border-radius: 2px; background: var(--glass); opacity: 0.35; }
+.baby.wish { opacity: 1; box-shadow: 0 0 0 2px var(--pink); }
+.baby.hot { opacity: 1; transform: scale(1.18); box-shadow: 0 0 0 2px #fff; z-index: 2; }
+.baby.land { opacity: 1; transform: scale(1.3); box-shadow: 0 0 0 3px #fff, 0 0 18px var(--c); z-index: 3; }
+.babies.done .baby:not(.land) { opacity: 0.18; }
+
+.reel { display: flex; flex-direction: column; gap: 6px; }
+.reel[hidden] { display: none; }
+.reel-head { display: flex; justify-content: space-between; font-family: var(--pixel); font-size: 9px; color: var(--dim); gap: 8px; }
+.bar { position: relative; height: 26px; display: flex; border-radius: 4px; overflow: hidden; border: 2px solid var(--grid); }
+.bar .seg { display: grid; place-items: center; font-family: var(--pixel); font-size: 8px; color: var(--ink); min-width: 0; overflow: hidden; white-space: nowrap; }
+.bar .village { background: #6dbb6a; }
+.bar .city { background: #b9b4e6; }
+.needle { position: absolute; top: -2px; bottom: -2px; width: 4px; background: var(--pink); box-shadow: 0 0 8px var(--pink); left: 0; transform: translateX(-2px); }
+
+.legend { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 14px; font-size: 18px; line-height: 1.1; }
+.legend div { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.legend i { width: 12px; height: 12px; border-radius: 2px; background: var(--c); flex: none; }
+.legend b { font-weight: 400; color: var(--text); margin-left: auto; font-variant-numeric: tabular-nums; }
+@media (max-width: 420px) { .legend { grid-template-columns: 1fr; } }
+
+.result { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; }
+.result .big { font-family: var(--pixel); font-size: clamp(14px, 4.2vw, 20px); line-height: 1.5; color: var(--yellow); text-shadow: 2px 2px 0 var(--pink); text-wrap: balance; }
+.result .small { font-size: 22px; color: var(--text); max-width: 34em; }
+.result .small em { font-style: normal; color: var(--pink); }
+
+.ticker { font-family: var(--pixel); font-size: 11px; line-height: 1.8; color: var(--cyan); min-height: 2.2em; text-align: center; }
+.ticker .blink { animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+
+.picker-label { font-family: var(--pixel); font-size: 9px; color: var(--dim); text-align: center; letter-spacing: 0.08em; }
+.picker { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.picker button { display: flex; align-items: center; gap: 10px; text-align: left; font-family: var(--pixel); font-size: 9px; line-height: 1.6; padding: 10px 12px; background: var(--cabinet); color: var(--text); border: 2px solid var(--grid); border-radius: 8px; cursor: pointer; min-width: 0; }
+.picker button i { width: 12px; height: 12px; border-radius: 2px; background: var(--c); flex: none; }
+.picker button span { flex: 1; min-width: 0; }
+.picker button small { font-size: 9px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.picker button:hover:not(:disabled) { border-color: var(--pink); }
+.picker button[aria-pressed="true"] { border-color: var(--pink); background: #2a1240; }
+.picker button[aria-pressed="true"] small { color: var(--pink); }
+.picker button:disabled { opacity: 0.45; cursor: default; }
+@media (max-width: 420px) { .picker { grid-template-columns: 1fr; } }
+
+.controls { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+.go { font-family: var(--pixel); font-size: 14px; padding: 16px 26px; background: var(--yellow); color: var(--ink); border: 0; border-radius: 8px; box-shadow: 0 6px 0 #b8902a; cursor: pointer; letter-spacing: 0.06em; }
+.go:active:not(:disabled) { transform: translateY(4px); box-shadow: 0 2px 0 #b8902a; }
+.go:disabled { background: var(--grid); color: var(--dim); box-shadow: 0 6px 0 var(--cabinet); cursor: default; }
+.ghost { font-family: var(--pixel); font-size: 10px; padding: 14px 16px; background: transparent; color: var(--dim); border: 2px solid var(--grid); border-radius: 8px; cursor: pointer; }
+button:focus-visible { outline: 3px solid var(--cyan); outline-offset: 2px; }
+.foot { font-size: 17px; color: var(--dim); text-align: center; line-height: 1.3; }
+@media (prefers-reduced-motion: reduce) { .ticker .blink { animation: none; } .baby { transition: none; } }
+</style>
+
+<div class="cab">
+  <header>
+    <div class="marquee">PLAYING AGAINST CHANCE</div>
+    <h1>WHERE &amp; TO WHOM YOU'RE BORN</h1>
+  </header>
+
+  <div class="hud" aria-live="polite">
+    <div><span>LIVES</span><b id="hudTries">0</b></div>
+    <div><span>WISH CAME TRUE</span><b id="hudWins">0</b></div>
+    <div><span>YOU WISH FOR</span><b id="hudPick">--</b></div>
+    <div><span>CHANCE BY</span><b id="hudSource">RANDOM.ORG</b></div>
+  </div>
+
+  <div class="screen">
+    <div class="screen-title">OF EVERY 100 BABIES BORN TODAY</div>
+    <div class="babies" id="babies" aria-label="100 babies, coloured by the region they are born in"></div>
+    <div class="reel" id="reel" hidden>
+      <div class="reel-head"><span>TO WHOM: A FAMILY IN A...</span><span id="reelOdds"></span></div>
+      <div class="bar" id="bar">
+        <div class="seg village" id="segVillage">VILLAGE</div>
+        <div class="seg city" id="segCity">CITY</div>
+        <div class="needle" id="needle"></div>
+      </div>
+    </div>
+    <div class="legend" id="legend"></div>
+  </div>
+
+  <div class="result" id="result" hidden aria-live="polite">
+    <div class="big" id="resultBig"></div>
+    <div class="small" id="resultSmall"></div>
+  </div>
+
+  <div class="ticker" id="ticker"><span class="blink">WHERE WOULD YOU LIKE TO BE BORN?</span></div>
+
+  <div class="picker-label">MAKE A WISH</div>
+  <div class="picker" id="picker" role="group" aria-label="Choose where you would like to be born"></div>
+
+  <div class="controls">
+    <button class="go" id="goBtn" disabled>BE BORN!</button>
+    <button class="ghost" id="soundBtn" aria-pressed="true">SOUND ON</button>
+  </div>
+
+  <p class="foot">Each square is one baby. Regions are sized by their real share of the world's births, worked out from UN Demographic Yearbook 2023 birth rates and populations. The city/village split uses rounded estimates of each region's urban share.</p>
+</div>
+
+<script>
+(() => {
+  // Share of world births out of 100, from UN DYB 2023 (population x crude birth rate), rounded.
+  // urban = approximate % of people living in cities in that region.
+  const REGIONS = [
+    { id: 1, name: "SUB-SAHARAN AFRICA",        short: "S-S AFRICA",  babies: 31, urban: 43, c: "var(--r1)" },
+    { id: 2, name: "SOUTH & CENTRAL ASIA",      short: "S ASIA",      babies: 29, urban: 37, c: "var(--r2)" },
+    { id: 3, name: "EAST ASIA & PACIFIC",       short: "E ASIA",      babies: 16, urban: 62, c: "var(--r3)" },
+    { id: 4, name: "MIDDLE EAST & N. AFRICA",   short: "MENA",        babies: 9,  urban: 66, c: "var(--r4)" },
+    { id: 5, name: "LATIN AMERICA & CARIBBEAN", short: "LATAM",       babies: 7,  urban: 82, c: "var(--r5)" },
+    { id: 6, name: "EUROPE & NORTH AMERICA",    short: "EUR & N AM",  babies: 8,  urban: 77, c: "var(--r6)" },
+  ];
+  const TOTAL = REGIONS.reduce((s, r) => s + r.babies, 0);   // 100
+
+  // random.org JSON-RPC API (v4). Anyone who can open this file can read this key.
+  const RANDOM_ORG_API_KEY = (() => { try { return localStorage.getItem("RANDOM_ORG_KEY") || ""; } catch (e) { return ""; } })();
+  const RANDOM_ORG_API = "https://api.random.org/json-rpc/4/invoke";
+  const plainUrl = (n) => "https://www.random.org/integers/?num=" + n + "&min=1&max=100&col=1&base=10&format=plain&rnd=new";
+
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const $ = (id) => document.getElementById(id);
+  const babiesEl = $("babies"), legendEl = $("legend"), picker = $("picker");
+  const reel = $("reel"), needle = $("needle"), segVillage = $("segVillage"), segCity = $("segCity"), reelOdds = $("reelOdds");
+  const goBtn = $("goBtn"), soundBtn = $("soundBtn"), ticker = $("ticker");
+  const resultBox = $("result"), resultBig = $("resultBig"), resultSmall = $("resultSmall");
+  const hud = { tries: $("hudTries"), wins: $("hudWins"), pick: $("hudPick"), source: $("hudSource") };
+
+  let state = "pick";      // pick | drawing | result
+  let wish = null;
+  let tries = 0, wins = 0;
+
+  // ---------- build the 100 babies, grouped by region ----------
+  const cells = [];        // index 0..99 -> region
+  for (const r of REGIONS) for (let i = 0; i < r.babies; i++) cells.push(r);
+  cells.forEach((r, i) => {
+    const d = document.createElement("div");
+    d.className = "baby";
+    d.style.setProperty("--c", r.c);
+    d.dataset.region = r.id;
+    d.title = r.name;
+    babiesEl.appendChild(d);
+  });
+  const babyEls = [...babiesEl.children];
+
+  for (const r of REGIONS) {
+    const l = document.createElement("div");
+    l.style.setProperty("--c", r.c);
+    l.innerHTML = "<i></i><span></span><b></b>";
+    l.querySelector("span").textContent = r.name;
+    l.querySelector("b").textContent = r.babies;
+    legendEl.appendChild(l);
+
+    const b = document.createElement("button");
+    b.id = "wish-" + r.id;
+    b.style.setProperty("--c", r.c);
+    b.setAttribute("aria-pressed", "false");
+    b.innerHTML = "<i></i><span></span><small></small>";
+    b.querySelector("span").textContent = r.name;
+    b.querySelector("small").textContent = r.babies + "%";
+    b.addEventListener("click", () => choose(r.id));
+    picker.appendChild(b);
+  }
+
+  function choose(id) {
+    if (state !== "pick") return;
+    wish = id;
+    const r = REGIONS[id - 1];
+    hud.pick.textContent = r.short;
+    picker.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b.id === "wish-" + id)));
+    babyEls.forEach(el => el.classList.toggle("wish", +el.dataset.region === id));
+    goBtn.disabled = false;
+    setTicker("YOU WISH FOR " + r.name + ". " + r.babies + " IN 100 BABIES ARE BORN THERE.", true);
+    beep(660, 0.06);
+  }
+  babiesEl.addEventListener("click", (e) => {
+    const el = e.target.closest(".baby");
+    if (!el) return;
+    if (state === "result") { reset(); return; }
+    choose(+el.dataset.region);
+  });
+
+  // ---------- chance: two numbers from 1 to 100 ----------
+  async function withTimeout(fn, ms) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), ms);
+    try { return await fn(ctrl.signal); } finally { clearTimeout(timer); }
+  }
+  async function fromApi() {
+    if (!RANDOM_ORG_API_KEY) throw new Error("no key");
+    return withTimeout(async (signal) => {
+      const res = await fetch(RANDOM_ORG_API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", method: "generateIntegers", params: { apiKey: RANDOM_ORG_API_KEY, n: 2, min: 1, max: 100, replacement: true }, id: Date.now() }),
+        signal,
+      });
+      const json = await res.json();
+      if (json.error) throw new Error(json.error.message);
+      return json.result.random.data;
+    }, 5000);
+  }
+  async function fromPlain() {
+    return withTimeout(async (signal) => {
+      const res = await fetch(plainUrl(2), { signal, cache: "no-store" });
+      if (!res.ok) throw new Error("status " + res.status);
+      return (await res.text()).trim().split(/\s+/).map(v => parseInt(v, 10));
+    }, 4000);
+  }
+  function fromLocal() {
+    const out = [], buf = new Uint32Array(1);
+    while (out.length < 2) {
+      crypto.getRandomValues(buf);
+      if (buf[0] < Math.floor(0x100000000 / 100) * 100) out.push((buf[0] % 100) + 1);
+    }
+    return out;
+  }
+  async function drawChance() {
+    for (const [label, fn] of [["RANDOM.ORG API", fromApi], ["RANDOM.ORG", fromPlain]]) {
+      try {
+        const v = await fn();
+        if (v.length === 2 && v.every(n => n >= 1 && n <= 100)) { hud.source.textContent = label; hud.source.classList.remove("warn"); return v; }
+      } catch (err) { console.warn(label + " failed:", err.message || err); }
+    }
+    hud.source.textContent = "LOCAL RNG";
+    hud.source.classList.add("warn");
+    return fromLocal();
+  }
+
+  // ---------- the draw ----------
+  goBtn.addEventListener("click", async () => {
+    if (state === "result") { reset(); return; }
+    if (state !== "pick" || wish == null) return;
+    unlockAudio();
+    state = "drawing";
+    goBtn.disabled = true;
+    picker.querySelectorAll("button").forEach(b => b.disabled = true);
+    setTicker("A NEW LIFE IS ON ITS WAY...", true);
+    const [whereN, whomN] = await drawChance();
+    tries++;
+    hud.tries.textContent = tries;
+
+    const idx = whereN - 1;                  // which of the 100 babies you are
+    const region = cells[idx];
+    setTicker("WHERE...", false);
+    await runGrid(idx);
+
+    const isCity = whomN > (100 - region.urban);   // 1..(100-urban) = village, rest = city
+    setTicker("TO WHOM...", false);
+    await runReel(region, whomN);
+
+    finish(region, isCity);
+  });
+
+  function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+  async function runGrid(target) {
+    const laps = reduceMotion ? 0 : 1;
+    const steps = laps * 100 + target;
+    let prev = null;
+    for (let i = 0; i <= steps; i++) {
+      const el = babyEls[i % 100];
+      if (prev) prev.classList.remove("hot");
+      el.classList.add("hot");
+      prev = el;
+      if (i % 2 === 0) beep(300 + (i % 100) * 6, 0.025);
+      const remaining = steps - i;
+      await sleep(reduceMotion ? 8 : 10 + Math.max(0, 16 - remaining) * 24);
+    }
+    prev.classList.remove("hot");
+    babyEls[target].classList.add("land");
+    babiesEl.classList.add("done");
+    beep(880, 0.12); beep(1175, 0.16, "square", 0.12);
+    await sleep(700);
+  }
+
+  async function runReel(region, n) {
+    const village = 100 - region.urban;
+    segVillage.style.flexBasis = village + "%";
+    segCity.style.flexBasis = region.urban + "%";
+    reelOdds.textContent = "IN " + region.short + ": " + village + "% VILLAGE · " + region.urban + "% CITY";
+    reel.hidden = false;
+    const targetPos = (n - 0.5);             // percent along the bar
+    const start = performance.now();
+    const dur = reduceMotion ? 300 : 1800;
+    let lastTick = 0;
+    await new Promise((resolve) => {
+      const step = (now) => {
+        const k = Math.min(1, (now - start) / dur);
+        // sweep back and forth, settling on the target
+        const swing = reduceMotion ? 0 : Math.sin(k * Math.PI * 5) * 45 * (1 - k);
+        const pos = Math.max(0, Math.min(100, targetPos + swing));
+        needle.style.left = pos + "%";
+        if (now - lastTick > 70 && k < 1) { beep(500 + pos * 4, 0.02, "triangle"); lastTick = now; }
+        if (k < 1) requestAnimationFrame(step); else resolve();
+      };
+      requestAnimationFrame(step);
+    });
+    beep(660, 0.1); beep(990, 0.14, "square", 0.1);
+    await sleep(500);
+  }
+
+  function finish(region, isCity) {
+    state = "result";
+    const wished = REGIONS[wish - 1];
+    const gotWish = region.id === wish;
+    if (gotWish) wins++;
+    hud.wins.textContent = wins;
+    resultBox.hidden = false;
+    resultBig.textContent = "YOU WERE BORN IN " + region.name;
+    const place = isCity ? "a city" : "a village";
+    const wishLine = gotWish
+      ? "That's where you wished to be. " + wished.babies + " in 100 babies get that wish today."
+      : "You wished for " + wished.name.toLowerCase().replace(/\b\w/g, c => c.toUpperCase()) + ". Only " + wished.babies + " in 100 babies are born there.";
+    resultSmall.innerHTML = "";
+    const a = document.createElement("span");
+    a.textContent = "To a family in " + place + ". ";
+    const b = document.createElement("em");
+    b.textContent = wishLine;
+    resultSmall.append(a, b);
+    setTicker("NOBODY CHOOSES THIS PART. PRESS AGAIN TO BE BORN ELSEWHERE.", true);
+    goBtn.textContent = "AGAIN";
+    goBtn.disabled = false;
+    if (gotWish) [523, 659, 784, 1046].forEach((f, i) => beep(f, 0.14, "square", i * 0.12));
+    else [440, 392, 349, 330].forEach((f, i) => beep(f, 0.18, "triangle", i * 0.15));
+  }
+
+  function reset() {
+    state = "pick";
+    wish = null;
+    babyEls.forEach(el => el.classList.remove("wish", "hot", "land"));
+    babiesEl.classList.remove("done");
+    reel.hidden = true;
+    resultBox.hidden = true;
+    goBtn.textContent = "BE BORN!";
+    goBtn.disabled = true;
+    hud.pick.textContent = "--";
+    picker.querySelectorAll("button").forEach(b => { b.disabled = false; b.setAttribute("aria-pressed", "false"); });
+    setTicker("WHERE WOULD YOU LIKE TO BE BORN?", true);
+  }
+
+  function setTicker(msg, blink) {
+    ticker.innerHTML = "";
+    const s = document.createElement("span");
+    if (blink) s.className = "blink";
+    s.textContent = msg;
+    ticker.appendChild(s);
+  }
+
+  // ---------- sound ----------
+  let audio = null, soundOn = true;
+  function unlockAudio() {
+    if (!audio) { try { audio = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { audio = null; } }
+    if (audio && audio.state === "suspended") audio.resume();
+  }
+  function beep(freq, dur, type = "square", delay = 0) {
+    if (!soundOn || !audio) return;
+    const t = audio.currentTime + delay;
+    const o = audio.createOscillator(), g = audio.createGain();
+    o.type = type; o.frequency.setValueAtTime(freq, t);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.06, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g).connect(audio.destination);
+    o.start(t); o.stop(t + dur + 0.02);
+  }
+  soundBtn.addEventListener("click", () => {
+    unlockAudio();
+    soundOn = !soundOn;
+    soundBtn.textContent = soundOn ? "SOUND ON" : "SOUND OFF";
+    soundBtn.setAttribute("aria-pressed", String(soundOn));
+    if (soundOn) beep(880, 0.05);
+  });
+  document.addEventListener("pointerdown", unlockAudio, { once: true });
+})();
+</script>
