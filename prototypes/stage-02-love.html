@@ -1,0 +1,584 @@
+<title>Stage 02 Love</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap">
+<style>
+/* Layout: same arcade cabinet as Stage 01; the screen is a pixel city at night. Deliberately single dark theme. */
+:root {
+  --ink: #0b0820;
+  --cabinet: #151036;
+  --glass: #07051a;
+  --grid: #2a2160;
+  --text: #e9e6ff;
+  --dim: #8a84bf;
+  --cyan: #3ef0ff;
+  --pink: #ff4fa8;
+  --yellow: #ffd84a;
+  --red: #ff5a4f;
+  --pixel: "Press Start 2P", "Courier New", monospace;
+  --term: "VT323", "Courier New", monospace;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body { background: var(--ink); color: var(--text); font-family: var(--term); font-size: 20px; padding-inline: 16px; padding-block: 20px 32px; }
+.cab { max-width: 620px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+header { display: flex; flex-direction: column; gap: 8px; text-align: center; }
+.marquee { font-family: var(--pixel); font-size: 10px; letter-spacing: 0.18em; color: var(--dim); }
+h1 { margin: 0; font-family: var(--pixel); font-size: clamp(18px, 5vw, 28px); line-height: 1.3; color: var(--pink); text-shadow: 3px 3px 0 var(--cabinet), 5px 5px 0 var(--yellow); text-wrap: balance; }
+.hud { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; font-family: var(--pixel); font-size: 9px; line-height: 1.6; }
+.hud div { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.hud span { color: var(--dim); letter-spacing: 0.08em; }
+.hud b { color: var(--cyan); font-weight: 400; font-size: 12px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.hud b.warn { color: var(--yellow); }
+@media (max-width: 460px) { .hud { grid-template-columns: repeat(2, 1fr); } }
+.screen { position: relative; border: 4px solid var(--grid); border-radius: 14px; background: var(--glass); box-shadow: 0 0 0 4px var(--cabinet), 0 0 40px rgba(255, 79, 168, 0.12) inset; overflow: hidden; aspect-ratio: 1 / 1; max-width: 100%; }
+canvas { display: block; width: 100%; height: 100%; cursor: pointer; touch-action: manipulation; }
+.screen::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(to bottom, rgba(0,0,0,0) 0 2px, rgba(0,0,0,0.2) 2px 3px); }
+.result { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; }
+.result .big { font-family: var(--pixel); font-size: clamp(16px, 4.6vw, 22px); color: var(--pink); text-shadow: 2px 2px 0 var(--yellow); }
+.result .small { font-size: 22px; color: var(--text); }
+.result.miss .big { color: var(--cyan); text-shadow: 2px 2px 0 var(--ink); }
+.ticker { font-family: var(--pixel); font-size: 11px; line-height: 1.8; color: var(--cyan); min-height: 2.2em; text-align: center; }
+.ticker .blink { animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.picker { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.picker button { font-family: var(--pixel); font-size: 10px; line-height: 1.5; padding: 12px 4px; background: var(--cabinet); color: var(--text); border: 2px solid var(--grid); border-radius: 8px; cursor: pointer; }
+.picker button:hover:not(:disabled) { border-color: var(--pink); }
+.picker button[aria-pressed="true"] { background: var(--pink); border-color: var(--yellow); color: var(--ink); }
+.picker button:disabled { opacity: 0.45; cursor: default; }
+.controls { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+.go { font-family: var(--pixel); font-size: 14px; padding: 16px 26px; background: var(--yellow); color: var(--ink); border: 0; border-radius: 8px; box-shadow: 0 6px 0 #b8902a; cursor: pointer; letter-spacing: 0.06em; }
+.go:active:not(:disabled) { transform: translateY(4px); box-shadow: 0 2px 0 #b8902a; }
+.go:disabled { background: var(--grid); color: var(--dim); box-shadow: 0 6px 0 var(--cabinet); cursor: default; }
+.ghost { font-family: var(--pixel); font-size: 10px; padding: 14px 16px; background: transparent; color: var(--dim); border: 2px solid var(--grid); border-radius: 8px; cursor: pointer; }
+button:focus-visible { outline: 3px solid var(--cyan); outline-offset: 2px; }
+.foot { font-size: 18px; color: var(--dim); text-align: center; line-height: 1.3; }
+.foot b { color: var(--text); font-weight: 400; }
+@media (prefers-reduced-motion: reduce) { .ticker .blink { animation: none; } }
+</style>
+
+<div class="cab">
+  <header>
+    <div class="marquee">PLAYING AGAINST CHANCE</div>
+    <h1>STAGE 02 · LOVE</h1>
+  </header>
+
+  <div class="hud" aria-live="polite">
+    <div><span>NIGHTS</span><b id="hudTries">0</b></div>
+    <div><span>MET</span><b id="hudMet">0</b></div>
+    <div><span>YOU GO TO</span><b id="hudPick">--</b></div>
+    <div><span>CHANCE BY</span><b id="hudSource">RANDOM.ORG</b></div>
+  </div>
+
+  <div class="screen">
+    <canvas id="city" aria-label="A small city at night with six places. You stand at home at the bottom. Tap a place to choose where you go tonight."></canvas>
+  </div>
+
+  <div class="result" id="result" hidden aria-live="polite">
+    <div class="big" id="resultBig"></div>
+    <div class="small" id="resultSmall"></div>
+  </div>
+
+  <div class="ticker" id="ticker"><span class="blink">WHERE WILL YOU GO TONIGHT?</span></div>
+
+  <div class="picker" id="picker" role="group" aria-label="Choose where to go"></div>
+
+  <div class="controls">
+    <button class="go" id="goBtn" disabled>GO OUT!</button>
+    <button class="ghost" id="soundBtn" aria-pressed="true">SOUND ON</button>
+  </div>
+
+  <p class="foot">Six places, one city, one person out there tonight.<br>Your odds of being in the same place: <b>1 in 6</b>.</p>
+</div>
+
+<script>
+(() => {
+  const N = 6;
+  // random.org JSON-RPC API (v4). Anyone who can open this file can read this key.
+  const RANDOM_ORG_API_KEY = (() => { try { return localStorage.getItem("RANDOM_ORG_KEY") || ""; } catch (e) { return ""; } })();
+  const RANDOM_ORG_API = "https://api.random.org/json-rpc/4/invoke";
+  const RANDOM_ORG_PLAIN = "https://www.random.org/integers/?num=1&min=1&max=" + N + "&col=1&base=10&format=plain&rnd=new";
+
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const $ = (id) => document.getElementById(id);
+  const canvas = $("city"), ctx = canvas.getContext("2d");
+  const picker = $("picker"), goBtn = $("goBtn"), soundBtn = $("soundBtn"), ticker = $("ticker");
+  const resultBox = $("result"), resultBig = $("resultBig"), resultSmall = $("resultSmall");
+  const hud = { tries: $("hudTries"), met: $("hudMet"), pick: $("hudPick"), source: $("hudSource") };
+  const C = { night: "#07051a", road: "#1b1640", lane: "#3a3270", text: "#e9e6ff", dim: "#8a84bf", cyan: "#3ef0ff", pink: "#ff4fa8", yellow: "#ffd84a", window: "#ffd84a", tree: "#1f5b4a", ink: "#0b0820" };
+
+  // ---------- the city (all coordinates are fractions of the screen) ----------
+  const ROAD_Y = [0.30, 0.62, 0.86];          // horizontal streets
+  const ROAD_X = [0.333, 0.667];              // vertical streets
+  const COL = [0.167, 0.5, 0.833];
+  const HOME = { x: 0.5, y: 0.965 };
+  const PLACES = [
+    { n: 1, name: "CAFE",     col: 0, row: 0, roof: "#b5562d", wall: "#3b2a55", sign: "#ff8a3d" },
+    { n: 2, name: "LIBRARY",  col: 1, row: 0, roof: "#2f6e8f", wall: "#2c2a5c", sign: "#3ef0ff" },
+    { n: 3, name: "ROOFTOP",  col: 2, row: 0, roof: "#5d3a8a", wall: "#33285f", sign: "#c38bff" },
+    { n: 4, name: "BUS STOP", col: 0, row: 1, roof: "#2f7a54", wall: "#26304f", sign: "#6dff9c" },
+    { n: 5, name: "WEDDING",  col: 1, row: 1, roof: "#a3305f", wall: "#3a2450", sign: "#ff4fa8" },
+    { n: 6, name: "TRAIN",    col: 2, row: 1, roof: "#7a6a2a", wall: "#2d2a4a", sign: "#ffd84a" },
+  ];
+  for (const p of PLACES) {
+    p.doorX = COL[p.col];
+    p.doorY = ROAD_Y[p.row];
+    p.top = p.doorY - 0.215;           // building box in fractions
+    p.h = 0.19;
+    p.w = 0.24;
+  }
+
+  let W = 600, H = 600;
+  const X = (f) => f * W, Y = (f) => f * H;
+  function resize() {
+    const rect = canvas.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(rect.width * dpr);
+    canvas.height = Math.round(rect.height * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    W = rect.width; H = rect.height;
+  }
+  window.addEventListener("resize", resize);
+
+  // windows flicker a little; precompute which are lit
+  const lit = PLACES.map(() => Array.from({ length: 12 }, () => Math.random() < 0.6));
+
+  // ---------- state ----------
+  let state = "pick";           // pick | drawing | walk | result
+  let picked = null;            // place number you chose
+  let theirs = null;            // place number chance chose for them
+  let tries = 0, met = 0;
+  let walkStart = 0, arrivedAt = 0;
+  const WALK_MS = reduceMotion ? 1200 : 3400;
+  const you = { x: HOME.x, y: HOME.y, path: null, len: 0, dir: 1 };
+  const them = { x: -0.1, y: ROAD_Y[2], path: null, len: 0, dir: 1, visible: false };
+  let hearts = [];
+
+  // ---------- routes along the streets ----------
+  function vStreetFor(place, fromSide) {
+    if (place.col === 0) return ROAD_X[0];
+    if (place.col === 2) return ROAD_X[1];
+    return fromSide === "right" ? ROAD_X[1] : ROAD_X[0];
+  }
+  function routeYou(place) {
+    const vx = vStreetFor(place, place.n % 2 ? "left" : "right");
+    return [ {x: HOME.x, y: HOME.y}, {x: HOME.x, y: ROAD_Y[2]}, {x: vx, y: ROAD_Y[2]}, {x: vx, y: place.doorY}, {x: place.doorX, y: place.doorY} ];
+  }
+  function routeThem(place, side) {
+    const sx = side === "left" ? -0.06 : 1.06;
+    const vx = vStreetFor(place, side);
+    const entryY = place.row === 0 ? ROAD_Y[1] : ROAD_Y[2];
+    return [ {x: sx, y: entryY}, {x: vx, y: entryY}, {x: vx, y: place.doorY}, {x: place.doorX, y: place.doorY} ];
+  }
+  function pathLength(path) {
+    let L = 0;
+    for (let i = 1; i < path.length; i++) L += Math.hypot(path[i].x - path[i-1].x, path[i].y - path[i-1].y);
+    return L;
+  }
+  function pointAt(path, d) {
+    for (let i = 1; i < path.length; i++) {
+      const a = path[i-1], b = path[i];
+      const seg = Math.hypot(b.x - a.x, b.y - a.y);
+      if (d <= seg) { const k = seg ? d / seg : 0; return { x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k, dx: b.x - a.x }; }
+      d -= seg;
+    }
+    const last = path[path.length - 1];
+    return { x: last.x, y: last.y, dx: 0 };
+  }
+
+  // ---------- picking ----------
+  for (const p of PLACES) {
+    const b = document.createElement("button");
+    b.id = "place-" + p.n;
+    b.textContent = p.name;
+    b.setAttribute("aria-pressed", "false");
+    b.addEventListener("click", () => choose(p.n));
+    picker.appendChild(b);
+  }
+  function choose(n) {
+    if (state !== "pick") return;
+    picked = n;
+    const p = PLACES[n - 1];
+    hud.pick.textContent = p.name;
+    picker.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b.id === "place-" + n)));
+    goBtn.disabled = false;
+    setTicker("TONIGHT YOU GO TO THE " + p.name + ". PRESS GO OUT!", true);
+    beep(660, 0.06);
+  }
+  canvas.addEventListener("click", (e) => {
+    if (state === "result") { reset(); return; }
+    if (state !== "pick") return;
+    const r = canvas.getBoundingClientRect();
+    const fx = (e.clientX - r.left) / r.width, fy = (e.clientY - r.top) / r.height;
+    for (const p of PLACES) {
+      if (fx > p.doorX - p.w / 2 && fx < p.doorX + p.w / 2 && fy > p.top - 0.03 && fy < p.doorY + 0.03) { choose(p.n); return; }
+    }
+  });
+
+  // ---------- chance ----------
+  async function withTimeout(fn, ms) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), ms);
+    try { return await fn(ctrl.signal); } finally { clearTimeout(timer); }
+  }
+  async function fromApi() {
+    if (!RANDOM_ORG_API_KEY) throw new Error("no key");
+    return withTimeout(async (signal) => {
+      const res = await fetch(RANDOM_ORG_API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", method: "generateIntegers", params: { apiKey: RANDOM_ORG_API_KEY, n: 1, min: 1, max: N, replacement: true }, id: Date.now() }),
+        signal,
+      });
+      const json = await res.json();
+      if (json.error) throw new Error(json.error.message);
+      return json.result.random.data[0];
+    }, 5000);
+  }
+  async function fromPlain() {
+    return withTimeout(async (signal) => {
+      const res = await fetch(RANDOM_ORG_PLAIN, { signal, cache: "no-store" });
+      if (!res.ok) throw new Error("status " + res.status);
+      return parseInt((await res.text()).trim(), 10);
+    }, 4000);
+  }
+  function fromLocal() {
+    const buf = new Uint32Array(1);
+    let v;
+    do { crypto.getRandomValues(buf); v = buf[0]; } while (v >= Math.floor(0x100000000 / N) * N);
+    return (v % N) + 1;
+  }
+  async function drawChance() {
+    for (const [label, fn] of [["RANDOM.ORG API", fromApi], ["RANDOM.ORG", fromPlain]]) {
+      try {
+        const n = await fn();
+        if (n >= 1 && n <= N) { hud.source.textContent = label; hud.source.classList.remove("warn"); return n; }
+      } catch (err) { console.warn(label + " failed:", err.message || err); }
+    }
+    hud.source.textContent = "LOCAL RNG";
+    hud.source.classList.add("warn");
+    return fromLocal();
+  }
+
+  goBtn.addEventListener("click", async () => {
+    if (state === "result") { reset(); return; }
+    if (state !== "pick" || picked == null) return;
+    unlockAudio();
+    state = "drawing";
+    goBtn.disabled = true;
+    picker.querySelectorAll("button").forEach(b => b.disabled = true);
+    setTicker("SOMEWHERE IN THE CITY, SOMEONE ELSE IS GETTING READY...", true);
+    beep(220, 0.12); beep(330, 0.12, "square", 0.13); beep(440, 0.16, "square", 0.26);
+    theirs = await drawChance();
+    startWalk();
+  });
+
+  function startWalk() {
+    tries++;
+    hud.tries.textContent = tries;
+    const side = Math.random() < 0.5 ? "left" : "right";   // which edge they walk in from (looks only)
+    you.path = routeYou(PLACES[picked - 1]);
+    you.len = pathLength(you.path);
+    them.path = routeThem(PLACES[theirs - 1], side);
+    them.len = pathLength(them.path);
+    them.visible = true;
+    hearts = [];
+    arrivedAt = 0;
+    walkStart = performance.now();
+    state = "walk";
+    setTicker("OUT INTO THE NIGHT...", false);
+    walkMusic();
+  }
+
+  function streetsApart(a, b) {
+    const pa = PLACES[a - 1], pb = PLACES[b - 1];
+    return Math.abs(pa.col - pb.col) + Math.abs(pa.row - pb.row);
+  }
+
+  function finish() {
+    state = "result";
+    const p = PLACES[picked - 1], q = PLACES[theirs - 1];
+    resultBox.hidden = false;
+    if (picked === theirs) {
+      met++;
+      resultBox.className = "result";
+      resultBig.textContent = "YOU MET!";
+      resultSmall.textContent = "Of all the places tonight, you both walked into the " + p.name + ".";
+      [523, 659, 784, 1046, 784, 1046].forEach((f, i) => beep(f, 0.14, "square", i * 0.11));
+      for (let i = 0; i < 16; i++) hearts.push({ x: p.doorX, y: p.doorY - 0.05, vx: (Math.random() - 0.5) * 0.004, vy: -0.002 - Math.random() * 0.004, life: 1, s: 0.6 + Math.random() * 0.8 });
+    } else {
+      const d = streetsApart(picked, theirs);
+      const gap = d === 1 ? "Just around the corner." : d === 2 ? "Two streets apart." : "On the other side of town.";
+      resultBox.className = "result miss";
+      resultBig.textContent = "YOU MISSED EACH OTHER";
+      resultSmall.textContent = "You were at the " + p.name + ". They were at the " + q.name + ". " + gap;
+      [392, 330, 294, 262].forEach((f, i) => beep(f, 0.2, "triangle", i * 0.16));
+    }
+    hud.met.textContent = met;
+    setTicker("TAP THE CITY OR PRESS TRY AGAIN", true);
+    goBtn.textContent = "TRY AGAIN";
+    goBtn.disabled = false;
+  }
+
+  function reset() {
+    state = "pick";
+    picked = null; theirs = null;
+    you.path = null; you.x = HOME.x; you.y = HOME.y;
+    them.visible = false; them.path = null;
+    hearts = [];
+    resultBox.hidden = true;
+    goBtn.textContent = "GO OUT!";
+    goBtn.disabled = true;
+    hud.pick.textContent = "--";
+    picker.querySelectorAll("button").forEach(b => { b.disabled = false; b.setAttribute("aria-pressed", "false"); });
+    setTicker("WHERE WILL YOU GO TONIGHT?", true);
+  }
+
+  function setTicker(msg, blink) {
+    ticker.innerHTML = "";
+    const s = document.createElement("span");
+    if (blink) s.className = "blink";
+    s.textContent = msg;
+    ticker.appendChild(s);
+  }
+
+  // ---------- sound ----------
+  let audio = null, soundOn = true;
+  function unlockAudio() {
+    if (!audio) { try { audio = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { audio = null; } }
+    if (audio && audio.state === "suspended") audio.resume();
+  }
+  function beep(freq, dur, type = "square", delay = 0) {
+    if (!soundOn) return;
+    unlockAudio();
+    if (!audio) return;
+    const t = audio.currentTime + delay;
+    const o = audio.createOscillator(), g = audio.createGain();
+    o.type = type; o.frequency.setValueAtTime(freq, t);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.07, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g).connect(audio.destination);
+    o.start(t); o.stop(t + dur + 0.02);
+  }
+  function walkMusic() {
+    const notes = [392, 0, 330, 0, 349, 392, 440, 0, 392, 349, 330, 294, 330, 0, 392, 523];
+    const step = WALK_MS / 1000 / notes.length;
+    notes.forEach((f, i) => { if (f) beep(f, step * 0.7, "triangle", i * step); });
+  }
+  soundBtn.addEventListener("click", () => {
+    soundOn = !soundOn;
+    soundBtn.textContent = soundOn ? "SOUND ON" : "SOUND OFF";
+    soundBtn.setAttribute("aria-pressed", String(soundOn));
+    if (soundOn) beep(880, 0.05);
+  });
+
+  // ---------- update ----------
+  const easeInOut = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
+  function update(now) {
+    if (state === "walk" || state === "result") {
+      const k = Math.min(1, (now - walkStart) / WALK_MS);
+      const e = easeInOut(k);
+      const a = pointAt(you.path, you.len * e);
+      const b = pointAt(them.path, them.len * e);
+      you.x = a.x; you.y = a.y; if (a.dx) you.dir = Math.sign(a.dx);
+      them.x = b.x; them.y = b.y; if (b.dx) them.dir = Math.sign(b.dx);
+      if (k >= 1) {
+        if (!arrivedAt) arrivedAt = now;
+        if (picked === theirs) {
+          // step to either side of the door and face each other
+          const k2 = Math.min(1, (now - arrivedAt) / 500);
+          you.x -= 0.03 * k2; them.x += 0.03 * k2;
+          you.dir = 1; them.dir = -1;
+        }
+        if (state === "walk" && now - arrivedAt > 350) finish();
+      }
+    }
+    for (const h of hearts) { h.x += h.vx; h.y += h.vy; h.life -= 0.008; }
+    hearts = hearts.filter(h => h.life > 0);
+  }
+
+  // ---------- drawing ----------
+  function px() { return Math.max(2, Math.round(W / 160)); }   // one "pixel" of the pixel-art
+
+  function drawStars(t) {
+    ctx.fillStyle = C.dim;
+    for (let i = 0; i < 40; i++) {
+      const sx = ((i * 97) % 100) / 100, sy = ((i * 53) % 100) / 100 * 0.06;
+      if (reduceMotion || Math.sin(t * 2 + i) > -0.6) ctx.fillRect(X(sx), Y(sy), px() / 2 + 1, px() / 2 + 1);
+    }
+  }
+
+  function drawRoads() {
+    const w = Math.max(14, W * 0.045);
+    ctx.fillStyle = C.road;
+    for (const y of ROAD_Y) ctx.fillRect(0, Y(y) - w / 2, W, w);
+    for (const x of ROAD_X) ctx.fillRect(X(x) - w / 2, Y(ROAD_Y[0]) - w / 2, w, H);
+    ctx.fillRect(X(HOME.x) - w / 2, Y(ROAD_Y[2]), w, H);
+    // dashed centre lines
+    ctx.strokeStyle = C.lane; ctx.lineWidth = Math.max(1, px() / 2);
+    ctx.setLineDash([px() * 3, px() * 3]);
+    for (const y of ROAD_Y) { ctx.beginPath(); ctx.moveTo(0, Y(y)); ctx.lineTo(W, Y(y)); ctx.stroke(); }
+    for (const x of ROAD_X) { ctx.beginPath(); ctx.moveTo(X(x), Y(ROAD_Y[0])); ctx.lineTo(X(x), H); ctx.stroke(); }
+    ctx.setLineDash([]);
+  }
+
+  function drawScenery() {
+    // little houses and trees in the block between the middle and bottom streets
+    const p = px();
+    const rowTop = Y(ROAD_Y[1]) + W * 0.04, rowBot = Y(ROAD_Y[2]) - W * 0.035;
+    for (let i = 0; i < 3; i++) {
+      const cx = X(COL[i]);
+      ctx.fillStyle = "#1d1845";
+      ctx.fillRect(cx - W * 0.09, rowTop + p * 2, W * 0.07, rowBot - rowTop - p * 2);
+      ctx.fillRect(cx + W * 0.02, rowTop + p * 5, W * 0.07, rowBot - rowTop - p * 5);
+      ctx.fillStyle = C.tree;
+      ctx.fillRect(cx - p * 2, rowBot - p * 7, p * 4, p * 5);
+      ctx.fillStyle = "#3a2a1a";
+      ctx.fillRect(cx - p / 2, rowBot - p * 2, p, p * 2);
+    }
+    // home
+    const hx = X(HOME.x) + W * 0.07, hy = Y(0.9);
+    ctx.fillStyle = "#3a2450";
+    ctx.fillRect(hx, hy, W * 0.1, H * 0.07);
+    ctx.fillStyle = C.pink;
+    ctx.beginPath(); ctx.moveTo(hx - p, hy); ctx.lineTo(hx + W * 0.05, hy - H * 0.035); ctx.lineTo(hx + W * 0.1 + p, hy); ctx.fill();
+    ctx.fillStyle = C.window;
+    ctx.fillRect(hx + W * 0.035, hy + H * 0.02, W * 0.03, H * 0.025);
+    label("HOME", hx + W * 0.05, hy + H * 0.085, C.dim, Math.max(7, Math.round(W * 0.014)));
+  }
+
+  function label(text, x, y, color, size) {
+    ctx.font = size + "px 'Press Start 2P', monospace";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillStyle = color;
+    ctx.fillText(text, x, y);
+  }
+
+  function drawPlace(p, i, t) {
+    const p1 = px();
+    const x = X(p.doorX - p.w / 2), y = Y(p.top), w = X(p.w), h = Y(p.h);
+    const isPick = p.n === picked;
+    const isTheirs = state === "result" && p.n === theirs;
+    // highlight
+    if (isPick || isTheirs) {
+      ctx.fillStyle = isPick && isTheirs ? "rgba(255,79,168,0.35)" : isPick ? "rgba(255,79,168,0.22)" : "rgba(62,240,255,0.2)";
+      ctx.fillRect(x - p1 * 2, y - p1 * 2, w + p1 * 4, h + p1 * 4);
+    }
+    // body + roof
+    ctx.fillStyle = p.wall;
+    ctx.fillRect(x, y + h * 0.18, w, h * 0.82);
+    ctx.fillStyle = p.roof;
+    ctx.fillRect(x - p1, y + h * 0.1, w + p1 * 2, h * 0.12);
+    // sign
+    const fs = Math.max(7, Math.round(W * 0.016));
+    ctx.fillStyle = C.ink;
+    ctx.fillRect(x + w * 0.08, y - h * 0.02, w * 0.84, h * 0.16);
+    label(p.name, x + w / 2, y + h * 0.06, (isPick || isTheirs || !reduceMotion && Math.sin(t * 3 + i) > -0.9) ? p.sign : C.dim, fs);
+    // windows
+    const cols = 4, rows = 2;
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const on = lit[i][r * cols + c];
+      ctx.fillStyle = on ? C.window : "#151036";
+      const wx = x + w * (0.1 + c * 0.22), wy = y + h * (0.32 + r * 0.24);
+      ctx.fillRect(wx, wy, w * 0.13, h * 0.14);
+    }
+    // door
+    ctx.fillStyle = isPick ? C.pink : C.ink;
+    ctx.fillRect(X(p.doorX) - w * 0.07, y + h * 0.74, w * 0.14, h * 0.26);
+  }
+
+  function drawPerson(cx, cy, color, dir, walking, t) {
+    const p = Math.max(2, Math.round(W / 130));
+    const x = X(cx), y = Y(cy);
+    const step = walking && !reduceMotion ? Math.floor(t * 8) % 2 : 0;
+    ctx.save();
+    ctx.translate(Math.round(x), Math.round(y));
+    // shadow
+    ctx.fillStyle = "rgba(0,0,0,0.35)";
+    ctx.fillRect(-p * 3, -p, p * 6, p);
+    // legs
+    ctx.fillStyle = "#e9e6ff";
+    ctx.fillRect(-p * 2 + (step ? p : 0), -p * 4, p, p * 3);
+    ctx.fillRect(p - (step ? p : 0), -p * 4, p, p * 3);
+    // body
+    ctx.fillStyle = color;
+    ctx.fillRect(-p * 2, -p * 9, p * 4, p * 5);
+    // head
+    ctx.fillStyle = "#f2c6a0";
+    ctx.fillRect(-p * 2, -p * 13, p * 4, p * 4);
+    // hair + eye facing direction
+    ctx.fillStyle = C.ink;
+    ctx.fillRect(-p * 2, -p * 13, p * 4, p);
+    ctx.fillRect(dir > 0 ? p : -p * 2, -p * 11, p, p);
+    ctx.restore();
+  }
+
+  function drawHeart(x, y, s, alpha) {
+    const p = Math.max(2, Math.round(W / 150)) * s;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = C.pink;
+    const rows = ["01100110", "11111111", "11111111", "01111110", "00111100", "00011000"];
+    rows.forEach((r, j) => [...r].forEach((b, i) => { if (b === "1") ctx.fillRect(X(x) + (i - 4) * p, Y(y) + (j - 3) * p, p, p); }));
+    ctx.restore();
+  }
+
+  function drawMissLine() {
+    // a faint dotted line showing how close you came
+    ctx.save();
+    ctx.strokeStyle = "rgba(233,230,255,0.35)";
+    ctx.lineWidth = Math.max(1, px() / 2);
+    ctx.setLineDash([px() * 2, px() * 2]);
+    ctx.beginPath();
+    ctx.moveTo(X(you.x), Y(you.y) - W * 0.03);
+    ctx.lineTo(X(them.x), Y(them.y) - W * 0.03);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function frame(now) {
+    const t = now / 1000;
+    update(now);
+    ctx.fillStyle = C.night;
+    ctx.fillRect(0, 0, W, H);
+    drawStars(t);
+    drawRoads();
+    drawScenery();
+    PLACES.forEach((p, i) => drawPlace(p, i, t));
+
+    // chosen route preview
+    if (state === "pick" && picked) {
+      const path = routeYou(PLACES[picked - 1]);
+      ctx.save();
+      ctx.strokeStyle = "rgba(255,79,168,0.6)";
+      ctx.lineWidth = Math.max(2, px());
+      ctx.setLineDash([px() * 2, px() * 3]);
+      ctx.beginPath();
+      path.forEach((pt, i) => (i ? ctx.lineTo(X(pt.x), Y(pt.y)) : ctx.moveTo(X(pt.x), Y(pt.y))));
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    const walking = state === "walk" && !arrivedAt;
+    if (state === "result" && picked !== theirs) drawMissLine();
+    if (them.visible) drawPerson(them.x, them.y, C.cyan, them.dir, walking, t + 0.3);
+    drawPerson(you.x, you.y, C.pink, you.dir, walking, t);
+
+    // name tags
+    const fs = Math.max(7, Math.round(W * 0.014));
+    if (state !== "result" || picked !== theirs) {
+      label("YOU", X(you.x), Y(you.y) - W * 0.075, C.pink, fs);
+      if (them.visible) label("???", X(them.x), Y(them.y) - W * 0.075, C.cyan, fs);
+    }
+    for (const h of hearts) drawHeart(h.x, h.y, h.s, Math.max(0, h.life));
+    if (state === "result" && picked === theirs) {
+      const bob = reduceMotion ? 0 : Math.sin(t * 4) * 0.005;
+      drawHeart(PLACES[picked - 1].doorX, PLACES[picked - 1].doorY - 0.1 + bob, 1.6, 1);
+    }
+    requestAnimationFrame(frame);
+  }
+
+  resize();
+  requestAnimationFrame(frame);
+})();
+</script>
