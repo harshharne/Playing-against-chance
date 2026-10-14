@@ -54,6 +54,25 @@ button:focus-visible { outline: 3px solid var(--cyan); outline-offset: 2px; }
 .foot { font-size: 18px; color: var(--dim); text-align: center; line-height: 1.3; }
 .foot b { color: var(--text); font-weight: 400; }
 @media (prefers-reduced-motion: reduce) { .ticker .blink { animation: none; } }
+
+/* ---- one-screen layout: the game screen and the controls share the viewport, no page scroll ---- */
+html, body { height: 100%; }
+body { margin: 0; box-sizing: border-box; padding-block: 12px; }
+.cab { max-width: 1180px; height: 100%; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 10px; }
+header { flex-direction: row; flex-wrap: wrap; align-items: baseline; justify-content: center; gap: 6px 14px; }
+h1 { font-size: clamp(14px, 2.6vw, 22px); }
+.stage { min-height: 0; display: grid; grid-template-columns: auto minmax(280px, 400px); justify-content: center; align-items: center; gap: 20px; }
+.screen { box-sizing: border-box; aspect-ratio: auto; width: var(--sz, 400px); height: var(--sz, 400px); max-width: 100%; }
+.panel { min-width: 0; min-height: 0; max-height: 100%; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 4px; }
+.panel .hud { grid-template-columns: repeat(2, 1fr); }
+.result:not([hidden]) + .ticker { display: none; }
+@media (orientation: portrait), (max-width: 760px) {
+  .stage { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); justify-items: center; align-items: start; gap: 10px; }
+  .panel { width: 100%; gap: 10px; }
+  .panel .hud { grid-template-columns: repeat(4, 1fr); }
+  .foot { display: none; }
+}
+@media (orientation: portrait) and (max-width: 460px) { .panel .hud { grid-template-columns: repeat(2, 1fr); } }
 </style>
 
 <div class="cab">
@@ -62,32 +81,36 @@ button:focus-visible { outline: 3px solid var(--cyan); outline-offset: 2px; }
     <h1>STAGE 02 · LOVE</h1>
   </header>
 
-  <div class="hud" aria-live="polite">
-    <div><span>NIGHTS</span><b id="hudTries">0</b></div>
-    <div><span>MET</span><b id="hudMet">0</b></div>
-    <div><span>YOU GO TO</span><b id="hudPick">--</b></div>
-    <div><span>CHANCE BY</span><b id="hudSource">RANDOM.ORG</b></div>
+  <div class="stage" id="stage">
+    <div class="screen">
+      <canvas id="city" aria-label="A small city at night with six places. You stand at home at the bottom. Tap a place to choose where you go tonight."></canvas>
+    </div>
+
+    <div class="panel">
+      <div class="hud" aria-live="polite">
+        <div><span>NIGHTS</span><b id="hudTries">0</b></div>
+        <div><span>MET</span><b id="hudMet">0</b></div>
+        <div><span>YOU GO TO</span><b id="hudPick">--</b></div>
+        <div><span>CHANCE BY</span><b id="hudSource">RANDOM.ORG</b></div>
+      </div>
+
+      <div class="result" id="result" hidden aria-live="polite">
+        <div class="big" id="resultBig"></div>
+        <div class="small" id="resultSmall"></div>
+      </div>
+
+      <div class="ticker" id="ticker"><span class="blink">WHERE WILL YOU GO TONIGHT?</span></div>
+
+      <div class="picker" id="picker" role="group" aria-label="Choose where to go"></div>
+
+      <div class="controls">
+        <button class="go" id="goBtn" disabled>GO OUT!</button>
+        <button class="ghost" id="soundBtn" aria-pressed="true">SOUND ON</button>
+      </div>
+
+      <p class="foot">Six places, one city, one person out there tonight.<br>Your odds of being in the same place: <b>1 in 6</b>.</p>
+    </div>
   </div>
-
-  <div class="screen">
-    <canvas id="city" aria-label="A small city at night with six places. You stand at home at the bottom. Tap a place to choose where you go tonight."></canvas>
-  </div>
-
-  <div class="result" id="result" hidden aria-live="polite">
-    <div class="big" id="resultBig"></div>
-    <div class="small" id="resultSmall"></div>
-  </div>
-
-  <div class="ticker" id="ticker"><span class="blink">WHERE WILL YOU GO TONIGHT?</span></div>
-
-  <div class="picker" id="picker" role="group" aria-label="Choose where to go"></div>
-
-  <div class="controls">
-    <button class="go" id="goBtn" disabled>GO OUT!</button>
-    <button class="ghost" id="soundBtn" aria-pressed="true">SOUND ON</button>
-  </div>
-
-  <p class="foot">Six places, one city, one person out there tonight.<br>Your odds of being in the same place: <b>1 in 6</b>.</p>
 </div>
 
 <script>
@@ -105,6 +128,20 @@ button:focus-visible { outline: 3px solid var(--cyan); outline-offset: 2px; }
   const resultBox = $("result"), resultBig = $("resultBig"), resultSmall = $("resultSmall");
   const hud = { tries: $("hudTries"), met: $("hudMet"), pick: $("hudPick"), source: $("hudSource") };
   const C = { night: "#07051a", road: "#1b1640", lane: "#3a3270", text: "#e9e6ff", dim: "#8a84bf", cyan: "#3ef0ff", pink: "#ff4fa8", yellow: "#ffd84a", window: "#ffd84a", tree: "#1f5b4a", ink: "#0b0820" };
+
+  const PANEL_MIN = 300;   // px the controls need under the screen on a tall display
+
+  // ---------- one-screen layout: size the game screen to whatever space the viewport leaves ----------
+  const stageEl = document.getElementById("stage");
+  const screenEl = stageEl.querySelector(".screen");
+  const narrowQuery = window.matchMedia("(orientation: portrait), (max-width: 760px)");
+  function layout() {
+    const w = stageEl.clientWidth, h = stageEl.clientHeight;
+    const sz = narrowQuery.matches ? Math.min(w, h - PANEL_MIN) : Math.min(h, w - 320);
+    screenEl.style.setProperty("--sz", Math.max(200, Math.floor(sz)) + "px");
+  }
+  function relayout() { layout(); resize(); }
+  if ("ResizeObserver" in window) new ResizeObserver(relayout).observe(stageEl);
 
   // ---------- the city (all coordinates are fractions of the screen) ----------
   const ROAD_Y = [0.30, 0.62, 0.86];          // horizontal streets
@@ -137,7 +174,7 @@ button:focus-visible { outline: 3px solid var(--cyan); outline-offset: 2px; }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     W = rect.width; H = rect.height;
   }
-  window.addEventListener("resize", resize);
+  window.addEventListener("resize", () => relayout());
 
   // windows flicker a little; precompute which are lit
   const lit = PLACES.map(() => Array.from({ length: 12 }, () => Math.random() < 0.6));
@@ -344,21 +381,31 @@ button:focus-visible { outline: 3px solid var(--cyan); outline-offset: 2px; }
   // ---------- sound ----------
   let audio = null, soundOn = true;
   function unlockAudio() {
-    if (!audio) { try { audio = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { audio = null; } }
-    if (audio && audio.state === "suspended") audio.resume();
+    // Browsers can pause audio after a while (another tab, a sleeping screen, an idle frame), so wake it on every tap and before every sound.
+    try {
+      if (!audio) {
+        audio = new (window.AudioContext || window.webkitAudioContext)();
+        audio.__master = audio.createGain();
+        audio.__master.gain.value = 0.9;
+        audio.__master.connect(audio.destination);
+      }
+      if (audio.state !== "running") audio.resume().catch(() => {});
+    } catch (e) { audio = null; }
   }
+  ["pointerdown", "keydown", "touchstart"].forEach(ev => document.addEventListener(ev, unlockAudio, { passive: true }));
+  document.addEventListener("visibilitychange", () => { if (!document.hidden && audio) audio.resume().catch(() => {}); });
   function beep(freq, dur, type = "square", delay = 0) {
-    if (!soundOn) return;
-    unlockAudio();
-    if (!audio) return;
+    if (!soundOn || !audio) return;
+    if (audio.state !== "running") audio.resume().catch(() => {});
     const t = audio.currentTime + delay;
     const o = audio.createOscillator(), g = audio.createGain();
     o.type = type; o.frequency.setValueAtTime(freq, t);
     g.gain.setValueAtTime(0.0001, t);
     g.gain.exponentialRampToValueAtTime(0.07, t + 0.01);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    o.connect(g).connect(audio.destination);
-    o.start(t); o.stop(t + dur + 0.02);
+    o.connect(g); g.connect(audio.__master || audio.destination);
+    o.start(t); o.stop(t + dur + 0.03);
+    o.onended = () => { o.disconnect(); g.disconnect(); };
   }
   function walkMusic() {
     const notes = [392, 0, 330, 0, 349, 392, 440, 0, 392, 349, 330, 294, 330, 0, 392, 523];
@@ -437,7 +484,7 @@ button:focus-visible { outline: 3px solid var(--cyan); outline-offset: 2px; }
       ctx.fillRect(cx - p / 2, rowBot - p * 2, p, p * 2);
     }
     // home
-    const hx = X(HOME.x) + W * 0.07, hy = Y(0.9);
+    const hx = X(0.37), hy = Y(0.895);
     ctx.fillStyle = "#3a2450";
     ctx.fillRect(hx, hy, W * 0.1, H * 0.07);
     ctx.fillStyle = C.pink;
@@ -567,8 +614,8 @@ button:focus-visible { outline: 3px solid var(--cyan); outline-offset: 2px; }
     // name tags
     const fs = Math.max(7, Math.round(W * 0.014));
     if (state !== "result" || picked !== theirs) {
-      label("YOU", X(you.x), Y(you.y) - W * 0.075, C.pink, fs);
-      if (them.visible) label("???", X(them.x), Y(them.y) - W * 0.075, C.cyan, fs);
+      label("YOU", X(you.x), Y(you.y) - W * 0.125, C.pink, fs);
+      if (them.visible) label("???", X(them.x), Y(them.y) - W * 0.125, C.cyan, fs);
     }
     for (const h of hearts) drawHeart(h.x, h.y, h.s, Math.max(0, h.life));
     if (state === "result" && picked === theirs) {
@@ -578,7 +625,7 @@ button:focus-visible { outline: 3px solid var(--cyan); outline-offset: 2px; }
     requestAnimationFrame(frame);
   }
 
-  resize();
+  relayout();
   requestAnimationFrame(frame);
 })();
 </script>

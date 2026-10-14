@@ -1,0 +1,565 @@
+<title>The Career Ladder</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap">
+<style>
+/* Layout: one square arcade screen holding the board, one line of text under it, then the die and one button. Single dark theme. */
+:root {
+  --ink: #0b0820;
+  --cabinet: #151036;
+  --glass: #07051a;
+  --grid: #2a2160;
+  --text: #e9e6ff;
+  --dim: #8a84bf;
+  --cyan: #3ef0ff;
+  --pink: #ff4fa8;
+  --yellow: #ffd84a;
+  --green: #6dff9c;
+  --red: #ff5a4f;
+  --pixel: "Press Start 2P", "Courier New", monospace;
+  --term: "VT323", "Courier New", monospace;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body { margin: 0; box-sizing: border-box; background: var(--ink); color: var(--text); font-family: var(--term); font-size: 20px; padding-inline: 16px; padding-block: 12px; overflow: hidden; }
+.cab { max-width: 1180px; height: 100%; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; gap: 12px; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: center; gap: 6px 14px; }
+.marquee { font-family: var(--pixel); font-size: 10px; letter-spacing: 0.18em; color: var(--dim); }
+h1 { margin: 0; font-family: var(--pixel); font-size: clamp(14px, 2.6vw, 22px); line-height: 1.3; color: var(--cyan); text-shadow: 3px 3px 0 var(--cabinet), 5px 5px 0 var(--pink); }
+
+.stage { min-height: 0; min-width: 0; display: grid; place-items: center; }
+.screen { position: relative; box-sizing: border-box; width: var(--sz, 320px); height: var(--sz, 320px); max-width: 100%; border: 4px solid var(--grid); border-radius: 14px; background: var(--glass); box-shadow: 0 0 0 4px var(--cabinet), 0 0 40px rgba(62, 240, 255, 0.07) inset; overflow: hidden; }
+.screen::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(to bottom, rgba(0,0,0,0) 0 2px, rgba(0,0,0,0.2) 2px 3px); }
+canvas { display: block; width: 100%; height: 100%; }
+.ov { position: absolute; z-index: 1; font-family: var(--pixel); font-size: 9px; letter-spacing: 0.08em; color: var(--dim); pointer-events: none; }
+.ov.tl { top: 12px; left: 14px; }
+.ov.tr { top: 12px; right: 14px; text-align: right; }
+.ov b { font-weight: 400; color: var(--yellow); font-size: 12px; }
+.ov.tl b { color: var(--cyan); font-size: 9px; }
+.ov.tl b.warn { color: var(--yellow); }
+
+.bottom { display: flex; flex-direction: column; align-items: center; gap: 12px; padding-bottom: 6px; }
+.line { min-height: 2.8em; display: flex; flex-direction: column; justify-content: center; gap: 4px; text-align: center; max-width: 44em; }
+.line .big { font-family: var(--pixel); font-size: 11px; line-height: 1.7; color: var(--cyan); text-wrap: balance; }
+.line .big.up { color: var(--green); }
+.line .big.down { color: var(--red); }
+.line .big.end { font-size: 13px; color: var(--yellow); text-shadow: 2px 2px 0 var(--pink); }
+.line .small { font-size: 20px; line-height: 1.1; color: var(--text); text-wrap: balance; }
+.line .small span { white-space: nowrap; }
+.line .small .up { color: var(--green); }
+.line .small .down { color: var(--red); }
+.line .small .top { color: var(--yellow); }
+.line .small:empty, .line .quote:empty { display: none; }
+.line .quote { font-size: 19px; line-height: 1.1; color: var(--dim); }
+.blink { animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+
+.controls { display: flex; align-items: center; gap: 14px; }
+.die { width: 52px; height: 52px; box-sizing: border-box; padding: 7px; display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); background: var(--text); border-radius: 8px; box-shadow: 0 5px 0 #8a84bf; transition: transform 0.08s; }
+.die span { width: 9px; height: 9px; place-self: center; background: var(--ink); visibility: hidden; }
+.die span.on { visibility: visible; }
+.go { font-family: var(--pixel); font-size: 15px; min-width: min(200px, 50vw); padding: 17px 26px; background: var(--yellow); color: var(--ink); border: 0; border-radius: 10px; box-shadow: 0 7px 0 #b8902a; cursor: pointer; letter-spacing: 0.08em; }
+.go:active:not(:disabled) { transform: translateY(5px); box-shadow: 0 2px 0 #b8902a; }
+.go:disabled { background: var(--grid); color: var(--dim); box-shadow: 0 7px 0 var(--cabinet); cursor: default; }
+.ghost { font-family: var(--pixel); font-size: 8px; padding: 10px 12px; background: transparent; color: var(--dim); border: 2px solid var(--grid); border-radius: 6px; cursor: pointer; }
+button:focus-visible { outline: 3px solid var(--cyan); outline-offset: 3px; }
+@media (prefers-reduced-motion: reduce) { .blink { animation: none; } .die { transition: none; } }
+</style>
+
+<div class="cab">
+  <header>
+    <div class="marquee">PLAYING AGAINST CHANCE</div>
+    <h1>THE CAREER LADDER</h1>
+  </header>
+
+  <div class="stage" id="stage">
+    <div class="screen" id="screen">
+      <canvas id="board" aria-label="A six by six board rising from your first job to the top, with ladders and snakes that move to new places every year."></canvas>
+      <div class="ov tl">CHANCE <b id="src">RANDOM.ORG</b></div>
+      <div class="ov tr" aria-live="polite">AGE <b id="age">22</b> &nbsp; ROLLS LEFT <b id="left">8</b></div>
+    </div>
+  </div>
+
+  <div class="bottom">
+    <div class="line" aria-live="polite">
+      <div class="big" id="lineBig">YOUR FIRST JOB, AGE 22</div>
+      <div class="small" id="lineSmall">Eight rolls, about five years each. Every year the ladders and snakes move.</div>
+      <div class="quote" id="lineQuote"></div>
+    </div>
+    <div class="controls">
+      <div class="die" id="die" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+      <button class="go" id="goBtn">START</button>
+      <button class="ghost" id="soundBtn" aria-pressed="true">SOUND ON</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const SIZE = 6, LAST = 36, ROLLS = 8, START_AGE = 22, YEARS_PER_ROLL = 5;
+  const N_LADDERS = 4, N_SNAKES = 4, MIN_LEN = 4, MAX_LEN = 14;
+  const LEVELS = ["FRESHER", "2+ YRS", "5+ YRS", "10+ YRS", "15+ YRS", "20+ YRS"];   // bottom row to top row
+  const LADDER_TEXT = [
+    "A mentor picks you.", "The interviewer went to your college.", "Right project, right time.",
+    "Your boss quits. You get their job.", "Your startup gets bought.", "A post goes viral.",
+    "A client asks for you by name.", "A chance chat in the lift.", "The company grows fast and lifts everyone.",
+    "You're the only one who knows the old system.",
+  ];
+  const SNAKE_TEXT = [
+    "Recession. Layoffs.", "Your team is 'restructured'.", "The company shuts down.",
+    "Your manager takes credit for your idea.", "Your job gets automated.", "Wrong boss. Three long years.",
+    "A merger. Your role disappears.", "The project you led is cancelled.", "The industry moves on without you.",
+    "A bad hire above you.",
+  ];
+  const PLAIN_TEXT = ["An ordinary stretch.", "Steady work. Nothing changes.", "Meetings. So many meetings.", "A small raise. Inflation eats it.", "Same desk, same chair.", "A new manager. Same job."];
+
+  // One random.org draw per year. Numbers run from 0 to 1121: 1122 divides evenly by 34 squares, 11 lengths and 6 die faces,
+  // so every square, length and face stays equally likely.
+  const SPAN = 1122, PER_YEAR = 60;
+  const RANDOM_ORG_API_KEY = (() => { try { return localStorage.getItem("RANDOM_ORG_KEY") || ""; } catch (e) { return ""; } })();
+  const RANDOM_ORG_API = "https://api.random.org/json-rpc/4/invoke";
+  const RANDOM_ORG_PLAIN = "https://www.random.org/integers/?num=" + PER_YEAR + "&min=0&max=" + (SPAN - 1) + "&col=1&base=10&format=plain&rnd=new";
+
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const $ = (id) => document.getElementById(id);
+  const canvas = $("board"), ctx = canvas.getContext("2d");
+  const goBtn = $("goBtn"), soundBtn = $("soundBtn"), dieEl = $("die");
+  const lineBig = $("lineBig"), lineSmall = $("lineSmall"), lineQuote = $("lineQuote");
+  const ov = { src: $("src"), age: $("age"), left: $("left") };
+
+  let state = "ready";               // ready | shuffling | waiting | busy | done
+  let special = {}, oldSpecial = {}; // square -> { type: "L" | "S", to, text }
+  let layoutAt = -1e9;
+  let nextDie = 1, rollIdx = 0;
+  let pos = 1;
+  let trail = [{ n: 1, kind: "step" }];
+  let token = null;
+  let ups = 0, downs = 0;
+  let riding = null;                 // the ladder or snake you are on right now, drawn brightest
+
+  // ---------- layout ----------
+  const stageEl = $("stage"), screenEl = $("screen");
+  let W = 400, H = 400;
+  function layout() {
+    const sz = Math.max(220, Math.floor(Math.min(stageEl.clientWidth, stageEl.clientHeight)));
+    screenEl.style.setProperty("--sz", sz + "px");
+  }
+  function resize() {
+    const r = canvas.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(r.width * dpr); canvas.height = Math.round(r.height * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    W = r.width; H = r.height;
+  }
+  function relayout() { layout(); resize(); }
+  if ("ResizeObserver" in window) new ResizeObserver(relayout).observe(stageEl);
+  window.addEventListener("resize", relayout);
+
+  // ---------- chance ----------
+  async function withTimeout(fn, ms) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), ms);
+    try { return await fn(ctrl.signal); } finally { clearTimeout(timer); }
+  }
+  async function fromApi() {
+    if (!RANDOM_ORG_API_KEY) throw new Error("no key");
+    return withTimeout(async (signal) => {
+      const res = await fetch(RANDOM_ORG_API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", method: "generateIntegers", params: { apiKey: RANDOM_ORG_API_KEY, n: PER_YEAR, min: 0, max: SPAN - 1, replacement: true }, id: Date.now() }),
+        signal,
+      });
+      const json = await res.json();
+      if (json.error) throw new Error(json.error.message);
+      return json.result.random.data;
+    }, 5000);
+  }
+  async function fromPlain() {
+    return withTimeout(async (signal) => {
+      const res = await fetch(RANDOM_ORG_PLAIN, { signal, cache: "no-store" });
+      if (!res.ok) throw new Error("status " + res.status);
+      return (await res.text()).trim().split(/\s+/).map(v => parseInt(v, 10));
+    }, 4000);
+  }
+  function localNum() {
+    const buf = new Uint32Array(1), lim = Math.floor(0x100000000 / SPAN) * SPAN;
+    do { crypto.getRandomValues(buf); } while (buf[0] >= lim);
+    return buf[0] % SPAN;
+  }
+  async function drawYear() {
+    for (const [label, fn] of [["RANDOM.ORG API", fromApi], ["RANDOM.ORG", fromPlain]]) {
+      try {
+        const v = await fn();
+        if (v.length === PER_YEAR && v.every(n => n >= 0 && n < SPAN)) { ov.src.textContent = label; ov.src.classList.remove("warn"); return v; }
+      } catch (err) { console.warn(label + " failed:", err.message || err); }
+    }
+    ov.src.textContent = "LOCAL RNG";
+    ov.src.classList.add("warn");
+    return Array.from({ length: PER_YEAR }, localNum);
+  }
+
+  // Turn one year's numbers into a new board and a die face.
+  function buildYear(nums) {
+    const q = nums.slice();
+    const next = () => (q.length ? q.shift() : localNum());
+    const die = 1 + (next() % 6);
+    const lt = shuffleCopy(LADDER_TEXT), st = shuffleCopy(SNAKE_TEXT);   // which line goes with which square is just flavour
+    const board = {};
+    let L = 0, S = 0, guard = 0;
+    while ((L < N_LADDERS || S < N_SNAKES) && guard++ < 400) {
+      const s = 2 + (next() % 34);                                    // a square from 2 to 35
+      if (board[s] || s === pos) continue;                            // one thing per square, and never under your feet
+      const wantL = L < N_LADDERS && (L <= S || S >= N_SNAKES);
+      const len = MIN_LEN + (next() % 11);                            // 4 to 14 squares
+      const row = (n) => Math.floor((n - 1) / SIZE);
+      const to = wantL ? Math.min(LAST, s + len) : Math.max(1, s - len);
+      if (row(to) === row(s) || board[to]) continue;                  // every ladder and snake crosses a row, and never ends on another
+      if (wantL && s <= LAST - MIN_LEN) { board[s] = { type: "L", to, text: lt[L++] }; }
+      else if (!wantL && S < N_SNAKES && s >= 1 + MIN_LEN + 1) { board[s] = { type: "S", to, text: st[S++] }; }
+    }
+    return { board, die };
+  }
+  function shuffleCopy(a) { const b = a.slice(); for (let i = b.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [b[i], b[j]] = [b[j], b[i]]; } return b; }
+
+  // ---------- board geometry ----------
+  function cellOf(n) {
+    const r = Math.floor((n - 1) / SIZE);
+    let c = (n - 1) % SIZE;
+    if (r % 2 === 1) c = SIZE - 1 - c;
+    return { c, r };
+  }
+  let bx = 0, by = 0, cell = 40;
+  function center(n) {
+    const { c, r } = cellOf(n);
+    return { x: bx + (c + 0.5) * cell, y: by + (SIZE - 1 - r + 0.5) * cell };
+  }
+
+  // ---------- a career ----------
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  const pick = (a) => a[Math.floor(Math.random() * a.length)];
+
+  function setLine(big, small, cls, blink, quote) {
+    lineBig.className = "big" + (cls ? " " + cls : "");
+    lineBig.innerHTML = "";
+    const s = document.createElement("span");
+    if (blink) s.className = "blink";
+    s.textContent = big;
+    lineBig.appendChild(s);
+    lineSmall.textContent = "";
+    if (Array.isArray(small)) small.forEach(([text, c]) => { const e = document.createElement("span"); if (c) e.className = c; e.textContent = text; lineSmall.appendChild(e); });
+    else lineSmall.textContent = small || "";
+    lineQuote.textContent = quote || "";
+  }
+
+  // what each of the six possible rolls would do from where you stand
+  function outcomes() {
+    return [1, 2, 3, 4, 5, 6].map(d => {
+      const n = Math.min(LAST, pos + d);
+      if (n === LAST) return "top";
+      return special[n] ? special[n].type : "plain";
+    });
+  }
+
+  function showOdds() {
+    const o = outcomes();
+    const L = o.filter(x => x === "L").length, S = o.filter(x => x === "S").length, T = o.filter(x => x === "top").length;
+    const parts = [];
+    if (L) parts.push(["▲ ladder on " + L + " of 6 rolls", "up"]);
+    if (S) parts.push(["▼ snake on " + S + " of 6", "down"]);
+    if (T) parts.push(["★ the top on " + T + " of 6", "top"]);
+    if (!L && !S && !T) parts.push(["Nothing ahead but ordinary years.", ""]);
+    parts.forEach((p, i) => { if (i < parts.length - 1) p[0] += "  · "; p[0] += " "; });
+    setLine("ROLL FOR AGE " + (START_AGE + (rollIdx + 1) * YEARS_PER_ROLL), parts, "", false);
+  }
+
+  async function newYear(first) {
+    state = "shuffling";
+    goBtn.disabled = true;
+    setLine(first ? "CHANCE IS SETTING UP THE BOARD..." : "THE MARKET SHIFTS...", "", "", true);
+    const nums = await drawYear();
+    const { board, die } = buildYear(nums);
+    oldSpecial = special;
+    special = board;
+    nextDie = die;
+    layoutAt = performance.now();
+    [330, 392, 494].forEach((f, i) => beep(f, 0.06, "triangle", i * 0.07));
+    await sleep(reduceMotion ? 150 : 900);
+    showOdds();
+    state = "waiting";
+    goBtn.textContent = "ROLL";
+    goBtn.disabled = false;
+    goBtn.focus({ preventScroll: true });
+  }
+
+  function moveTo(to, dur, kind, arc) {
+    token = { from: pos, to, t0: performance.now(), dur, kind, arc };
+    return sleep(dur).then(() => { trail.push({ n: to, kind }); pos = to; token = null; });
+  }
+
+  const FACES = { 1: [4], 2: [0, 8], 3: [0, 4, 8], 4: [0, 2, 6, 8], 5: [0, 2, 4, 6, 8], 6: [0, 2, 3, 5, 6, 8] };
+  function showDie(v) { [...dieEl.children].forEach((s, i) => s.classList.toggle("on", FACES[v].includes(i))); }
+  async function tumble(v) {
+    const spins = reduceMotion ? 0 : 10;
+    for (let i = 0; i < spins; i++) {
+      showDie(1 + Math.floor(Math.random() * 6));
+      dieEl.style.transform = "rotate(" + (Math.random() * 30 - 15) + "deg)";
+      beep(500 + i * 25, 0.025);
+      await sleep(45 + i * 12);
+    }
+    dieEl.style.transform = "rotate(0deg)";
+    showDie(v);
+    beep(880, 0.07);
+    await sleep(reduceMotion ? 150 : 350);
+  }
+
+  async function roll() {
+    if (state !== "waiting") return;
+    state = "busy";
+    goBtn.disabled = true;
+    const v = nextDie;
+    rollIdx++;
+    ov.age.textContent = START_AGE + rollIdx * YEARS_PER_ROLL;
+    ov.left.textContent = ROLLS - rollIdx;
+    setLine("ROLLING...", "", "", false);
+    await tumble(v);
+
+    for (let i = 0; i < v && pos < LAST; i++) {
+      await moveTo(pos + 1, reduceMotion ? 60 : 170, "step", true);
+      beep(420 + pos * 8, 0.03);
+    }
+    const sp = special[pos];
+    if (pos === LAST) {
+      setLine("YOU REACHED THE TOP", "", "up", false);
+    } else if (sp) {
+      const up = sp.type === "L";
+      setLine((up ? "▲ LUCKY BREAK  " : "▼ SETBACK  ") + sp.text.toUpperCase(), "", up ? "up" : "down", false);
+      if (up) { ups++; [523, 659, 784].forEach((f, i) => beep(f, 0.09, "square", i * 0.08)); }
+      else { downs++; [330, 262, 196].forEach((f, i) => beep(f, 0.12, "triangle", i * 0.1)); }
+      riding = pos;
+      await sleep(reduceMotion ? 300 : 800);
+      await moveTo(sp.to, reduceMotion ? 200 : 750, up ? "up" : "down", false);
+      await sleep(reduceMotion ? 100 : 500);
+      riding = null;
+    } else {
+      setLine(pick(PLAIN_TEXT).toUpperCase(), "", "", false);
+      await sleep(reduceMotion ? 200 : 700);
+    }
+
+    if (pos === LAST || rollIdx >= ROLLS) { finish(); return; }
+    await newYear(false);
+  }
+
+  function finish() {
+    state = "done";
+    oldSpecial = special; special = {}; layoutAt = performance.now();     // the board clears; only your trail is left
+    const years = rollIdx * YEARS_PER_ROLL;
+    const age = START_AGE + years;
+    const row = Math.floor((pos - 1) / SIZE);
+    const big = pos === LAST ? "YOU REACHED THE TOP AT " + age : "YOUR CV READS: " + (row === 0 ? "FRESHER" : LEVELS[row] + " OF EXPERIENCE");
+    const breaks = (ups === 1 ? "1 lucky break" : ups + " lucky breaks") + ", " + (downs === 1 ? "1 setback" : downs + " setbacks");
+    const small = "You worked " + years + " years. " + breaks + ". The board changed every year; the dice decided the rest.";
+    const quote = row >= 3
+      ? "Your LinkedIn: \"Grateful for my journey. Hard work and discipline got me here. 🙏\""
+      : "Your LinkedIn: \"Grateful for every lesson. The grind never stops. 🙏\"";
+    setLine(big, small, "end", false, quote);
+    if (row >= 3) [523, 659, 784, 1046].forEach((f, i) => beep(f, 0.13, "square", i * 0.11));
+    else [440, 392, 349, 294].forEach((f, i) => beep(f, 0.18, "triangle", i * 0.14));
+    goBtn.textContent = "NEW CAREER";
+    goBtn.disabled = false;
+  }
+
+  function reset() {
+    state = "ready";
+    special = {}; oldSpecial = {}; layoutAt = -1e9;
+    rollIdx = 0; pos = 1; ups = 0; downs = 0; riding = null;
+    trail = [{ n: 1, kind: "step" }];
+    token = null;
+    ov.age.textContent = START_AGE; ov.left.textContent = ROLLS;
+    showDie(1);
+    goBtn.textContent = "START";
+    goBtn.disabled = false;
+    setLine("YOUR FIRST JOB, AGE 22", "Eight rolls, about five years each. Every year the ladders and snakes move.");
+  }
+
+  goBtn.addEventListener("click", () => {
+    unlockAudio();
+    if (state === "ready") newYear(true);
+    else if (state === "waiting") roll();
+    else if (state === "done") { reset(); newYear(true); }
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.code === "Space" && e.target === document.body) { e.preventDefault(); goBtn.click(); }
+  });
+
+  // ---------- sound ----------
+  let audio = null, soundOn = true;
+  function unlockAudio() {
+    // Browsers can pause audio after a while (another tab, a sleeping screen, an idle frame), so wake it on every tap and before every sound.
+    try {
+      if (!audio) {
+        audio = new (window.AudioContext || window.webkitAudioContext)();
+        audio.__master = audio.createGain();
+        audio.__master.gain.value = 0.9;
+        audio.__master.connect(audio.destination);
+      }
+      if (audio.state !== "running") audio.resume().catch(() => {});
+    } catch (e) { audio = null; }
+  }
+  ["pointerdown", "keydown", "touchstart"].forEach(ev => document.addEventListener(ev, unlockAudio, { passive: true }));
+  document.addEventListener("visibilitychange", () => { if (!document.hidden && audio) audio.resume().catch(() => {}); });
+  function beep(freq, dur, type = "square", delay = 0) {
+    if (!soundOn || !audio) return;
+    if (audio.state !== "running") audio.resume().catch(() => {});
+    const t = audio.currentTime + delay;
+    const o = audio.createOscillator(), g = audio.createGain();
+    o.type = type; o.frequency.setValueAtTime(freq, t);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.05, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(audio.__master || audio.destination);
+    o.start(t); o.stop(t + dur + 0.03);
+    o.onended = () => { o.disconnect(); g.disconnect(); };
+  }
+  soundBtn.addEventListener("click", () => {
+    unlockAudio();
+    soundOn = !soundOn;
+    soundBtn.textContent = soundOn ? "SOUND ON" : "SOUND OFF";
+    soundBtn.setAttribute("aria-pressed", String(soundOn));
+    if (soundOn) beep(880, 0.05);
+  });
+
+  // ---------- drawing ----------
+  const COL = { step: "#3ef0ff", up: "#6dff9c", down: "#ff5a4f" };
+  function font(px) { ctx.font = Math.max(7, Math.round(px)) + "px 'Press Start 2P', monospace"; }
+
+  // ladders and snakes grow in from their starting square; g is how much of them is drawn (0 to 1)
+  function drawLadder(a, b, alpha, g) {
+    const p = center(a), q0 = center(b);
+    const q = { x: p.x + (q0.x - p.x) * g, y: p.y + (q0.y - p.y) * g };
+    const dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy) || 1;
+    const nx = -dy / len * cell * 0.12, ny = dx / len * cell * 0.12;
+    ctx.strokeStyle = "rgba(109,255,156," + alpha + ")"; ctx.lineWidth = Math.max(2, cell * 0.045);
+    ctx.beginPath(); ctx.moveTo(p.x + nx, p.y + ny); ctx.lineTo(q.x + nx, q.y + ny); ctx.moveTo(p.x - nx, p.y - ny); ctx.lineTo(q.x - nx, q.y - ny); ctx.stroke();
+    const rungs = Math.max(1, Math.round(len / (cell * 0.3)));
+    ctx.beginPath();
+    for (let i = 1; i < rungs; i++) { const t = i / rungs; ctx.moveTo(p.x + dx * t + nx, p.y + dy * t + ny); ctx.lineTo(p.x + dx * t - nx, p.y + dy * t - ny); }
+    ctx.stroke();
+  }
+  function drawSnake(a, b, alpha, g, t) {
+    const p = center(a), q = center(b);
+    const dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy) || 1;
+    const nx = -dy / len, ny = dx / len;
+    const wig = reduceMotion ? 0 : t * 2;
+    ctx.strokeStyle = "rgba(255,90,79," + alpha + ")"; ctx.lineWidth = Math.max(3, cell * 0.085); ctx.lineCap = "round";
+    ctx.beginPath();
+    const steps = Math.max(2, Math.round(40 * g));
+    for (let i = 0; i <= steps; i++) {
+      const tt = (i / 40), w = Math.sin(tt * Math.PI * 3 + wig) * cell * 0.17 * (1 - tt * 0.5);
+      const x = p.x + dx * tt + nx * w, y = p.y + dy * tt + ny * w;
+      if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+    }
+    ctx.stroke(); ctx.lineCap = "butt";
+    ctx.fillStyle = "rgba(255,90,79," + alpha + ")";
+    ctx.beginPath(); ctx.arc(p.x, p.y, cell * 0.12, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "rgba(11,8,32," + alpha + ")";
+    ctx.fillRect(p.x - cell * 0.06, p.y - cell * 0.04, cell * 0.03, cell * 0.03);
+    ctx.fillRect(p.x + cell * 0.03, p.y - cell * 0.04, cell * 0.03, cell * 0.03);
+  }
+
+  function frame(now) {
+    const t = now / 1000;
+    ctx.clearRect(0, 0, W, H);
+    const labelW = W * 0.18, padT = H * 0.11, padB = H * 0.05, padR = W * 0.04;
+    const B = Math.min(W - labelW - padR, H - padT - padB);
+    cell = B / SIZE;
+    bx = labelW + (W - labelW - padR - B) / 2; by = padT + (H - padT - padB - B) / 2;
+
+    // experience levels down the side; the row you're on lights up
+    const curRow = Math.floor(((token ? token.to : pos) - 1) / SIZE);
+    font(Math.min(W * 0.016, cell * 0.17));
+    ctx.textAlign = "right"; ctx.textBaseline = "middle";
+    for (let r = 0; r < SIZE; r++) {
+      ctx.fillStyle = r === curRow ? "#ff4fa8" : "#5a5490";
+      ctx.fillText(LEVELS[r], bx - cell * 0.18, by + (SIZE - 1 - r + 0.5) * cell);
+    }
+
+    // squares; the six you could reach this roll are lit and numbered with the die face that gets you there
+    const reach = {};
+    if (state === "waiting") for (let d = 1; d <= 6; d++) { const n = Math.min(LAST, pos + d); if (!(n in reach)) reach[n] = d; }
+    const g = Math.max(2, cell * 0.07);
+    for (let n = 1; n <= LAST; n++) {
+      const { c, r } = cellOf(n);
+      const x = bx + c * cell + g, y = by + (SIZE - 1 - r) * cell + g, s = cell - g * 2;
+      const sp = special[n];
+      let fill = "#120e2e", stroke = "#2a2160";
+      if (n === 1) stroke = "#3ef0ff";
+      if (n === LAST) { fill = "#2a2410"; stroke = "#ffd84a"; }
+      if (sp && sp.type === "L") fill = "rgba(109,255,156,0.12)";
+      if (sp && sp.type === "S") fill = "rgba(255,90,79,0.12)";
+      if (n in reach) { fill = sp ? (sp.type === "L" ? "rgba(109,255,156,0.28)" : "rgba(255,90,79,0.28)") : n === LAST ? "#3a3210" : "#1d1845"; stroke = "#e9e6ff"; }
+      ctx.fillStyle = fill; ctx.fillRect(x, y, s, s);
+      ctx.strokeStyle = stroke; ctx.lineWidth = Math.max(1.5, cell * 0.03); ctx.strokeRect(x + 0.5, y + 0.5, s - 1, s - 1);
+      font(cell * 0.14);
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      if (n === 1) { ctx.fillStyle = "#3ef0ff"; ctx.fillText("START", x + s / 2, y + s / 2); }
+      if (n === LAST) { ctx.fillStyle = "#ffd84a"; ctx.fillText("TOP", x + s / 2, y + s / 2); }
+      if (n in reach) {
+        font(cell * 0.16);
+        ctx.fillStyle = "#e9e6ff"; ctx.textAlign = "left"; ctx.textBaseline = "top";
+        ctx.fillText(String(reach[n]), x + s * 0.1, y + s * 0.1);
+      }
+    }
+
+    // the old board fades out as the new one grows in
+    const since = now - layoutAt;
+    const fadeOld = reduceMotion ? 0 : Math.max(0, 1 - since / 280);
+    const grow = reduceMotion ? 1 : Math.min(1, Math.max(0, (since - 200) / 650));
+    if (fadeOld > 0) for (const s of Object.keys(oldSpecial).map(Number)) {
+      const sp = oldSpecial[s];
+      if (sp.type === "L") drawLadder(s, sp.to, 0.7 * fadeOld, 1); else drawSnake(s, sp.to, 0.7 * fadeOld, 1, t);
+    }
+    for (const s of Object.keys(special).map(Number)) {
+      const sp = special[s];
+      const a = riding === s ? 1 : riding != null ? 0.3 : 0.75;
+      if (sp.type === "L") drawLadder(s, sp.to, a, grow); else drawSnake(s, sp.to, a, grow, t);
+    }
+
+    // the trail of your career so far
+    ctx.lineJoin = "round"; ctx.lineCap = "round";
+    const lw = Math.max(2.5, cell * 0.06);
+    for (let i = 1; i < trail.length; i++) {
+      const p = center(trail[i - 1].n), q = center(trail[i].n);
+      ctx.strokeStyle = COL[trail[i].kind]; ctx.lineWidth = trail[i].kind === "step" ? lw : lw * 1.4;
+      ctx.shadowColor = ctx.strokeStyle; ctx.shadowBlur = reduceMotion ? 0 : 6;
+      ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke();
+    }
+    let tx, ty;
+    if (token) {
+      const k = Math.min(1, (now - token.t0) / token.dur);
+      const e = token.kind === "step" ? k : k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+      const p = center(token.from), q = center(token.to);
+      tx = p.x + (q.x - p.x) * e;
+      ty = p.y + (q.y - p.y) * e - (token.arc ? Math.sin(k * Math.PI) * cell * 0.25 : 0);
+      ctx.strokeStyle = COL[token.kind]; ctx.lineWidth = token.kind === "step" ? lw : lw * 1.4;
+      ctx.shadowColor = ctx.strokeStyle;
+      ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x + (q.x - p.x) * e, p.y + (q.y - p.y) * e); ctx.stroke();
+    } else {
+      const p = center(pos); tx = p.x; ty = p.y;
+    }
+    ctx.shadowBlur = 0; ctx.lineCap = "butt";
+
+    // you
+    const ts = cell * 0.34, bob = reduceMotion || token ? 0 : Math.sin(now / 200) * cell * 0.03;
+    ctx.fillStyle = "#0b0820"; ctx.fillRect(tx - ts / 2 - 2, ty - ts / 2 - 2 + bob, ts + 4, ts + 4);
+    ctx.fillStyle = "#ff4fa8"; ctx.fillRect(tx - ts / 2, ty - ts / 2 + bob, ts, ts);
+    ctx.fillStyle = "#0b0820";
+    ctx.fillRect(tx - ts * 0.24, ty - ts * 0.12 + bob, ts * 0.14, ts * 0.14);
+    ctx.fillRect(tx + ts * 0.1, ty - ts * 0.12 + bob, ts * 0.14, ts * 0.14);
+    requestAnimationFrame(frame);
+  }
+
+  reset();
+  relayout();
+  requestAnimationFrame(frame);
+})();
+</script>

@@ -1,0 +1,465 @@
+<title>Hold or Sell</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap">
+<style>
+/* Layout: one wide arcade screen with the price chart, one line of text under it, one big button. Single dark theme. */
+:root {
+  --ink: #0b0820;
+  --cabinet: #151036;
+  --glass: #07051a;
+  --grid: #2a2160;
+  --text: #e9e6ff;
+  --dim: #8a84bf;
+  --cyan: #3ef0ff;
+  --pink: #ff4fa8;
+  --yellow: #ffd84a;
+  --green: #6dff9c;
+  --red: #ff5a4f;
+  --pixel: "Press Start 2P", "Courier New", monospace;
+  --term: "VT323", "Courier New", monospace;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body { margin: 0; box-sizing: border-box; background: var(--ink); color: var(--text); font-family: var(--term); font-size: 20px; padding-inline: 16px; padding-block: 12px; overflow: hidden; }
+.cab { max-width: 1180px; height: 100%; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; gap: 14px; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: center; gap: 6px 14px; }
+.marquee { font-family: var(--pixel); font-size: 10px; letter-spacing: 0.18em; color: var(--dim); }
+h1 { margin: 0; font-family: var(--pixel); font-size: clamp(14px, 2.6vw, 22px); line-height: 1.3; color: var(--green); text-shadow: 3px 3px 0 var(--cabinet), 5px 5px 0 var(--pink); }
+
+.stage { min-height: 0; min-width: 0; display: grid; place-items: center; }
+.screen { position: relative; box-sizing: border-box; width: var(--w, 320px); height: var(--h, 200px); max-width: 100%; border: 4px solid var(--grid); border-radius: 14px; background: var(--glass); box-shadow: 0 0 0 4px var(--cabinet), 0 0 40px rgba(109, 255, 156, 0.07) inset; overflow: hidden; }
+.screen::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(to bottom, rgba(0,0,0,0) 0 2px, rgba(0,0,0,0.2) 2px 3px); }
+canvas { display: block; width: 100%; height: 100%; }
+.ov { position: absolute; z-index: 1; font-family: var(--pixel); pointer-events: none; }
+.ov.tl { top: 14px; left: 16px; display: flex; flex-direction: column; gap: 6px; }
+.ov.tl .co { font-size: clamp(10px, 1.5vw, 14px); color: var(--text); }
+.ov.tl .tag { font-size: 8px; color: var(--dim); letter-spacing: 0.08em; }
+.ov.tr { top: 14px; right: 16px; text-align: right; display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
+.ov.tr .val { font-size: clamp(14px, 2.4vw, 24px); color: var(--text); font-variant-numeric: tabular-nums; }
+.ov.tr .val.up { color: var(--green); }
+.ov.tr .val.down { color: var(--red); }
+.ov.tr .chg { font-size: 9px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.ov.bl { bottom: 12px; left: 16px; font-size: 9px; color: var(--dim); letter-spacing: 0.08em; }
+.ov.br { bottom: 12px; right: 16px; font-size: 9px; color: var(--dim); letter-spacing: 0.08em; }
+.ov.br b { font-weight: 400; color: var(--cyan); }
+.ov.br b.warn { color: var(--yellow); }
+
+.bottom { display: flex; flex-direction: column; align-items: center; gap: 12px; padding-bottom: 6px; }
+.line { min-height: 2.6em; display: flex; flex-direction: column; justify-content: center; gap: 4px; text-align: center; }
+.line .big { font-family: var(--pixel); font-size: 11px; line-height: 1.7; color: var(--cyan); text-wrap: balance; }
+.line .big.up { font-size: 14px; color: var(--green); }
+.line .big.down { font-size: 14px; color: var(--red); }
+.line .small { font-size: 20px; line-height: 1.1; color: var(--text); text-wrap: balance; max-width: 40em; }
+.line .small:empty { display: none; }
+.blink { animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+
+.controls { display: flex; align-items: center; gap: 12px; }
+.go { font-family: var(--pixel); font-size: 16px; min-width: min(220px, 60vw); padding: 18px 28px; background: var(--yellow); color: var(--ink); border: 0; border-radius: 10px; box-shadow: 0 7px 0 #b8902a; cursor: pointer; letter-spacing: 0.08em; }
+.go.sell { background: var(--pink); box-shadow: 0 7px 0 #a3305f; color: var(--ink); }
+.go:active:not(:disabled) { transform: translateY(5px); box-shadow: 0 2px 0 #b8902a; }
+.go.sell:active:not(:disabled) { box-shadow: 0 2px 0 #a3305f; }
+.go:disabled { background: var(--grid); color: var(--dim); box-shadow: 0 7px 0 var(--cabinet); cursor: default; }
+.ghost { font-family: var(--pixel); font-size: 8px; padding: 10px 12px; background: transparent; color: var(--dim); border: 2px solid var(--grid); border-radius: 6px; cursor: pointer; }
+button:focus-visible { outline: 3px solid var(--cyan); outline-offset: 3px; }
+@media (prefers-reduced-motion: reduce) { .blink { animation: none; } }
+</style>
+
+<div class="cab">
+  <header>
+    <div class="marquee">PLAYING AGAINST CHANCE</div>
+    <h1>HOLD OR SELL</h1>
+  </header>
+
+  <div class="stage" id="stage">
+    <div class="screen" id="screen">
+      <canvas id="chart" aria-label="A price chart for one company over thirty days."></canvas>
+      <div class="ov tl"><span class="co" id="co">MOOCHAIN</span><span class="tag" id="tag">BLOCKCHAIN FOR COWS</span></div>
+      <div class="ov tr" aria-live="polite"><span class="val" id="val">₹10,000</span><span class="chg" id="chg">YOUR MONEY</span></div>
+      <div class="ov bl" id="day">DAY 0 / 30</div>
+      <div class="ov br">CHANCE <b id="src">RANDOM.ORG</b></div>
+    </div>
+  </div>
+
+  <div class="bottom">
+    <div class="line" aria-live="polite">
+      <div class="big" id="lineBig">YOU HAVE ₹10,000 IN MOOCHAIN</div>
+      <div class="small" id="lineSmall">Press start. Then sell whenever you like.</div>
+    </div>
+    <div class="controls">
+      <button class="go" id="goBtn">START</button>
+      <button class="ghost" id="soundBtn" aria-pressed="true">SOUND ON</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const DAYS = 30, START = 10000;
+  const STEP = 0.009;               // each day moves by a whole number from -10 to +10, times 0.9%
+  const SPAN = 10;
+  const COMPANIES = [
+    ["MOOCHAIN", "BLOCKCHAIN FOR COWS"],
+    ["CHAIGPT", "AI-POWERED CHAI"],
+    ["SOLAR UMBRELLAS LTD", "SHADE THAT CHARGES YOUR PHONE"],
+    ["QUANTUM PAPAD", "CRUNCH AT THE SPEED OF LIGHT"],
+    ["DOSA DRONES", "BREAKFAST BY AIR"],
+    ["METAVERSE MANDI", "BUY VIRTUAL VEGETABLES"],
+  ];
+
+  // random.org JSON-RPC API (v4). Anyone who can open this file can read this key.
+  const RANDOM_ORG_API_KEY = (() => { try { return localStorage.getItem("RANDOM_ORG_KEY") || ""; } catch (e) { return ""; } })();
+  const RANDOM_ORG_API = "https://api.random.org/json-rpc/4/invoke";
+  const RANDOM_ORG_PLAIN = "https://www.random.org/integers/?num=" + DAYS + "&min=-" + SPAN + "&max=" + SPAN + "&col=1&base=10&format=plain&rnd=new";
+
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const $ = (id) => document.getElementById(id);
+  const canvas = $("chart"), ctx = canvas.getContext("2d");
+  const goBtn = $("goBtn"), soundBtn = $("soundBtn");
+  const lineBig = $("lineBig"), lineSmall = $("lineSmall");
+  const ov = { co: $("co"), tag: $("tag"), val: $("val"), chg: $("chg"), day: $("day"), src: $("src") };
+
+  let state = "ready";              // ready | opening | running | sold | done
+  let prices = [START];             // value of your ₹10,000 on each day, decided before day 1
+  let day = 0, dayAt = 0;           // last completed day and when it landed
+  let soldDay = null;
+  let round = 0;
+  let yMin = START * 0.85, yMax = START * 1.15;
+  const DAY_MS = reduceMotion ? 380 : 720;
+  const GHOST_MS = reduceMotion ? 120 : 260;
+
+  const rupees = (n) => "₹" + Math.round(n).toLocaleString("en-IN");
+  const pct = (n) => (n >= 0 ? "+" : "−") + Math.abs(n * 100).toFixed(1) + "%";
+
+  // ---------- layout: the widest 16:10 screen that fits ----------
+  const stageEl = $("stage"), screenEl = $("screen");
+  let W = 600, H = 375;
+  function layout() {
+    const w = stageEl.clientWidth, h = stageEl.clientHeight;
+    const ratio = h > w * 1.2 ? 0.95 : 1.6;           // taller screen on a phone held upright
+    let sw = w, sh = w / ratio;
+    if (sh > h) { sh = h; sw = h * ratio; }
+    screenEl.style.setProperty("--w", Math.floor(sw) + "px");
+    screenEl.style.setProperty("--h", Math.floor(sh) + "px");
+  }
+  function resize() {
+    const r = canvas.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(r.width * dpr); canvas.height = Math.round(r.height * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    W = r.width; H = r.height;
+  }
+  function relayout() { layout(); resize(); }
+  if ("ResizeObserver" in window) new ResizeObserver(relayout).observe(stageEl);
+  window.addEventListener("resize", relayout);
+
+  // ---------- chance: one whole number from -10 to +10 for every day ----------
+  async function withTimeout(fn, ms) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), ms);
+    try { return await fn(ctrl.signal); } finally { clearTimeout(timer); }
+  }
+  async function fromApi() {
+    if (!RANDOM_ORG_API_KEY) throw new Error("no key");
+    return withTimeout(async (signal) => {
+      const res = await fetch(RANDOM_ORG_API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", method: "generateIntegers", params: { apiKey: RANDOM_ORG_API_KEY, n: DAYS, min: -SPAN, max: SPAN, replacement: true }, id: Date.now() }),
+        signal,
+      });
+      const json = await res.json();
+      if (json.error) throw new Error(json.error.message);
+      return json.result.random.data;
+    }, 5000);
+  }
+  async function fromPlain() {
+    return withTimeout(async (signal) => {
+      const res = await fetch(RANDOM_ORG_PLAIN, { signal, cache: "no-store" });
+      if (!res.ok) throw new Error("status " + res.status);
+      return (await res.text()).trim().split(/\s+/).map(v => parseInt(v, 10));
+    }, 4000);
+  }
+  function fromLocal() {
+    const out = [], buf = new Uint8Array(1), K = 2 * SPAN + 1;
+    while (out.length < DAYS) {
+      crypto.getRandomValues(buf);
+      if (buf[0] < 252) out.push((buf[0] % K) - SPAN);   // 252 = 12 x 21, keeps it unbiased
+    }
+    return out;
+  }
+  async function drawChance() {
+    for (const [label, fn] of [["RANDOM.ORG API", fromApi], ["RANDOM.ORG", fromPlain]]) {
+      try {
+        const v = await fn();
+        if (v.length === DAYS && v.every(n => n >= -SPAN && n <= SPAN)) { ov.src.textContent = label; ov.src.classList.remove("warn"); return v; }
+      } catch (err) { console.warn(label + " failed:", err.message || err); }
+    }
+    ov.src.textContent = "LOCAL RNG";
+    ov.src.classList.add("warn");
+    return fromLocal();
+  }
+
+  // ---------- a round ----------
+  function setCompany() {
+    const [name, tag] = COMPANIES[round % COMPANIES.length];
+    ov.co.textContent = name;
+    ov.tag.textContent = tag;
+    return name;
+  }
+
+  function setLine(big, small, cls, blink) {
+    lineBig.className = "big" + (cls ? " " + cls : "");
+    lineBig.innerHTML = "";
+    const s = document.createElement("span");
+    if (blink) s.className = "blink";
+    s.textContent = big;
+    lineBig.appendChild(s);
+    lineSmall.textContent = small || "";
+  }
+
+  function showValue(v) {
+    const r = v / START - 1;
+    ov.val.textContent = rupees(v);
+    ov.val.className = "val" + (r > 0.0005 ? " up" : r < -0.0005 ? " down" : "");
+    ov.chg.textContent = soldDay != null ? "SOLD ON DAY " + soldDay : pct(r);
+  }
+
+  async function start() {
+    unlockAudio();
+    state = "opening";
+    goBtn.disabled = true;
+    setLine("OPENING THE MARKET...", "", "", true);
+    const steps = await drawChance();
+    prices = [START];
+    for (const s of steps) prices.push(prices[prices.length - 1] * (1 + s * STEP));
+    day = 0; dayAt = performance.now(); soldDay = null;
+    yMin = START * 0.85; yMax = START * 1.15;
+    state = "running";
+    goBtn.textContent = "SELL";
+    goBtn.classList.add("sell");
+    goBtn.disabled = false;
+    goBtn.focus({ preventScroll: true });
+    setLine("SELL WHENEVER YOU LIKE", "", "", true);
+    beep(392, 0.08); beep(523, 0.1, "square", 0.09);
+    tick();
+  }
+
+  function tick() {
+    if (state !== "running" && state !== "sold") return;
+    const wait = state === "sold" ? GHOST_MS : DAY_MS;
+    setTimeout(() => {
+      if (state !== "running" && state !== "sold") return;
+      day++;
+      dayAt = performance.now();
+      ov.day.textContent = "DAY " + day + " / " + DAYS;
+      if (state === "running") {
+        showValue(prices[day]);
+        const up = prices[day] >= prices[day - 1];
+        beep(up ? 520 + Math.min(6, (prices[day] / prices[day - 1] - 1) * 400) * 40 : 300, 0.04, up ? "square" : "triangle");
+      } else {
+        beep(200, 0.02, "triangle");
+      }
+      if (day >= DAYS) { finish(); return; }
+      tick();
+    }, wait);
+  }
+
+  function sell() {
+    if (state !== "running") return;
+    soldDay = day;
+    state = "sold";
+    goBtn.disabled = true;
+    showValue(prices[soldDay]);
+    setLine("SOLD AT " + rupees(prices[soldDay]), "Now watch what happens next.", "", false);
+    [784, 988, 1175].forEach((f, i) => beep(f, 0.1, "square", i * 0.08));
+  }
+
+  function finish() {
+    const held = soldDay == null;
+    if (held) soldDay = DAYS;
+    state = "done";
+    round++;
+    const got = prices[soldDay];
+    const r = got / START - 1;
+    let best = 0;
+    for (let d = 0; d <= DAYS; d++) if (prices[d] > prices[best]) best = d;
+    showValue(got);
+    const when = held ? "You held all 30 days. " : "You sold on day " + soldDay + ". ";
+    const bestLine = best === soldDay ? "That was the best day to sell. Pure luck: every step was random."
+      : best === 0 ? "The best move was never to buy. Nobody could have known: every step was random."
+      : "The best day to sell was day " + best + ", at " + rupees(prices[best]) + ". Nobody could have known: every step was random.";
+    setLine(rupees(got) + "  " + pct(r), when + bestLine, r >= 0 ? "up" : "down", false);
+    goBtn.textContent = "AGAIN";
+    goBtn.classList.remove("sell");
+    goBtn.disabled = false;
+    if (r >= 0) [523, 659, 784, 1046].forEach((f, i) => beep(f, 0.13, "square", i * 0.11));
+    else [440, 392, 349, 294].forEach((f, i) => beep(f, 0.18, "triangle", i * 0.14));
+  }
+
+  function reset() {
+    state = "ready";
+    prices = [START];
+    day = 0; soldDay = null;
+    yMin = START * 0.85; yMax = START * 1.15;
+    const name = setCompany();
+    showValue(START);
+    ov.chg.textContent = "YOUR MONEY";
+    ov.day.textContent = "DAY 0 / " + DAYS;
+    goBtn.textContent = "START";
+    goBtn.classList.remove("sell");
+    setLine("YOU HAVE ₹10,000 IN " + name, "Press start. Then sell whenever you like.", "", false);
+  }
+
+  goBtn.addEventListener("click", () => {
+    if (state === "ready") start();
+    else if (state === "running") sell();
+    else if (state === "done") { reset(); start(); }
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.code === "Space" && e.target === document.body) { e.preventDefault(); goBtn.click(); }
+  });
+
+  // ---------- sound ----------
+  let audio = null, soundOn = true;
+  function unlockAudio() {
+    // Browsers can pause audio after a while (another tab, a sleeping screen, an idle frame), so wake it on every tap and before every sound.
+    try {
+      if (!audio) {
+        audio = new (window.AudioContext || window.webkitAudioContext)();
+        audio.__master = audio.createGain();
+        audio.__master.gain.value = 0.9;
+        audio.__master.connect(audio.destination);
+      }
+      if (audio.state !== "running") audio.resume().catch(() => {});
+    } catch (e) { audio = null; }
+  }
+  ["pointerdown", "keydown", "touchstart"].forEach(ev => document.addEventListener(ev, unlockAudio, { passive: true }));
+  document.addEventListener("visibilitychange", () => { if (!document.hidden && audio) audio.resume().catch(() => {}); });
+  function beep(freq, dur, type = "square", delay = 0) {
+    if (!soundOn || !audio) return;
+    if (audio.state !== "running") audio.resume().catch(() => {});
+    const t = audio.currentTime + delay;
+    const o = audio.createOscillator(), g = audio.createGain();
+    o.type = type; o.frequency.setValueAtTime(freq, t);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.05, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(audio.__master || audio.destination);
+    o.start(t); o.stop(t + dur + 0.03);
+    o.onended = () => { o.disconnect(); g.disconnect(); };
+  }
+  soundBtn.addEventListener("click", () => {
+    unlockAudio();
+    soundOn = !soundOn;
+    soundBtn.textContent = soundOn ? "SOUND ON" : "SOUND OFF";
+    soundBtn.setAttribute("aria-pressed", String(soundOn));
+    if (soundOn) beep(880, 0.05);
+  });
+
+  // ---------- chart ----------
+  function frame(now) {
+    ctx.clearRect(0, 0, W, H);
+    const padL = W * 0.05, padR = Math.max(W * 0.11, 70), padT = H * 0.2, padB = H * 0.13;
+    const cw = W - padL - padR, ch = H - padT - padB;
+
+    // how far along the line we are: the newest day slides in smoothly
+    const lastKnown = state === "ready" || state === "opening" ? 0 : day;
+    const dur = state === "sold" ? GHOST_MS : DAY_MS;
+    const k = reduceMotion ? 1 : Math.min(1, (now - dayAt) / (dur * 0.6));
+    const tip = lastKnown === 0 ? 0 : lastKnown - 1 + k;     // fractional day position of the line's head
+
+    // the y range eases out to fit what has been shown so far
+    let lo = START, hi = START;
+    for (let d = 0; d <= Math.min(DAYS, Math.ceil(tip)); d++) { lo = Math.min(lo, prices[d] ?? START); hi = Math.max(hi, prices[d] ?? START); }
+    const pad = Math.max((hi - lo) * 0.18, START * 0.06);
+    yMin += ((lo - pad) - yMin) * 0.12;
+    yMax += ((hi + pad) - yMax) * 0.12;
+    const X = (d) => padL + (d / DAYS) * cw;
+    const Y = (v) => padT + (1 - (v - yMin) / (yMax - yMin)) * ch;
+
+    // grid: one column per day, faint
+    ctx.strokeStyle = "rgba(42,33,96,0.55)"; ctx.lineWidth = 1;
+    for (let d = 0; d <= DAYS; d += 1) {
+      ctx.beginPath(); ctx.moveTo(Math.round(X(d)) + 0.5, padT); ctx.lineTo(Math.round(X(d)) + 0.5, padT + ch); ctx.stroke();
+    }
+    // the ₹10,000 line you started from
+    ctx.setLineDash([4, 6]); ctx.strokeStyle = "rgba(138,132,191,0.6)";
+    ctx.beginPath(); ctx.moveTo(padL, Y(START)); ctx.lineTo(padL + cw, Y(START)); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.font = Math.max(8, Math.round(W * 0.012)) + "px 'Press Start 2P', monospace";
+    ctx.fillStyle = "#8a84bf"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    ctx.fillText(rupees(START), padL + cw + 8, Y(START));
+
+    if (tip <= 0 && state !== "running") { requestAnimationFrame(frame); return; }
+
+    const pointAt = (t) => {
+      const a = Math.floor(t), b = Math.min(DAYS, a + 1), f = t - a;
+      return prices[a] + ((prices[b] ?? prices[a]) - prices[a]) * f;
+    };
+    const lineW = Math.max(3, W * 0.005);
+
+    // what you owned: solid line up to the day you sold (or the head)
+    const ownedEnd = soldDay != null ? Math.min(soldDay, tip) : tip;
+    const up = pointAt(ownedEnd) >= START;
+    const col = up ? "#6dff9c" : "#ff5a4f";
+    // soft fill under the owned part
+    ctx.beginPath();
+    ctx.moveTo(X(0), Y(START));
+    for (let d = 0; d <= Math.floor(ownedEnd); d++) ctx.lineTo(X(d), Y(prices[d]));
+    ctx.lineTo(X(ownedEnd), Y(pointAt(ownedEnd)));
+    ctx.lineTo(X(ownedEnd), Y(START));
+    ctx.closePath();
+    ctx.fillStyle = up ? "rgba(109,255,156,0.08)" : "rgba(255,90,79,0.08)";
+    ctx.fill();
+
+    ctx.lineJoin = "miter"; ctx.lineCap = "square";
+    ctx.strokeStyle = col; ctx.lineWidth = lineW;
+    ctx.shadowColor = col; ctx.shadowBlur = reduceMotion ? 0 : 8;
+    ctx.beginPath();
+    ctx.moveTo(X(0), Y(prices[0]));
+    for (let d = 1; d <= Math.floor(ownedEnd); d++) ctx.lineTo(X(d), Y(prices[d]));
+    ctx.lineTo(X(ownedEnd), Y(pointAt(ownedEnd)));
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // after you sell, the market carries on without you: a faint ghost line
+    if (soldDay != null && tip > soldDay) {
+      ctx.strokeStyle = "rgba(233,230,255,0.4)"; ctx.lineWidth = Math.max(2, lineW * 0.6);
+      ctx.setLineDash([6, 6]);
+      ctx.beginPath();
+      ctx.moveTo(X(soldDay), Y(prices[soldDay]));
+      for (let d = soldDay + 1; d <= Math.floor(tip); d++) ctx.lineTo(X(d), Y(prices[d]));
+      ctx.lineTo(X(tip), Y(pointAt(tip)));
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // the head of the line, or the point where you sold
+    const hx = X(ownedEnd), hy = Y(pointAt(ownedEnd));
+    const s = Math.max(8, W * 0.014);
+    if (soldDay != null) {
+      ctx.fillStyle = "#ffd84a";
+      ctx.fillRect(hx - s / 2, hy - s / 2, s, s);
+      const fs = Math.max(8, Math.round(W * 0.013));
+      ctx.font = fs + "px 'Press Start 2P', monospace";
+      ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+      const label = "SOLD";
+      const tw = ctx.measureText(label).width + 10;
+      ctx.fillStyle = "#ffd84a";
+      ctx.fillRect(hx - tw / 2, hy - s - fs - 10, tw, fs + 8);
+      ctx.fillStyle = "#0b0820";
+      ctx.fillText(label, hx, hy - s - 6);
+    } else {
+      const pulse = reduceMotion ? 0 : Math.sin(now / 120) * 2;
+      ctx.fillStyle = col;
+      ctx.fillRect(hx - s / 2 - pulse / 2, hy - s / 2 - pulse / 2, s + pulse, s + pulse);
+    }
+    requestAnimationFrame(frame);
+  }
+
+  reset();
+  relayout();
+  requestAnimationFrame(frame);
+})();
+</script>

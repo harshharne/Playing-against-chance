@@ -1,0 +1,520 @@
+<title>Later</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap">
+<style>
+/* Layout: one arcade screen holding your life as a timeline, 20 to 100. The odds of dying at each age are drawn as a soft curve inside it; the slots for your six things sit under each decade. The six things and the LIVE button are underneath. On tall screens the timeline runs top to bottom. Single dark theme. */
+:root {
+  --ink: #0b0820;
+  --cabinet: #151036;
+  --grid: #2a2160;
+  --text: #e9e6ff;
+  --dim: #8a84bf;
+  --cyan: #3ef0ff;
+  --pink: #ff4fa8;
+  --yellow: #ffd84a;
+  --green: #6dff9c;
+  --red: #ff5a4f;
+  --pixel: "Press Start 2P", "Courier New", monospace;
+  --term: "VT323", "Courier New", monospace;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body { margin: 0; box-sizing: border-box; background: var(--ink); color: var(--text); font-family: var(--term); font-size: 20px; padding-inline: 16px; padding-block: 12px; overflow: hidden; }
+.cab { max-width: 1160px; height: 100%; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; gap: 12px; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: center; gap: 6px 14px; }
+.marquee { font-family: var(--pixel); font-size: 10px; letter-spacing: 0.18em; color: var(--dim); }
+h1 { margin: 0; font-family: var(--pixel); font-size: clamp(14px, 2.6vw, 22px); line-height: 1.3; color: var(--text); text-shadow: 3px 3px 0 var(--cabinet), 5px 5px 0 var(--dim); }
+
+.stage { min-height: 0; min-width: 0; display: grid; place-items: center; }
+.screen { position: relative; box-sizing: border-box; width: min(100%, 1120px); height: min(100%, 640px); border: 4px solid var(--grid); border-radius: 14px; background: #0c0b2a; box-shadow: 0 0 0 4px var(--cabinet); overflow: hidden; }
+.screen::after { content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 6; background: repeating-linear-gradient(to bottom, rgba(0,0,0,0) 0 2px, rgba(0,0,0,0.14) 2px 3px); }
+.inner { position: absolute; inset: 0; box-sizing: border-box; padding: 16px 18px 18px; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 14px; }
+
+.top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; min-height: 56px; }
+.now { display: flex; flex-direction: column; gap: 8px; font-family: var(--pixel); }
+.now[hidden], .hint[hidden] { display: none; }
+.now small { font-size: 8px; letter-spacing: 0.12em; color: var(--dim); }
+.now b { font-weight: 400; font-size: clamp(20px, 3.4vw, 34px); color: var(--text); font-variant-numeric: tabular-nums; }
+.hint { font-family: var(--pixel); font-size: 9px; line-height: 1.8; color: var(--text); max-width: 420px; }
+.hint em { font-style: normal; color: var(--yellow); }
+.odds { display: flex; flex-direction: column; align-items: flex-end; gap: 7px; padding: 10px 12px; background: rgba(11, 8, 32, 0.72); border: 2px solid var(--grid); border-radius: 8px; text-align: right; font-family: var(--pixel); flex: none; }
+.odds small { font-size: 6px; letter-spacing: 0.1em; color: var(--dim); }
+.odds b { font-weight: 400; font-size: 9px; color: var(--pink); line-height: 1.6; }
+
+/* the timeline */
+.tl { position: relative; min-height: 0; display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 6px; }
+.tl canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.dec { position: relative; z-index: 1; min-width: 0; min-height: 0; display: grid; grid-template-rows: auto minmax(40px, 0.8fr) minmax(0, 1fr); gap: 6px; }
+.dec .lab { font-family: var(--pixel); font-size: 8px; color: var(--dim); text-align: center; padding-top: 2px; }
+.dec .room { font-family: var(--pixel); font-size: 6px; color: var(--dim); text-align: center; opacity: 0.7; align-self: center; }
+.slots { min-height: 0; display: flex; flex-direction: column; gap: 6px; }
+.slot { flex: 1 1 0; min-height: 0; max-height: 110px; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 4px; background: rgba(11, 8, 32, 0.55); border: 2px dashed var(--grid); border-radius: 8px; color: var(--dim); font-family: var(--pixel); font-size: 6px; cursor: pointer; }
+.slot canvas { position: static; width: 26px; height: 26px; image-rendering: pixelated; }
+.slot .nm { font-size: 6px; color: var(--text); line-height: 1.4; text-align: center; }
+.slot.filled { border-style: solid; border-color: var(--pink); background: #22103a; }
+.slot.target { border-color: var(--yellow); }
+.slot.done { border-color: var(--green); background: #10301f; }
+.slot.later { opacity: 0.4; border-style: dashed; border-color: var(--dim); background: transparent; }
+.slot.later::after { content: "LATER"; position: absolute; top: 4px; right: 5px; font-size: 5px; color: var(--dim); }
+.slot:disabled { cursor: default; }
+.slots .none { flex: 1; display: grid; place-items: center; font-family: var(--pixel); font-size: 7px; color: var(--grid); }
+
+.intro, .end { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; padding: 16px; background: rgba(7, 5, 26, 0.78); }
+.intro[hidden], .end[hidden] { display: none; }
+.card { max-width: 460px; display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 24px; text-align: center; background: var(--cabinet); border: 3px solid var(--grid); border-radius: 12px; box-shadow: 0 0 0 3px var(--ink); box-sizing: border-box; max-height: 100%; overflow: auto; }
+.card > b { font-family: var(--pixel); font-weight: 400; font-size: clamp(14px, 2.4vw, 20px); line-height: 1.5; color: var(--text); text-shadow: 2px 2px 0 var(--dim); }
+.card p { margin: 0; font-size: 22px; line-height: 1.1; text-wrap: balance; }
+.card .quiet { font-family: var(--pixel); font-size: 8px; letter-spacing: 0.1em; color: var(--dim); }
+.wishes { width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.wishes button { font-family: var(--pixel); font-size: 8px; line-height: 1.7; padding: 12px 8px; background: transparent; color: var(--text); border: 2px solid var(--grid); border-radius: 8px; cursor: pointer; }
+.wishes button:hover { border-color: var(--pink); }
+.end { background: rgba(7, 5, 26, 0.5); opacity: 0; transition: opacity 0.9s; }
+.end.in { opacity: 1; }
+.facts { width: 100%; padding-top: 12px; border-top: 2px solid var(--grid); display: flex; flex-direction: column; gap: 6px; font-size: 20px; line-height: 1.15; color: var(--dim); }
+.facts strong { font-weight: 400; font-size: 22px; color: var(--text); }
+.facts .src { font-family: var(--pixel); font-size: 6px; letter-spacing: 0.08em; line-height: 1.8; }
+
+.bottom { display: flex; justify-content: center; align-items: center; gap: 14px; padding-bottom: 6px; }
+.things { display: grid; grid-template-columns: repeat(6, 82px); gap: 8px; }
+.thing { height: 70px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; padding: 0 4px; background: var(--cabinet); border: 2px solid var(--grid); border-radius: 8px; color: var(--text); font-family: var(--pixel); font-size: 6px; line-height: 1.4; cursor: pointer; }
+.thing canvas { width: 26px; height: 26px; image-rendering: pixelated; }
+.thing.sel { border-color: var(--yellow); box-shadow: 0 0 0 2px rgba(255, 216, 74, 0.25); }
+.thing.placed { opacity: 0.25; }
+.thing:disabled { cursor: default; }
+.go { font-family: var(--pixel); font-size: 14px; min-width: 180px; padding: 18px 20px; border: 0; border-radius: 10px; cursor: pointer; letter-spacing: 0.06em; color: var(--ink); background: var(--yellow); box-shadow: 0 7px 0 #b8902a; }
+.go:active:not(:disabled) { transform: translateY(5px); box-shadow: 0 2px 0 rgba(0,0,0,0.4); }
+.go:disabled { background: var(--grid); color: var(--dim); box-shadow: 0 7px 0 var(--cabinet); cursor: default; }
+.go .k { display: block; margin-top: 6px; font-size: 7px; opacity: 0.6; letter-spacing: 0.1em; }
+.go[hidden] { display: none; }
+.side { display: flex; flex-direction: column; gap: 8px; align-items: center; font-family: var(--pixel); font-size: 7px; letter-spacing: 0.08em; color: var(--dim); }
+.side b { font-weight: 400; color: var(--cyan); }
+.side b.warn { color: var(--yellow); }
+.ghost { font-family: var(--pixel); font-size: 8px; padding: 8px 10px; background: transparent; color: var(--dim); border: 2px solid var(--grid); border-radius: 6px; cursor: pointer; }
+button:focus-visible { outline: 3px solid var(--pink); outline-offset: 3px; }
+
+@media (max-width: 900px) { .things { grid-template-columns: repeat(6, 70px); } .thing { height: 64px; } }
+/* tall screens: the timeline runs top to bottom */
+@media (orientation: portrait), (max-width: 700px) {
+  .tl { grid-template-columns: minmax(0, 1fr); grid-template-rows: repeat(8, minmax(0, 1fr)); gap: 4px; }
+  .dec { grid-template-columns: 34px minmax(50px, 0.7fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); gap: 6px; align-items: stretch; }
+  .dec .lab { align-self: center; padding: 0; }
+  .slots { flex-direction: row; }
+  .slot { max-height: none; flex-direction: row; gap: 6px; }
+  .slot canvas { width: 20px; height: 20px; }
+  .slot .nm { display: none; }
+}
+@media (max-width: 700px) {
+  .inner { padding: 12px; gap: 10px; }
+  .hint { font-size: 7px; }
+  .top { min-height: 44px; }
+  .bottom { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 12px; }
+  .things { grid-column: 1 / -1; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+  .thing { height: 56px; font-size: 5px; gap: 5px; }
+  .thing canvas { width: 20px; height: 20px; }
+  .go { min-width: 0; width: 100%; padding: 15px 10px; font-size: 12px; }
+  .go .k { display: none; }
+  .wishes button { font-size: 7px; padding: 10px 6px; }
+  .card p, .facts strong { font-size: 19px; }
+  .facts { font-size: 18px; }
+}
+@media (prefers-reduced-motion: reduce) { .end { transition: none; } }
+</style>
+
+<div class="cab">
+  <header>
+    <div class="marquee">PLAYING AGAINST CHANCE</div>
+    <h1>LATER</h1>
+  </header>
+
+  <div class="stage">
+    <div class="screen" id="screen">
+      <div class="inner">
+        <div class="top">
+          <div class="now" id="now" hidden><small>AGE</small><b id="age">20</b></div>
+          <div class="hint" id="hint">Put your six things on your life. <em>Early years have less room.</em></div>
+          <div class="odds"><small>WHEN PEOPLE DIE · INDIA</small><b id="oddsLine">1 IN 4 DON'T REACH 65</b></div>
+        </div>
+        <div class="tl" id="tl"><canvas id="curve" aria-hidden="true"></canvas></div>
+      </div>
+
+      <div class="intro" id="intro">
+        <div class="card">
+          <span class="quiet">THIS STAGE IS ABOUT DEATH</span>
+          <b>HOW WOULD YOU LIKE TO GO?</b>
+          <div class="wishes" id="wishes"></div>
+        </div>
+      </div>
+
+      <div class="end" id="end" hidden role="dialog" aria-live="polite">
+        <div class="card">
+          <b id="endTitle"></b>
+          <p id="endWish"></p>
+          <div class="facts">
+            <span id="endDid"></span>
+            <strong>Chance decided when. You decided what came first.</strong>
+            <span class="src">ODDS FROM INDIA'S SRS LIFE TABLE 2016–20, FROM AGE 20</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="bottom">
+    <div class="things" id="things" role="group" aria-label="Six things you mean to do"></div>
+    <button class="go" id="liveBtn" disabled>LIVE<span class="k">SPACE</span></button>
+    <button class="go" id="againBtn" hidden>LIVE AGAIN<span class="k">SPACE</span></button>
+    <div class="side">
+      <span>CHANCE <b id="src">RANDOM.ORG</b></span>
+      <button class="ghost" id="soundBtn" aria-pressed="true">SOUND ON</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  // ---------- the odds ----------
+  // India, SRS abridged life table 2016–20, total population. Out of 100,000 born, how many are still alive at each age.
+  const LX = { 20: 95165, 25: 94633, 30: 94001, 35: 93173, 40: 92075, 45: 90459, 50: 88228, 55: 84844, 60: 79348, 65: 72193, 70: 62123, 75: 49277, 80: 35080, 85: 20364 };
+  const BINS = [];                                     // deaths in each 5-year band, counted from age 20
+  for (let a = 20; a < 85; a += 5) BINS.push({ from: a, n: LX[a] - LX[a + 5] });
+  BINS.push({ from: 85, n: LX[85] });                  // 85 and over
+  const TOTAL = LX[20];                                // 95,165 people alive at 20 in the table
+  // the table stops at "85+": spread those deaths over 85–99, fewer each year (life expectancy at 85 is 5.3 years)
+  const OLD = (() => { const w = Array.from({ length: 15 }, (_, k) => Math.exp(-k / 5.3)); const s = w.reduce((a, b) => a + b, 0); let c = 0; return w.map(v => (c += v / s * 1000, Math.round(c))); })();
+  OLD[OLD.length - 1] = 1000;
+  function probAt(age) {                               // share of 20-year-olds who die at this age
+    if (age >= 85) { const k = age - 85; return k > 14 ? 0 : LX[85] / TOTAL * ((OLD[k] - (k ? OLD[k - 1] : 0)) / 1000); }
+    const b = BINS.find(b => age >= b.from && age < b.from + 5);
+    return b.n / TOTAL / 5;
+  }
+  const MAXP = Math.max(...Array.from({ length: 80 }, (_, i) => probAt(20 + i)));
+  // turn two random.org numbers into an age: the first picks the band (weighted by the table), the second the year inside it
+  function ageFrom(n1, n2) {
+    let c = 0, bin = BINS[BINS.length - 1];
+    for (const b of BINS) { c += b.n; if (n1 <= c) { bin = b; break; } }
+    if (bin.from < 85) return bin.from + Math.floor((n2 - 1) / 200);
+    return 85 + OLD.findIndex(t => n2 <= t);
+  }
+
+  // ---------- the life ----------
+  const WISHES = [
+    { t: "VERY OLD, IN MY SLEEP", say: "very old, in your sleep" },
+    { t: "AT HOME, WITH MY PEOPLE", say: "at home, with your people around" },
+    { t: "QUICKLY, WITHOUT KNOWING", say: "quickly, without knowing" },
+    { t: "WITH TIME TO SAY GOODBYE", say: "with time to say goodbye" },
+  ];
+  const THINGS = [
+    { t: "TRAVEL FAR", s: "travel far", pal: { a: "#3ef0ff" }, px: ["....aa....", "....aa....", "...aaaa...", "aaaaaaaaaa", "aaaaaaaaaa", "...aaaa...", "....aa....", "...aaaa...", "...a..a...", ".........."] },
+    { t: "CALL PARENTS MORE", s: "call your parents more", pal: { a: "#6dff9c" }, px: ["aa........", "aaa.......", "aaa.......", ".aa.......", ".aa.......", "..aa......", "...aa..aa.", "....aaaaaa", ".....aaaa.", ".........."] },
+    { t: "WRITE THAT THING", s: "write that thing", pal: { a: "#ffd84a", b: "#e9e6ff" }, px: ["........aa", ".......aaa", "......aaa.", ".....aaa..", "....aaa...", "...aaa....", "..aaa.....", "..aa......", ".a........", "bbbbbbbbbb"] },
+    { t: "LEARN MUSIC", s: "learn music", pal: { a: "#c38bff" }, px: ["...aaaaaaa", "...aaaaaaa", "...a.....a", "...a.....a", "...a.....a", ".aaa...aaa", "aaaa..aaaa", "aaaa..aaaa", ".aa....aa.", ".........."] },
+    { t: "QUIT THAT JOB", s: "quit that job", pal: { a: "#ff9a2e", b: "#e9e6ff" }, px: ["aaaaa.....", "a...a.....", "a...a..b..", "a...a...b.", "a..aabbbbb", "a...a...b.", "a...a..b..", "a...a.....", "aaaaa.....", ".........."] },
+    { t: "SAY I LOVE YOU", s: "say I love you", pal: { a: "#ff4fa8" }, px: ["..........", ".aa...aa..", "aaaa.aaaa.", "aaaaaaaaa.", "aaaaaaaaa.", ".aaaaaaa..", "..aaaaa...", "...aaa....", "....a.....", ".........."] },
+  ];
+  // room in each decade: busy early years have one slot, later years more. Each slot happens at a set age.
+  const DECADES = [[25], [35], [45], [55], [63, 67], [73, 77], [83, 87], []];
+
+  // random.org JSON-RPC API (v4). Anyone who can open this file can read this key.
+  const RANDOM_ORG_API_KEY = (() => { try { return localStorage.getItem("RANDOM_ORG_KEY") || ""; } catch (e) { return ""; } })();
+  const RANDOM_ORG_API = "https://api.random.org/json-rpc/4/invoke";
+
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const $ = (id) => document.getElementById(id);
+  const tl = $("tl"), cv = $("curve"), ctx = cv.getContext("2d");
+  const liveBtn = $("liveBtn"), againBtn = $("againBtn"), soundBtn = $("soundBtn"), srcEl = $("src");
+  const introEl = $("intro"), endEl = $("end"), hintEl = $("hint"), nowEl = $("now"), ageEl = $("age");
+
+  let state = "wish";            // wish | place | living | done
+  let wish = 0, sel = 0, place = THINGS.map(() => null), age = 20, endAge = null, decEls = [], bandEls = [];
+  const slots = [];              // { el, age, thing }
+
+  // ---------- chance ----------
+  async function withTimeout(fn, ms) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), ms);
+    try { return await fn(ctrl.signal); } finally { clearTimeout(timer); }
+  }
+  async function apiInts(min, max) {
+    if (!RANDOM_ORG_API_KEY) throw new Error("no key");
+    return withTimeout(async (signal) => {
+      const res = await fetch(RANDOM_ORG_API, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", method: "generateIntegers", params: { apiKey: RANDOM_ORG_API_KEY, n: 1, min, max, replacement: true }, id: Date.now() }),
+        signal,
+      });
+      const json = await res.json();
+      if (json.error) throw new Error(json.error.message);
+      return json.result.random.data[0];
+    }, 5000);
+  }
+  async function plainInts(min, max) {
+    return withTimeout(async (signal) => {
+      const res = await fetch("https://www.random.org/integers/?num=1&min=" + min + "&max=" + max + "&col=1&base=10&format=plain&rnd=new", { signal, cache: "no-store" });
+      if (!res.ok) throw new Error("status " + res.status);
+      return parseInt((await res.text()).trim(), 10);
+    }, 4000);
+  }
+  function localInt(min, max) {
+    const k = max - min + 1, lim = Math.floor(0x100000000 / k) * k, buf = new Uint32Array(1);
+    do { crypto.getRandomValues(buf); } while (buf[0] >= lim);
+    return min + (buf[0] % k);
+  }
+  async function getInt(min, max) {
+    for (const [label, fn] of [["RANDOM.ORG API", apiInts], ["RANDOM.ORG", plainInts]]) {
+      try { const v = await fn(min, max); if (v >= min && v <= max) { setSource(label); return v; } }
+      catch (err) { console.warn(label + " failed:", err.message || err); }
+    }
+    setSource("LOCAL RNG");
+    return localInt(min, max);
+  }
+  function setSource(label) { srcEl.textContent = label; srcEl.classList.toggle("warn", label === "LOCAL RNG"); }
+
+  // ---------- build the page ----------
+  function iconCanvas(t, size) {
+    const c = document.createElement("canvas"); c.width = 10; c.height = 10;
+    drawPx(c.getContext("2d"), t.px, t.pal);
+    return c;
+  }
+  function drawPx(c, px, pal) { px.forEach((row, j) => [...row].forEach((ch, i) => { if (pal[ch]) { c.fillStyle = pal[ch]; c.fillRect(i, j, 1, 1); } })); }
+
+  WISHES.forEach((w, i) => {
+    const b = document.createElement("button"); b.textContent = w.t;
+    b.addEventListener("click", () => chooseWish(i));
+    $("wishes").appendChild(b);
+  });
+
+  DECADES.forEach((ages, d) => {
+    const dec = document.createElement("div"); dec.className = "dec";
+    const lab = document.createElement("div"); lab.className = "lab"; lab.textContent = (20 + d * 10) + "s";
+    const band = document.createElement("div"); band.className = "band";
+    const box = document.createElement("div"); box.className = "slots";
+    if (!ages.length) { const n = document.createElement("div"); n.className = "none"; n.textContent = "·"; box.appendChild(n); }
+    ages.forEach(a => {
+      const el = document.createElement("button"); el.className = "slot";
+      const s = { el, age: a, thing: null };
+      el.addEventListener("click", () => tapSlot(s));
+      box.appendChild(el);
+      slots.push(s);
+    });
+    dec.append(lab, band, box);
+    tl.appendChild(dec);
+    decEls.push(dec); bandEls.push(band);
+  });
+
+  const thingBtns = THINGS.map((t, i) => {
+    const b = document.createElement("button"); b.className = "thing";
+    const nm = document.createElement("span"); nm.textContent = t.t;
+    b.append(iconCanvas(t), nm);
+    b.addEventListener("click", () => tapThing(i));
+    $("things").appendChild(b);
+    return b;
+  });
+
+  function paintSlots() {
+    slots.forEach(s => {
+      const el = s.el; el.innerHTML = "";
+      el.classList.toggle("filled", s.thing != null);
+      el.classList.toggle("target", state === "place" && s.thing == null && place.some(p => p == null));
+      if (s.thing != null) {
+        const nm = document.createElement("span"); nm.className = "nm"; nm.textContent = THINGS[s.thing].t;
+        el.append(iconCanvas(THINGS[s.thing]), nm);
+        el.setAttribute("aria-label", THINGS[s.thing].t + " at age " + s.age);
+      } else {
+        el.textContent = "AGE " + s.age;
+        el.setAttribute("aria-label", "Empty, age " + s.age);
+      }
+      el.disabled = state !== "place";
+    });
+    thingBtns.forEach((b, i) => {
+      b.classList.toggle("placed", place[i] != null);
+      b.classList.toggle("sel", state === "place" && i === sel && place[i] == null);
+      b.disabled = state !== "place";
+    });
+    liveBtn.disabled = !(state === "place" && place.every(p => p != null));
+  }
+
+  // ---------- placing ----------
+  function chooseWish(i) {
+    ensureAudio();
+    wish = i;
+    introEl.hidden = true;
+    state = "place";
+    sel = place.findIndex(p => p == null);
+    beep(523, 0.08, "triangle"); beep(659, 0.1, "triangle", 0.08);
+    paintSlots();
+  }
+  function tapThing(i) {
+    if (state !== "place") return;
+    if (place[i] != null) { const s = place[i]; s.thing = null; place[i] = null; beep(330, 0.05); }
+    sel = i;
+    paintSlots();
+  }
+  function tapSlot(s) {
+    if (state !== "place") return;
+    if (s.thing != null) {                              // tap a filled slot to take it back
+      place[s.thing] = null; sel = s.thing; s.thing = null;
+      beep(330, 0.05); paintSlots(); return;
+    }
+    if (sel < 0 || place[sel] != null) sel = place.findIndex(p => p == null);
+    if (sel < 0) return;
+    s.thing = sel; place[sel] = s;
+    beep(440 + s.age * 6, 0.07, "square", 0, 0.04);
+    sel = place.findIndex(p => p == null);
+    paintSlots();
+    if (sel < 0) liveBtn.focus({ preventScroll: true });
+  }
+
+  // ---------- living ----------
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  async function live() {
+    if (liveBtn.disabled || state !== "place") return;
+    state = "living";
+    paintSlots();
+    liveBtn.disabled = true;
+    hintEl.hidden = true; nowEl.hidden = false;
+    const [n1, n2] = await Promise.all([getInt(1, TOTAL), getInt(1, 1000)]);
+    const death = ageFrom(n1, n2);
+    endAge = null;
+    for (let a = 20; a <= death; a++) {
+      age = a; ageEl.textContent = a;
+      const hit = slots.filter(s => s.age === a && s.thing != null);
+      if (a === death) break;
+      hit.forEach(s => { s.el.classList.add("done"); [659, 784, 1046].forEach((f, k) => beep(f, 0.14, "triangle", k * 0.07, 0.045)); });
+      if (!hit.length && a % 10 === 0) beep(220, 0.05, "triangle", 0, 0.03);
+      await sleep(reduceMotion ? 25 : 150);
+    }
+    // the line stops
+    endAge = death;
+    slots.forEach(s => { if (s.thing != null && s.age >= death) s.el.classList.add("later"); });
+    beep(110, 2.2, "sine", 0.1, 0.06);
+    await sleep(reduceMotion ? 200 : 1800);
+    const did = slots.filter(s => s.thing != null && s.age < death).length;
+    const later = slots.filter(s => s.thing != null && s.age >= death);
+    $("endTitle").textContent = "THE LINE STOPS AT " + death;
+    $("endWish").textContent = "You wanted to go " + WISHES[wish].say + ".";
+    $("endDid").textContent = later.length === 0
+      ? "You did all six. You didn't wait for any of them."
+      : "You did " + did + " of 6. You saved " + later.length + " for later: " + later.sort((a, b) => a.age - b.age).map(s => THINGS[s.thing].s).join(", ") + ".";
+    endEl.hidden = false; void endEl.offsetWidth; endEl.classList.add("in");
+    state = "done";
+    liveBtn.hidden = true; againBtn.hidden = false;
+    againBtn.focus({ preventScroll: true });
+  }
+
+  function again() {
+    endEl.hidden = true; endEl.classList.remove("in");
+    slots.forEach(s => { s.thing = null; s.el.classList.remove("done", "later"); });
+    place = THINGS.map(() => null);
+    age = 20; endAge = null;
+    hintEl.hidden = false; nowEl.hidden = true;
+    againBtn.hidden = true; liveBtn.hidden = false;
+    state = "wish";
+    paintSlots();
+    introEl.hidden = false;
+  }
+
+  liveBtn.addEventListener("click", live);
+  againBtn.addEventListener("click", again);
+  document.addEventListener("keydown", (e) => {
+    if (e.repeat || e.key !== " " || e.target instanceof HTMLButtonElement) return;
+    e.preventDefault();
+    if (state === "place") live(); else if (state === "done") again();
+  });
+
+  // ---------- sound that keeps working ----------
+  let audio = null, master = null, soundOn = true;
+  function ensureAudio() {
+    try {
+      if (!audio) {
+        audio = new (window.AudioContext || window.webkitAudioContext)();
+        master = audio.createGain(); master.gain.value = 0.9; master.connect(audio.destination);
+      }
+      if (audio.state !== "running") audio.resume().catch(() => {});
+    } catch (e) { audio = null; }
+  }
+  ["pointerdown", "keydown", "touchstart"].forEach(ev => document.addEventListener(ev, ensureAudio, { passive: true }));
+  document.addEventListener("visibilitychange", () => { if (!document.hidden && audio) audio.resume().catch(() => {}); });
+  function beep(freq, dur, type = "square", delay = 0, vol = 0.05) {
+    if (!soundOn || !audio) return;
+    if (audio.state !== "running") audio.resume().catch(() => {});
+    const t = audio.currentTime + delay + 0.005;
+    const o = audio.createOscillator(), g = audio.createGain();
+    o.type = type; o.frequency.setValueAtTime(freq, t);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(master);
+    o.start(t); o.stop(t + dur + 0.03);
+    o.onended = () => { o.disconnect(); g.disconnect(); };
+  }
+  soundBtn.addEventListener("click", () => {
+    ensureAudio();
+    soundOn = !soundOn;
+    soundBtn.textContent = soundOn ? "SOUND ON" : "SOUND OFF";
+    soundBtn.setAttribute("aria-pressed", String(soundOn));
+    if (soundOn) beep(880, 0.05);
+  });
+
+  // ---------- the curve and the moving line ----------
+  let W = 0, H = 0;
+  function resize() {
+    const r = cv.getBoundingClientRect(), dpr = Math.min(window.devicePixelRatio || 1, 2);
+    cv.width = Math.max(1, Math.round(r.width * dpr)); cv.height = Math.max(1, Math.round(r.height * dpr));
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    W = r.width; H = r.height;
+  }
+  if ("ResizeObserver" in window) new ResizeObserver(resize).observe(cv);
+  window.addEventListener("resize", resize);
+  const tall = () => decEls.length > 1 && decEls[1].getBoundingClientRect().top > decEls[0].getBoundingClientRect().bottom - 2;
+
+  // where an age sits on screen, along the timeline
+  function at(a, base) {
+    const d = Math.max(0, Math.min(7, Math.floor((a - 20) / 10))), f = Math.max(0, Math.min(1, (a - 20 - d * 10) / 10));
+    const r = decEls[d].getBoundingClientRect();
+    return tall() ? r.top - base.top + f * r.height : r.left - base.left + f * r.width;
+  }
+
+  let shown = 20;
+  function frame() {
+    ctx.clearRect(0, 0, W, H);
+    const base = cv.getBoundingClientRect(), isTall = tall();
+    // the soft curve: how many people die at each age
+    for (let a = 20; a < 100; a++) {
+      const d = Math.min(7, Math.floor((a - 20) / 10));
+      const br = bandEls[d].getBoundingClientRect();
+      const p0 = at(a, base), p1 = a % 10 === 9 ? at(a + 0.999, base) : at(a + 1, base);
+      const k = probAt(a) / MAXP;
+      const past = endAge != null && a >= endAge;
+      ctx.fillStyle = endAge != null && a === endAge ? "#e9e6ff" : past ? "rgba(138,132,191,0.25)" : "rgba(255,79,168," + (0.25 + k * 0.5) + ")";
+      if (isTall) {
+        const len = Math.max(1, k * (br.width - 4));
+        ctx.fillRect(br.right - base.left - len, p0 + 0.5, len, Math.max(1, p1 - p0 - 1));
+      } else {
+        const len = Math.max(1, k * (br.height - 4));
+        ctx.fillRect(p0 + 0.5, br.bottom - base.top - len, Math.max(1, p1 - p0 - 1), len);
+      }
+    }
+    // the life so far
+    if (state === "living" || state === "done") {
+      shown += (age - shown) * 0.35;
+      const p = at(Math.min(99.9, shown + 0.5), base), p0 = at(20, base);
+      ctx.fillStyle = "rgba(62,240,255,0.08)";
+      if (isTall) ctx.fillRect(0, p0, W, p - p0); else ctx.fillRect(p0, 0, p - p0, H);
+      ctx.fillStyle = endAge != null ? "#e9e6ff" : "#3ef0ff";
+      if (isTall) ctx.fillRect(0, p - 1.5, W, 3); else ctx.fillRect(p - 1.5, 0, 3, H);
+      if (endAge != null) {                               // what's after is greyed out
+        ctx.fillStyle = "rgba(7,5,26,0.55)";
+        if (isTall) ctx.fillRect(0, p + 2, W, H - p); else ctx.fillRect(p + 2, 0, W - p, H);
+      }
+    } else shown = 20;
+    requestAnimationFrame(frame);
+  }
+
+  // the headline odds, worked out from the table
+  const before65 = (TOTAL - LX[65]) / TOTAL;
+  $("oddsLine").textContent = "1 IN " + Math.round(1 / before65) + " DON'T REACH 65";
+  paintSlots();
+  resize();
+  requestAnimationFrame(frame);
+})();
+</script>

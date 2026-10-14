@@ -1,0 +1,627 @@
+<title>Wheel of Years</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap">
+<style>
+/* Layout: one arcade screen split in two. Left: your life, decade by decade. Right: the wheel of 100 slots for this decade. Habit tiles and the LIVE button sit under it. Single dark theme. */
+:root {
+  --ink: #0b0820;
+  --cabinet: #151036;
+  --grid: #2a2160;
+  --text: #e9e6ff;
+  --dim: #8a84bf;
+  --cyan: #3ef0ff;
+  --pink: #ff4fa8;
+  --yellow: #ffd84a;
+  --green: #6dff9c;
+  --red: #ff5a4f;
+  --pixel: "Press Start 2P", "Courier New", monospace;
+  --term: "VT323", "Courier New", monospace;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body { margin: 0; box-sizing: border-box; background: var(--ink); color: var(--text); font-family: var(--term); font-size: 20px; padding-inline: 16px; padding-block: 12px; overflow: hidden; }
+.cab { max-width: 1160px; height: 100%; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; gap: 12px; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: center; gap: 6px 14px; }
+.marquee { font-family: var(--pixel); font-size: 10px; letter-spacing: 0.18em; color: var(--dim); }
+h1 { margin: 0; font-family: var(--pixel); font-size: clamp(14px, 2.6vw, 22px); line-height: 1.3; color: var(--text); text-shadow: 3px 3px 0 var(--cabinet), 5px 5px 0 var(--pink); }
+
+.stage { min-height: 0; min-width: 0; display: grid; place-items: center; }
+.screen { position: relative; box-sizing: border-box; width: min(100%, 1120px); height: min(100%, 660px); border: 4px solid var(--grid); border-radius: 14px; background: #0c0b2a; box-shadow: 0 0 0 4px var(--cabinet); overflow: hidden; }
+.screen::after { content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 5; background: repeating-linear-gradient(to bottom, rgba(0,0,0,0) 0 2px, rgba(0,0,0,0.16) 2px 3px); }
+.panes { position: absolute; inset: 0; display: grid; grid-template-columns: minmax(0, 1.12fr) minmax(0, 1fr); transition: filter 1.6s ease; }
+.pane { position: relative; min-width: 0; min-height: 0; }
+.pane + .pane { border-left: 3px solid var(--grid); }
+.pane canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.screen.frozen .panes { filter: grayscale(1) brightness(0.6); }
+
+.intro, .end { position: absolute; inset: 0; z-index: 4; display: grid; place-items: center; padding: 16px; background: rgba(7, 5, 26, 0.72); }
+.intro[hidden], .end[hidden] { display: none; }
+.end { background: transparent; transition: background 1s; }
+.end.in { background: rgba(7, 5, 26, 0.55); }
+.card { max-width: 460px; display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 26px 24px; text-align: center; background: var(--cabinet); border: 3px solid var(--grid); border-radius: 12px; box-shadow: 0 0 0 3px var(--ink); }
+.card b { font-family: var(--pixel); font-weight: 400; font-size: clamp(14px, 2.4vw, 20px); color: var(--text); text-shadow: 2px 2px 0 var(--pink); }
+.card p { margin: 0; font-size: 22px; line-height: 1.1; color: var(--text); text-wrap: balance; }
+.card .quiet { font-family: var(--pixel); font-size: 8px; letter-spacing: 0.1em; color: var(--dim); }
+.end .card { opacity: 0; transform: translateY(8px); transition: opacity 0.9s, transform 0.9s; }
+.end.in .card { opacity: 1; transform: none; }
+.end .card b { text-shadow: none; font-size: clamp(18px, 3vw, 26px); }
+.facts { width: 100%; margin-top: 2px; padding-top: 12px; border-top: 2px solid var(--grid); font-size: 20px; line-height: 1.15; color: var(--dim); display: flex; flex-direction: column; gap: 4px; }
+.facts strong { font-weight: 400; color: var(--text); }
+
+.bottom { display: flex; justify-content: center; align-items: center; gap: 14px; padding-bottom: 6px; }
+.habits { display: grid; grid-template-columns: repeat(6, 76px); gap: 8px; }
+.habit { position: relative; height: 72px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; padding: 0; background: var(--cabinet); border: 2px solid var(--grid); border-radius: 8px; color: var(--text); font-family: var(--pixel); font-size: 6px; letter-spacing: 0.04em; cursor: pointer; }
+.habit canvas { width: 26px; height: 26px; image-rendering: pixelated; }
+.habit .v { position: absolute; top: 4px; right: 5px; font-size: 8px; color: var(--green); }
+.habit:disabled { cursor: default; opacity: 0.45; }
+.habit.kept { opacity: 1; border-color: var(--green); background: #10301f; }
+.habit.kept .v { color: var(--green); }
+.habits.ask .habit:not(:disabled) { animation: nudge 1.3s ease-in-out infinite; }
+@keyframes nudge { 50% { border-color: var(--yellow); } }
+.go { font-family: var(--pixel); font-size: 14px; min-width: 190px; padding: 18px 20px; border: 0; border-radius: 10px; cursor: pointer; letter-spacing: 0.06em; color: var(--ink); background: var(--yellow); box-shadow: 0 7px 0 #b8902a; }
+.go:active:not(:disabled) { transform: translateY(5px); box-shadow: 0 2px 0 rgba(0,0,0,0.4); }
+.go:disabled { background: var(--grid); color: var(--dim); box-shadow: 0 7px 0 var(--cabinet); cursor: default; }
+.go .k { display: block; margin-top: 6px; font-size: 7px; opacity: 0.6; letter-spacing: 0.1em; }
+.go[hidden] { display: none; }
+.side { display: flex; flex-direction: column; gap: 8px; align-items: center; font-family: var(--pixel); font-size: 7px; letter-spacing: 0.08em; color: var(--dim); }
+.side b { font-weight: 400; color: var(--cyan); }
+.side b.warn { color: var(--yellow); }
+.ghost { font-family: var(--pixel); font-size: 8px; padding: 8px 10px; background: transparent; color: var(--dim); border: 2px solid var(--grid); border-radius: 6px; cursor: pointer; }
+button:focus-visible { outline: 3px solid var(--pink); outline-offset: 3px; }
+
+@media (max-width: 900px) {
+  .habits { grid-template-columns: repeat(6, 64px); }
+  .habit { height: 64px; }
+}
+@media (max-width: 700px), (orientation: portrait) {
+  .panes { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 0.9fr) minmax(0, 1fr); }
+  .pane + .pane { border-left: 0; border-top: 3px solid var(--grid); }
+}
+@media (max-width: 700px) {
+  .bottom { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 12px; }
+  .habits { grid-column: 1 / -1; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+  .habit { height: 58px; gap: 6px; font-size: 5px; }
+  .habit canvas { width: 22px; height: 22px; }
+  .go { min-width: 0; width: 100%; padding: 15px 10px; font-size: 12px; }
+  .go .k { display: none; }
+  .card p { font-size: 20px; }
+}
+@media (prefers-reduced-motion: reduce) { .panes, .end, .end .card { transition: none; } .habits.ask .habit:not(:disabled) { animation: none; border-color: var(--yellow); } }
+</style>
+
+<div class="cab">
+  <header>
+    <div class="marquee">PLAYING AGAINST CHANCE</div>
+    <h1>THE WHEEL OF YEARS</h1>
+  </header>
+
+  <div class="stage">
+    <div class="screen" id="screen">
+      <div class="panes">
+        <div class="pane"><canvas id="life" aria-label="Your life, one ordinary moment at a time."></canvas></div>
+        <div class="pane"><canvas id="wheel" aria-label="A wheel of 100 slots. Red slots mean a diagnosis this decade."></canvas></div>
+      </div>
+      <div class="intro" id="intro">
+        <div class="card">
+          <span class="quiet">THIS STAGE IS ABOUT ILLNESS</span>
+          <b>ONE ORDINARY DAY</b>
+          <p>Each decade, keep one good habit. It clears some red from the wheel.</p>
+          <p>Age adds red that nothing clears. Then live the decade.</p>
+          <button class="go" id="startBtn">START</button>
+        </div>
+      </div>
+      <div class="end" id="end" hidden role="dialog" aria-live="polite">
+        <div class="card">
+          <b id="endAge"></b>
+          <p id="endL1"></p>
+          <p id="endL2"></p>
+          <div class="facts" id="endFacts"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="bottom">
+    <div class="habits" id="habits" role="group" aria-label="Habits"></div>
+    <button class="go" id="liveBtn" disabled>LIVE YOUR 20s<span class="k">SPACE</span></button>
+    <button class="go" id="againBtn" hidden>LIVE AGAIN</button>
+    <div class="side">
+      <span>CHANCE <b id="src">RANDOM.ORG</b></span>
+      <button class="ghost" id="soundBtn" aria-pressed="true">SOUND ON</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  // ---------- the rules ----------
+  // 100 slots a decade. Locked red = age + genes (nothing clears them). Clearable red = one block per habit you haven't kept yet.
+  // Tuned so roughly half of all lives meet a diagnosis by 80, even played well. Symbolic odds, not medical data.
+  const DECADES = 6;                          // 20s .. 70s
+  const AGE = [1, 2, 3, 6, 10, 13];           // locked slots age adds, per decade
+  const GENES_MAX = 4;                        // genes: 0..4 locked slots, drawn once per life
+  const HABITS = [
+    { t: "MOVE", v: [1, 2, 2, 3, 3, 3], pal: { a: "#ff4fa8", b: "#e9e6ff" }, px: ["..........", "..aaa.....", "..aaa.....", "..aaab....", "..aaaab...", ".aaaaaab..", "aaaaaaaaaa", "aaaaaaaaaa", "bbbbbbbbbb", ".........."] },
+    { t: "EAT WELL", v: [1, 1, 2, 2, 3, 3], pal: { a: "#6dff9c", b: "#ff5a4f" }, px: [".....a....", "....a.....", "..bb.bb...", ".bbbbbbb..", ".bbbbbbb..", ".bbbbbbb..", ".bbbbbbb..", "..bbbbb...", "...b.b....", ".........."] },
+    { t: "SLEEP", v: [1, 1, 1, 2, 2, 2], pal: { a: "#ffd84a", b: "#e9e6ff" }, px: ["...aaaa...", "..aaa...b.", ".aaa......", ".aa.......", ".aa.......", ".aa.......", ".aaa......", "..aaa.....", "...aaaa...", ".........."] },
+    { t: "NO SMOKE", v: [2, 3, 3, 4, 4, 4], pal: { a: "#e9e6ff", b: "#ff9a2e", c: "#ff5a4f" }, px: [".........c", "........c.", ".......c..", "......c...", "aaaaacaab.", "aaaacaaab.", "...c......", "..c.......", ".c........", "c........."] },
+    { t: "CHECK-UPS", v: [0, 1, 2, 3, 4, 4], pal: { a: "#3ef0ff" }, px: ["..........", "...aaaa...", "...aaaa...", ".aaaaaaaa.", ".aaaaaaaa.", ".aaaaaaaa.", ".aaaaaaaa.", "...aaaa...", "...aaaa...", ".........."] },
+    { t: "CALM", v: [1, 1, 2, 2, 2, 2], pal: { a: "#6dff9c", b: "#2f9a5a" }, px: [".......aaa", ".....aaaaa", "...aaaaaaa", "..aaaaaaba", ".aaaaaabaa", ".aaaabaaa.", ".aaabaaa..", "..ab.aa...", ".b........", "b........."] },
+  ];
+  // two ordinary moments per decade
+  const MOMENTS = [
+    [{ t: "FIRST JOB", pal: { a: "#3ef0ff", b: "#8a84bf", d: "#e9e6ff" }, px: ["............", "..aaaaaaaa..", "..a......a..", "..a.dd...a..", "..a......a..", "..a.ddd..a..", "..a......a..", "..aaaaaaaa..", ".bbbbbbbbbb.", "bbbbbbbbbbbb", "............", "............"] },
+     { t: "A ROAD TRIP", pal: { a: "#ff5a4f", b: "#1f1a3a", d: "#bfe9ff" }, px: ["............", "............", "...aaaaaaa..", "..adddaddda.", "..adddaddda.", "aaaaaaaaaaaa", "aaaaaaaaaaaa", "aaaaaaaaaaaa", ".bbb....bbb.", ".bbb....bbb.", "............", "............"] }],
+    [{ t: "A WEDDING", pal: { a: "#ffd84a", b: "#d6e2ff", c: "#ff4fa8" }, px: ["............", ".....c.c....", ".....ccc....", "......c.....", "............", ".aaa...bbb..", "a...a.b...b.", "a...a.b...b.", "a...a.b...b.", ".aaa...bbb..", "............", "............"] },
+     { t: "A NEW HOME", pal: { a: "#ff9a2e", b: "#e9e6ff", c: "#3ef0ff", e: "#6a4a8a" }, px: ["............", ".....aa.....", "....aaaa....", "...aaaaaa...", "..aaaaaaaa..", ".aaaaaaaaaa.", "..bbbbbbbb..", "..bccbbccb..", "..bccbbccb..", "..bbbeebbb..", "..bbbeebbb..", "..bbbeebbb.."] }],
+    [{ t: "A BIRTHDAY", pal: { a: "#ff4fa8", b: "#f3eddc", c: "#ffd84a", d: "#e9e6ff", e: "#8a84bf" }, px: ["............", "...c..c..c..", "...d..d..d..", "...d..d..d..", ".aaaaaaaaaa.", ".aabaabaaba.", ".bbbbbbbbbb.", ".bbbbbbbbbb.", ".aaaaaaaaaa.", ".bbbbbbbbbb.", ".bbbbbbbbbb.", "eeeeeeeeeeee"] },
+     { t: "SUNDAY CHAI", pal: { a: "#f3eddc", b: "#c08040", s: "#8a84bf", e: "#8a84bf" }, px: ["....s..s....", "...s..s.....", "....s..s....", "...s..s.....", "............", ".aaaaaaaa...", ".abbbbbbaaa.", ".aaaaaaaa.a.", ".aaaaaaaa.a.", "..aaaaaaaaa.", "...aaaaa....", ".eeeeeeeeee."] }],
+    [{ t: "MONSOON", pal: { a: "#cfd6ff", r: "#3ef0ff" }, px: ["............", "....aaa.....", "..aaaaaaa...", ".aaaaaaaaaa.", "aaaaaaaaaaaa", ".aaaaaaaaaa.", "............", "..r..r..r...", ".r..r..r....", "...r..r..r..", "..r..r..r...", "............"] },
+     { t: "AN OLD SONG", pal: { a: "#c38bff" }, px: ["............", "....aaaaaaa.", "....aaaaaaa.", "....a.....a.", "....a.....a.", "....a.....a.", "....a.....a.", "..aaa...aaa.", ".aaaa..aaaa.", ".aaaa..aaaa.", "..aa....aa..", "............"] }],
+    [{ t: "A TRAIN TRIP", pal: { a: "#6f97ff", d: "#bfe9ff", c: "#ffd84a", b: "#8a84bf" }, px: ["...aaaaaa...", "..aaaaaaaa..", "..adddddda..", "..adddddda..", "..adddddda..", "..aaaaaaaa..", "..aaaaaaaa..", "..acaaaaca..", "..aaaaaaaa..", "...b....b...", "..b......b..", "bbbbbbbbbbbb"] },
+     { t: "THE GARDEN", pal: { g: "#6dff9c", p: "#ff9a2e", f: "#ff4fa8" }, px: [".....f......", "....fff.....", ".....f......", "..gg.g.gg...", "...ggggg....", "....ggg.....", ".....g......", "..pppppppp..", "..pppppppp..", "...pppppp...", "...pppppp...", "....pppp...."] }],
+    [{ t: "A GRANDCHILD'S KITE", pal: { k: "#ff5a4f", y: "#ffd84a", s: "#e9e6ff" }, px: ["........k...", ".......kkk..", "......kkykk.", ".....kkyyykk", "......kkykk.", ".......kkk..", "........k...", ".......s....", "......s.....", ".....s......", "...ss.......", "..s........."] },
+     { t: "MORNING WALK", pal: { y: "#ffd84a", h: "#6dff9c", g: "#2f9a5a" }, px: ["............", "............", "....yyyy....", "...yyyyyy...", "..yyyyyyyy..", "..yyyyyyyy..", ".hhh....hhh.", "hhhhh..hhhhh", "hhhhhhhhhhhh", "gggggggggggg", "gggggggggggg", "............"] }],
+  ];
+  const SKY = [["#1b2a5a", "#3a2f7a"], ["#3a1f5a", "#6a2f6e"], ["#40243e", "#7a443a"], ["#173646", "#2c5a5a"], ["#33331c", "#64562a"], ["#2a2040", "#5a4060"]];
+
+  // random.org JSON-RPC API (v4). Anyone who can open this file can read this key.
+  const RANDOM_ORG_API_KEY = (() => { try { return localStorage.getItem("RANDOM_ORG_KEY") || ""; } catch (e) { return ""; } })();
+  const RANDOM_ORG_API = "https://api.random.org/json-rpc/4/invoke";
+
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const $ = (id) => document.getElementById(id);
+  const lifeCv = $("life"), wheelCv = $("wheel"), lctx = lifeCv.getContext("2d"), wctx = wheelCv.getContext("2d");
+  const screenEl = $("screen"), introEl = $("intro"), endEl = $("end"), habitsEl = $("habits");
+  const liveBtn = $("liveBtn"), againBtn = $("againBtn"), startBtn = $("startBtn"), soundBtn = $("soundBtn"), srcEl = $("src");
+
+  let state = "ready";            // ready | busy | choose | armed | spin | living | frozen | done
+  let d = 0, genes = 0, picked = new Set(), perm = [], kinds = new Array(100).fill(0);
+  const changeAt = new Array(100).fill(0), prevKind = new Array(100).fill(0);
+  let age = 20, moment = 0, momentAt = 0, lived = [], struck = -1, redAt = [];
+  let ptr = 0, spin = null, landed = -1, landedAt = 0, lastSeg = 0, lastTick = 0;
+  let shownRed = 0, notes = [];
+
+  // ---------- chance ----------
+  async function withTimeout(fn, ms) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), ms);
+    try { return await fn(ctrl.signal); } finally { clearTimeout(timer); }
+  }
+  async function apiInts(n, min, max) {
+    if (!RANDOM_ORG_API_KEY) throw new Error("no key");
+    return withTimeout(async (signal) => {
+      const res = await fetch(RANDOM_ORG_API, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", method: "generateIntegers", params: { apiKey: RANDOM_ORG_API_KEY, n, min, max, replacement: true }, id: Date.now() }),
+        signal,
+      });
+      const json = await res.json();
+      if (json.error) throw new Error(json.error.message);
+      return json.result.random.data;
+    }, 5000);
+  }
+  async function plainInts(n, min, max) {
+    return withTimeout(async (signal) => {
+      const res = await fetch("https://www.random.org/integers/?num=" + n + "&min=" + min + "&max=" + max + "&col=1&base=10&format=plain&rnd=new", { signal, cache: "no-store" });
+      if (!res.ok) throw new Error("status " + res.status);
+      return (await res.text()).trim().split(/\s+/).map(v => parseInt(v, 10));
+    }, 4000);
+  }
+  function localInts(n, min, max) {
+    const k = max - min + 1, lim = Math.floor(0x100000000 / k) * k, buf = new Uint32Array(1);
+    return Array.from({ length: n }, () => { do { crypto.getRandomValues(buf); } while (buf[0] >= lim); return min + (buf[0] % k); });
+  }
+  async function getInts(n, min, max) {
+    for (const [label, fn] of [["RANDOM.ORG API", apiInts], ["RANDOM.ORG", plainInts]]) {
+      try { const v = await fn(n, min, max); if (v.length === n && v.every(x => x >= min && x <= max)) { setSource(label); return v; } }
+      catch (err) { console.warn(label + " failed:", err.message || err); }
+    }
+    setSource("LOCAL RNG");
+    return localInts(n, min, max);
+  }
+  function setSource(label) { srcEl.textContent = label; srcEl.classList.toggle("warn", label === "LOCAL RNG"); }
+
+  // ---------- the wheel ----------
+  // where red sits on the ring is only decoration (shuffled locally); whether a slot is red is all that counts
+  function shuffle() {
+    const a = Array.from({ length: 100 }, (_, i) => i);
+    for (let i = 99; i > 0; i--) { const j = localInts(1, 0, i)[0]; [a[i], a[j]] = [a[j], a[i]]; }
+    return a;
+  }
+  const lockedCount = () => genes + AGE[d];
+  function computeKinds() {
+    const k = new Array(100).fill(0);                        // 0 clear · 1 clearable · 2 locked
+    for (let i = 0; i < lockedCount(); i++) k[perm[i]] = 2;
+    HABITS.forEach((h, hi) => { if (!picked.has(hi)) for (let j = 0; j < h.v[d]; j++) k[perm[99 - hi * 4 - j]] = 1; });
+    return k;
+  }
+  function applyKinds() {
+    const nk = computeKinds(), now = performance.now();
+    nk.forEach((v, i) => { if (v !== kinds[i]) { prevKind[i] = kinds[i]; changeAt[i] = now; } });
+    kinds = nk;
+  }
+  const redCount = () => kinds.reduce((s, v) => s + (v ? 1 : 0), 0);
+  const note = (text, color, delay = 0) => notes.push({ text, color, at: performance.now() + delay });
+
+  // ---------- a life ----------
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  const decadeLabel = (k) => (20 + 10 * k) + "s";
+
+  async function start() {
+    ensureAudio();
+    introEl.hidden = true;
+    endEl.hidden = true; endEl.classList.remove("in");
+    screenEl.classList.remove("frozen");
+    againBtn.hidden = true; liveBtn.hidden = false;
+    state = "busy"; d = 0; picked = new Set(); lived = []; struck = -1; redAt = []; notes = [];
+    kinds = new Array(100).fill(0); changeAt.fill(0); prevKind.fill(0);
+    age = 20; moment = 0; momentAt = performance.now(); landed = -1; spin = null;
+    perm = shuffle();
+    setTiles(); setLive();
+    genes = (await getInts(1, 0, GENES_MAX))[0];
+    beginDecade(true);
+  }
+
+  function beginDecade(first) {
+    age = 20 + 10 * d; moment = 0; momentAt = performance.now(); landed = -1;
+    const before = first ? 0 : genes + AGE[d - 1];
+    applyKinds();
+    if (first) { note(genes ? "+" + genes + " FROM YOUR GENES" : "NOTHING FROM YOUR GENES", genes ? "#ff8a9a" : "#6dff9c"); }
+    const added = lockedCount() - before - (first ? genes : 0);
+    if (added > 0) note("+" + added + " WITH AGE", "#ff8a9a", first ? 700 : 0);
+    for (let i = 0; i < Math.min(8, lockedCount() - before); i++) beep(98 - i * 4, 0.12, "triangle", 0.15 + i * 0.09, 0.05);
+    state = "choose";
+    setTiles(); setLive();
+  }
+
+  function pick(hi) {
+    if (state !== "choose" || picked.has(hi)) return;
+    const n = HABITS[hi].v[d];
+    picked.add(hi);
+    applyKinds();
+    note(n ? "−" + n + " " + HABITS[hi].t : HABITS[hi].t + " · NOTHING YET", "#6dff9c");
+    [523, 659, 784].forEach((f, i) => beep(f, 0.08, "square", i * 0.06, 0.045));
+    state = "armed";
+    setTiles(); setLive();
+    liveBtn.focus({ preventScroll: true });
+  }
+
+  async function live() {
+    if (state !== "armed") return;
+    state = "spin";
+    setTiles(); setLive();
+    redAt[d] = redCount();
+    spin = { mode: "free", t0: performance.now(), p0: ptr };
+    const [a, b] = await getInts(2, 1, 100);
+    const target = a - 1, year = (b - 1) % 10;               // which slot, and which year of the decade
+    const cur = Math.round(ptr), delta = ((target - cur) % 100 + 100) % 100;
+    const T = reduceMotion ? 300 : 2800;
+    spin = { mode: "decel", t0: performance.now(), p0: ptr, D: (cur - ptr) + delta + 100, T };
+    await sleep(T + 80);
+    spin = null; ptr = target; landed = target; landedAt = performance.now();
+    const red = kinds[target] !== 0;
+    if (!red) {
+      beep(1046, 0.12, "triangle", 0, 0.05);
+      if (kinds[(target + 1) % 100] || kinds[(target + 99) % 100]) note("ONE SLOT AWAY", "#ffd84a");
+    }
+    await sleep(reduceMotion ? 200 : 700);
+
+    // the decade plays out, one ordinary year at a time
+    state = "living";
+    for (let y = 0; y < 10; y++) {
+      age = 20 + 10 * d + y;
+      const m = y < 5 ? 0 : 1;
+      if (m !== moment || y === 0) { moment = m; momentAt = performance.now(); }
+      if (!(red && y === year)) beep([523, 587, 659, 784, 880][(y + d) % 5], 0.16, "triangle", 0, 0.035);
+      if (red && y === year) { await sleep(reduceMotion ? 100 : 420); return freeze(); }
+      await sleep(reduceMotion ? 110 : 330);
+    }
+    lived[d] = true;
+    landed = -1;
+    d++;
+    if (d === DECADES) { age = 80; return reachedEighty(); }
+    beginDecade(false);
+  }
+
+  function freeze() {
+    state = "frozen";
+    struck = d;
+    screenEl.classList.add("frozen");
+    beep(73, 2.4, "sine", 0, 0.07);
+    const cleared = [...picked].reduce((s, hi) => s + HABITS[hi].v[d], 0);
+    const locked = genes + AGE[d];
+    $("endAge").textContent = "AGE " + age;
+    $("endL1").textContent = "An ordinary day. A routine check-up.";
+    $("endL2").textContent = "The doctor asks you to sit down.";
+    setFacts([
+      "Your habits had cleared " + cleared + " red slot" + (cleared === 1 ? "" : "s") + ".",
+      locked + " were locked. Age and genes.",
+    ], "That decade: " + redAt[d] + " in 100.");
+    setTimeout(showEnd, reduceMotion ? 300 : 1800);
+  }
+
+  function reachedEighty() {
+    state = "frozen";
+    const survive = redAt.reduce((p, r) => p * (1 - r / 100), 1);
+    const last = DECADES - 1;
+    const cleared = [...picked].reduce((s, hi) => s + HABITS[hi].v[last], 0);
+    [523, 659, 784, 1046].forEach((f, i) => beep(f, 0.22, "triangle", i * 0.16, 0.05));
+    $("endAge").textContent = "AGE 80";
+    $("endL1").textContent = "You never had to hear those words.";
+    $("endL2").textContent = "";
+    setFacts([
+      "In your 70s, habits cleared " + cleared + " red slots. " + (genes + AGE[last]) + " stayed locked.",
+      "Your chance of getting here: " + Math.round(survive * 100) + "%.",
+    ], "Living well helped. So did luck.");
+    setTimeout(showEnd, reduceMotion ? 200 : 900);
+  }
+
+  function setFacts(lines, strong) {
+    const f = $("endFacts");
+    f.innerHTML = "";
+    lines.forEach(t => { const s = document.createElement("span"); s.textContent = t; f.appendChild(s); });
+    const b = document.createElement("strong"); b.textContent = strong; f.appendChild(b);
+  }
+  function showEnd() {
+    endEl.hidden = false; void endEl.offsetWidth; endEl.classList.add("in");
+    state = "done";
+    liveBtn.hidden = true; againBtn.hidden = false;
+    setTiles();
+    againBtn.focus({ preventScroll: true });
+  }
+
+  // ---------- controls ----------
+  const tiles = HABITS.map((h, hi) => {
+    const b = document.createElement("button");
+    b.className = "habit"; b.disabled = true;
+    const cv = document.createElement("canvas"); cv.width = 10; cv.height = 10;
+    drawPx(cv.getContext("2d"), h.px, h.pal, 0, 0, 1);
+    const v = document.createElement("span"); v.className = "v";
+    const t = document.createElement("span"); t.textContent = h.t;
+    b.append(v, cv, t);
+    b.addEventListener("click", () => pick(hi));
+    habitsEl.appendChild(b);
+    return { b, v };
+  });
+  function setTiles() {
+    tiles.forEach(({ b, v }, hi) => {
+      const kept = picked.has(hi);
+      b.classList.toggle("kept", kept);
+      b.disabled = state !== "choose" || kept;
+      v.textContent = kept ? "✓" : "−" + HABITS[hi].v[Math.min(d, DECADES - 1)];
+      b.setAttribute("aria-label", HABITS[hi].t + (kept ? ", kept" : ", clears " + HABITS[hi].v[Math.min(d, DECADES - 1)] + " red slots"));
+    });
+    habitsEl.classList.toggle("ask", state === "choose");
+  }
+  function setLive() {
+    liveBtn.disabled = state !== "armed";
+    liveBtn.firstChild.textContent = "LIVE YOUR " + decadeLabel(Math.min(d, DECADES - 1));
+  }
+
+  startBtn.addEventListener("click", start);
+  againBtn.addEventListener("click", start);
+  liveBtn.addEventListener("click", live);
+  document.addEventListener("keydown", (e) => {
+    if (e.repeat) return;
+    const n = parseInt(e.key, 10);
+    if (n >= 1 && n <= HABITS.length) pick(n - 1);
+    if (e.key === " " && !(e.target instanceof HTMLButtonElement)) { e.preventDefault(); live(); }
+  });
+
+  // ---------- sound that keeps working ----------
+  let audio = null, master = null, soundOn = true;
+  function ensureAudio() {
+    try {
+      if (!audio) {
+        audio = new (window.AudioContext || window.webkitAudioContext)();
+        master = audio.createGain(); master.gain.value = 0.9; master.connect(audio.destination);
+      }
+      if (audio.state !== "running") audio.resume().catch(() => {});
+    } catch (e) { audio = null; }
+  }
+  ["pointerdown", "keydown", "touchstart"].forEach(ev => document.addEventListener(ev, ensureAudio, { passive: true }));
+  document.addEventListener("visibilitychange", () => { if (!document.hidden && audio) audio.resume().catch(() => {}); });
+  function beep(freq, dur, type = "square", delay = 0, vol = 0.05) {
+    if (!soundOn || !audio) return;
+    if (audio.state !== "running") audio.resume().catch(() => {});
+    const t = audio.currentTime + delay + 0.005;
+    const o = audio.createOscillator(), g = audio.createGain();
+    o.type = type; o.frequency.setValueAtTime(freq, t);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(master);
+    o.start(t); o.stop(t + dur + 0.03);
+    o.onended = () => { o.disconnect(); g.disconnect(); };
+  }
+  soundBtn.addEventListener("click", () => {
+    ensureAudio();
+    soundOn = !soundOn;
+    soundBtn.textContent = soundOn ? "SOUND ON" : "SOUND OFF";
+    soundBtn.setAttribute("aria-pressed", String(soundOn));
+    if (soundOn) beep(880, 0.05);
+  });
+
+  // ---------- drawing ----------
+  function drawPx(c, px, pal, x, y, s) {
+    px.forEach((row, j) => [...row].forEach((ch, i) => { if (pal[ch]) { c.fillStyle = pal[ch]; c.fillRect(x + i * s, y + j * s, s, s); } }));
+  }
+  const size = { life: { w: 400, h: 300 }, wheel: { w: 400, h: 300 } };
+  function fit(cv, c, key) {
+    const r = cv.getBoundingClientRect(), dpr = Math.min(window.devicePixelRatio || 1, 2);
+    cv.width = Math.max(1, Math.round(r.width * dpr)); cv.height = Math.max(1, Math.round(r.height * dpr));
+    c.setTransform(dpr, 0, 0, dpr, 0, 0); c.imageSmoothingEnabled = false;
+    size[key] = { w: r.width, h: r.height };
+  }
+  function resize() { fit(lifeCv, lctx, "life"); fit(wheelCv, wctx, "wheel"); }
+  if ("ResizeObserver" in window) { const ro = new ResizeObserver(resize); ro.observe(lifeCv); ro.observe(wheelCv); }
+  window.addEventListener("resize", resize);
+  const font = (px) => Math.round(px) + "px 'Press Start 2P', monospace";
+
+  function drawLife(now) {
+    const c = lctx, { w, h } = size.life, frozen = state === "frozen" || state === "done";
+    const dk = Math.min(d, DECADES - 1);
+    const g = c.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, SKY[dk][0]); g.addColorStop(1, SKY[dk][1]);
+    c.fillStyle = g; c.fillRect(0, 0, w, h);
+    // drifting dust, the slow passing of time
+    for (let i = 0; i < 22; i++) {
+      const t = frozen ? 0 : now / 1000;
+      const x = ((i * 137 + t * (6 + i % 5)) % (w + 20)) - 10, y = ((i * 71) % 100) / 100 * h * 0.8 + Math.sin(t * 0.6 + i) * 6;
+      c.fillStyle = "rgba(255,255,255," + (0.08 + (i % 4) * 0.04) + ")";
+      c.fillRect(Math.round(x), Math.round(y), 2, 2);
+    }
+    const pad = Math.max(12, w * 0.04);
+    // age
+    c.textAlign = "left"; c.textBaseline = "top";
+    c.fillStyle = "rgba(233,230,255,0.6)"; c.font = font(Math.max(7, Math.min(9, w * 0.02)));
+    c.fillText("AGE", pad, pad);
+    c.fillStyle = "#e9e6ff"; c.font = font(Math.max(20, Math.min(40, Math.min(w, h) * 0.09)));
+    c.fillText(String(age), pad, pad + 16);
+
+    // the moment
+    const stripH = Math.max(46, Math.min(70, h * 0.17));
+    const m = MOMENTS[dk][moment];
+    const s = Math.max(4, Math.floor(Math.min(w * 0.36, (h - stripH) * 0.42) / 12));
+    const pop = reduceMotion ? 1 : Math.min(1, (now - momentAt) / 220);
+    const bob = frozen || reduceMotion ? 0 : Math.round(Math.sin(now / 520) * s * 0.4);
+    const cx = w / 2, cy = (h - stripH) * 0.5 + 6;
+    c.save();
+    c.globalAlpha = pop;
+    c.fillStyle = "rgba(11,8,32,0.22)"; c.fillRect(cx - 4 * s, cy + 6 * s + s * 0.6, 8 * s, Math.max(3, s * 0.5));
+    drawPx(c, m.px, m.pal, Math.round(cx - 6 * s), Math.round(cy - 6 * s + bob - (1 - pop) * 10), s);
+    c.restore();
+    c.textAlign = "center"; c.textBaseline = "top";
+    c.fillStyle = "#e9e6ff"; c.font = font(Math.max(8, Math.min(13, w * 0.026)));
+    c.fillText(m.t, cx, cy + 6 * s + s * 2.4);
+
+    // the strip of decades
+    const n = DECADES, gap = 8, cell = Math.min((w - pad * 2 - gap * (n - 1)) / n, stripH - 18);
+    const x0 = cx - (n * cell + (n - 1) * gap) / 2, y0 = h - stripH + 2;
+    for (let k = 0; k < n; k++) {
+      const x = x0 + k * (cell + gap);
+      const isNow = k === d && state !== "ready" && !frozen;
+      c.fillStyle = "rgba(11,8,32,0.45)"; c.fillRect(x, y0, cell, cell);
+      if (lived[k] || k === struck) {
+        const ss = Math.max(1, Math.floor((cell - 6) / 12));
+        const mm = k === struck ? MOMENTS[k][moment] : MOMENTS[k][0];
+        drawPx(c, mm.px, mm.pal, Math.round(x + (cell - 12 * ss) / 2), Math.round(y0 + (cell - 12 * ss) / 2), ss);
+      }
+      c.strokeStyle = k === struck ? "#ff5a4f" : isNow ? "#ffd84a" : lived[k] ? "rgba(233,230,255,0.5)" : "rgba(233,230,255,0.15)";
+      c.lineWidth = isNow || k === struck ? 3 : 2;
+      c.strokeRect(x + 1, y0 + 1, cell - 2, cell - 2);
+      c.fillStyle = isNow ? "#ffd84a" : "rgba(233,230,255,0.55)";
+      c.font = font(Math.max(6, Math.min(8, cell * 0.16)));
+      c.fillText(decadeLabel(k), x + cell / 2, y0 + cell + 6);
+    }
+  }
+
+  const COL = { 0: "#3d3580", 1: "#ff5a4f", 2: "#8e1638" };
+  function drawWheel(now) {
+    const c = wctx, { w, h } = size.wheel;
+    c.fillStyle = "#100d33"; c.fillRect(0, 0, w, h);
+    const pad = Math.max(12, w * 0.04);
+    const legendH = 34;
+    const cx = w / 2, cy = (h - legendH) / 2 + 10;
+    const R = Math.max(40, Math.min(w * 0.4, (h - legendH) * 0.42));
+    const thick = Math.max(10, R * 0.2);
+
+    // header: which decade
+    c.textAlign = "left"; c.textBaseline = "top";
+    c.fillStyle = "rgba(233,230,255,0.6)"; c.font = font(Math.max(7, Math.min(9, w * 0.022)));
+    c.fillText(state === "ready" ? "100 SLOTS" : "YOUR " + decadeLabel(Math.min(d, DECADES - 1)), pad, pad);
+
+    // the ring
+    const step = Math.PI * 2 / 100;
+    for (let i = 0; i < 100; i++) {
+      const a0 = -Math.PI / 2 + i * step + 0.006, a1 = a0 + step - 0.012;
+      const since = now - changeAt[i];
+      let col = COL[kinds[i]];
+      if (since < 900 && changeAt[i]) col = Math.floor(since / 110) % 2 ? COL[kinds[i]] : (kinds[i] ? "#ffffff" : COL[prevKind[i]]);
+      c.beginPath(); c.arc(cx, cy, R, a0, a1); c.arc(cx, cy, R - thick, a1, a0, true); c.closePath();
+      c.fillStyle = col; c.fill();
+      if (kinds[i] === 2) {                                   // locked: a dark notch
+        const am = (a0 + a1) / 2, rm = R - thick / 2;
+        c.fillStyle = "rgba(11,8,32,0.6)";
+        const q = Math.max(2, thick * 0.16);
+        c.fillRect(cx + Math.cos(am) * rm - q / 2, cy + Math.sin(am) * rm - q / 2, q, q);
+      }
+    }
+    // the pointer
+    const showPtr = state !== "ready";
+    if (showPtr) {
+      const seg = ((Math.round(ptr) % 100) + 100) % 100;
+      const am = -Math.PI / 2 + (ptr + 0.5) * step;
+      const a0 = -Math.PI / 2 + seg * step, a1 = a0 + step;
+      const hit = landed >= 0;
+      const pulse = hit && !reduceMotion ? 0.5 + 0.5 * Math.sin((now - landedAt) / 120) : 1;
+      c.beginPath(); c.arc(cx, cy, R + 3, a0, a1); c.arc(cx, cy, R - thick - 3, a1, a0, true); c.closePath();
+      c.strokeStyle = "rgba(255,216,74," + (0.5 + 0.5 * pulse) + ")"; c.lineWidth = 3; c.stroke();
+      const tip = R + 6, base = R + 6 + Math.max(12, R * 0.12), half = Math.max(6, R * 0.05);
+      const ux = Math.cos(am), uy = Math.sin(am);
+      c.beginPath();
+      c.moveTo(cx + ux * tip, cy + uy * tip);
+      c.lineTo(cx + ux * base - uy * half, cy + uy * base + ux * half);
+      c.lineTo(cx + ux * base + uy * half, cy + uy * base - ux * half);
+      c.closePath(); c.fillStyle = "#ffd84a"; c.fill();
+    }
+    // tick sound as the pointer passes slots
+    if (spin) {
+      const seg = Math.round(ptr);
+      if (seg !== lastSeg && now - lastTick > 28) { beep(1400, 0.015, "square", 0, 0.025); lastTick = now; }
+      lastSeg = seg;
+    }
+
+    // the odds, in the middle
+    const red = redCount();
+    shownRed += (red - shownRed) * 0.15;
+    if (Math.abs(red - shownRed) < 0.05) shownRed = red;
+    c.textAlign = "center"; c.textBaseline = "middle";
+    const big = Math.max(18, (R - thick) * 0.5);
+    c.fillStyle = state === "ready" ? "#3d3580" : "#ff5a4f"; c.font = font(big);
+    c.fillText(String(Math.round(shownRed)), cx, cy - big * 0.25);
+    c.fillStyle = "rgba(233,230,255,0.7)"; c.font = font(Math.max(7, big * 0.24));
+    c.fillText("IN 100", cx, cy + big * 0.55);
+
+    // notes rise out of the middle
+    notes = notes.filter(n => now - n.at < 2200);
+    let row = 0;
+    notes.forEach(n => {
+      const k = (now - n.at) / 2200;
+      if (k < 0) return;
+      c.globalAlpha = k < 0.1 ? k * 10 : 1 - Math.max(0, (k - 0.6) / 0.4);
+      c.fillStyle = n.color; c.font = font(Math.max(7, Math.min(10, w * 0.022)));
+      c.fillText(n.text, cx, cy + big * 1.15 + row * 16 - k * 14);
+      c.globalAlpha = 1; row++;
+    });
+
+    // legend
+    const ly = h - legendH + 8, sw = 10;
+    c.font = font(Math.max(6, Math.min(8, w * 0.018))); c.textAlign = "left"; c.textBaseline = "middle";
+    const items = [[COL[2], "LOCKED · AGE + GENES"], [COL[1], "CLEARABLE"], [COL[0], "CLEAR"]];
+    const widths = items.map(([, t]) => c.measureText(t).width + sw + 8);
+    const total = widths.reduce((a, b) => a + b, 0) + 18 * (items.length - 1);
+    let lx = Math.max(pad, cx - total / 2);
+    items.forEach(([col, t], i) => {
+      c.fillStyle = col; c.fillRect(lx, ly + 4, sw, sw);
+      c.fillStyle = "rgba(233,230,255,0.7)"; c.fillText(t, lx + sw + 8, ly + 4 + sw / 2 + 1);
+      lx += widths[i] + 18;
+    });
+  }
+
+  function frame(now) {
+    if (spin) {
+      if (spin.mode === "free") ptr = spin.p0 + 0.15 * (now - spin.t0);
+      else { const k = Math.min(1, (now - spin.t0) / spin.T); ptr = spin.p0 + spin.D * (1 - Math.pow(1 - k, 3)); }
+    }
+    drawLife(now);
+    drawWheel(now);
+    requestAnimationFrame(frame);
+  }
+
+  setTiles(); setLive();
+  resize();
+  requestAnimationFrame(frame);
+})();
+</script>

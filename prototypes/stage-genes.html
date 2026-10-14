@@ -1,0 +1,548 @@
+<title>Gene Machine</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap">
+<style>
+/* Layout: one screen. Pixel portrait on the left, the wish list of traits on the right; stacked on tall screens. Single dark theme. */
+:root {
+  --ink: #0b0820;
+  --cabinet: #151036;
+  --glass: #07051a;
+  --grid: #2a2160;
+  --text: #e9e6ff;
+  --dim: #8a84bf;
+  --cyan: #3ef0ff;
+  --pink: #ff4fa8;
+  --yellow: #ffd84a;
+  --green: #6dff9c;
+  --red: #ff5a4f;
+  --pixel: "Press Start 2P", "Courier New", monospace;
+  --term: "VT323", "Courier New", monospace;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body { margin: 0; box-sizing: border-box; background: var(--ink); color: var(--text); font-family: var(--term); font-size: 20px; padding-inline: 16px; padding-block: 12px; overflow: hidden; }
+.cab { max-width: 1180px; height: 100%; margin: 0 auto; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 10px; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: center; gap: 6px 14px; text-align: center; }
+.marquee { font-family: var(--pixel); font-size: 10px; letter-spacing: 0.18em; color: var(--dim); }
+h1 { margin: 0; font-family: var(--pixel); font-size: clamp(14px, 2.6vw, 22px); line-height: 1.3; color: var(--green); text-shadow: 3px 3px 0 var(--cabinet), 5px 5px 0 var(--pink); }
+
+.stage { min-height: 0; display: grid; grid-template-columns: auto minmax(300px, 430px); justify-content: center; align-items: center; gap: 24px; }
+.screen { position: relative; box-sizing: border-box; width: var(--sz, 400px); height: var(--sz, 400px); max-width: 100%; border: 4px solid var(--grid); border-radius: 14px; background: var(--glass); box-shadow: 0 0 0 4px var(--cabinet), 0 0 40px rgba(109, 255, 156, 0.08) inset; overflow: hidden; }
+.screen::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(to bottom, rgba(0,0,0,0) 0 2px, rgba(0,0,0,0.2) 2px 3px); }
+canvas { display: block; width: 100%; height: 100%; }
+.caption { position: absolute; top: 16px; left: 0; right: 0; text-align: center; font-family: var(--pixel); font-size: 9px; letter-spacing: 0.1em; color: var(--dim); pointer-events: none; z-index: 1; }
+.caption b { font-weight: 400; color: var(--pink); }
+.caption b.real { color: var(--yellow); }
+
+
+.panel { min-width: 0; min-height: 0; max-height: 100%; overflow-y: auto; display: flex; flex-direction: column; gap: 18px; padding: 4px; }
+.hud { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 10px; padding-bottom: 12px; border-bottom: 2px solid var(--grid); font-family: var(--pixel); font-size: 8px; color: var(--dim); }
+.hud b { font-weight: 400; color: var(--cyan); font-variant-numeric: tabular-nums; }
+.hud b.warn { color: var(--yellow); }
+
+.traits { display: flex; flex-direction: column; gap: 7px; }
+.trait { display: grid; grid-template-columns: 70px minmax(0, 1fr) 26px; align-items: center; gap: 6px; }
+.trait .name { font-family: var(--pixel); font-size: 8px; color: var(--dim); letter-spacing: 0.04em; }
+.trait .opts { display: flex; gap: 4px; min-width: 0; }
+.trait button { flex: 1 1 0; font-family: var(--pixel); font-size: 7px; padding: 8px 2px; min-width: 0; white-space: nowrap; overflow: hidden; background: transparent; color: var(--dim); border: 2px solid var(--grid); border-radius: 6px; cursor: pointer; }
+.trait button.spin { color: var(--ink); background: var(--cyan); border-color: var(--cyan); }
+.trait button { position: relative; }
+.trait button:hover:not(:disabled) { color: var(--text); border-color: var(--pink); }
+.trait button.wish { color: var(--text); border-color: var(--pink); background: #22103a; }
+.trait button.got { color: var(--ink); background: var(--yellow); border-color: var(--yellow); }
+.trait button.wish.missed { border-style: dashed; background: transparent; color: var(--pink); }
+.trait button:disabled { cursor: default; }
+.trait .res { font-family: var(--pixel); font-size: 12px; text-align: center; color: var(--dim); }
+.trait .res.yes { color: var(--green); }
+.trait .res.no { color: var(--red); }
+.trait .res.spin { color: var(--text); font-size: 8px; }
+
+.status { display: flex; flex-direction: column; gap: 6px; min-height: 3.4em; justify-content: center; text-align: center; }
+.status .big { font-family: var(--pixel); font-size: 11px; line-height: 1.7; color: var(--cyan); text-wrap: balance; }
+.status .big.result { font-size: 13px; color: var(--yellow); text-shadow: 2px 2px 0 var(--pink); }
+.status .small { font-size: 20px; line-height: 1.1; color: var(--dim); text-wrap: balance; }
+.status .small:empty { display: none; }
+.blink { animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+
+.controls { display: flex; gap: 10px; justify-content: center; }
+.go { font-family: var(--pixel); font-size: 13px; padding: 15px 22px; background: var(--yellow); color: var(--ink); border: 0; border-radius: 8px; box-shadow: 0 6px 0 #b8902a; cursor: pointer; letter-spacing: 0.06em; }
+.go:active:not(:disabled) { transform: translateY(4px); box-shadow: 0 2px 0 #b8902a; }
+.go:disabled { background: var(--grid); color: var(--dim); box-shadow: 0 6px 0 var(--cabinet); cursor: default; }
+.ghost { font-family: var(--pixel); font-size: 8px; padding: 10px 12px; background: transparent; color: var(--dim); border: 2px solid var(--grid); border-radius: 6px; cursor: pointer; }
+button:focus-visible { outline: 3px solid var(--cyan); outline-offset: 2px; }
+
+@media (orientation: portrait), (max-width: 760px) {
+  .stage { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); justify-items: center; align-items: start; gap: 10px; }
+  .panel { width: 100%; max-width: 460px; gap: 8px; }
+  .traits { gap: 4px; }
+  .trait button { padding: 6px 4px; }
+  .status { min-height: 2.8em; }
+}
+@media (prefers-reduced-motion: reduce) { .blink { animation: none; } }
+</style>
+
+<div class="cab">
+  <header>
+    <div class="marquee">PLAYING AGAINST CHANCE</div>
+    <h1>THE GENE MACHINE</h1>
+  </header>
+
+  <div class="stage" id="stage">
+    <div class="screen">
+      <canvas id="face" aria-label="A pixel portrait of you. It shows the traits you wished for, then the traits chance gave you."></canvas>
+      <div class="caption" id="caption"><b>THE YOU YOU WISHED FOR</b></div>
+    </div>
+
+    <div class="panel">
+      <div class="hud" aria-live="polite">
+        <span>LIVES <b id="hudLives">0</b></span>
+        <span>WISHES <b id="hudWishes">0/0</b></span>
+        <span>CHANCE <b id="hudSource">RANDOM.ORG</b></span>
+      </div>
+
+      <div class="traits" id="traits" role="group" aria-label="Choose the traits you wish for"></div>
+
+      <div class="status" aria-live="polite">
+        <div class="big" id="statusBig"><span class="blink">CHOOSE WHAT YOU WISH FOR</span></div>
+        <div class="small" id="statusSmall"></div>
+      </div>
+
+      <div class="controls">
+        <button class="go" id="goBtn">PULL THE LEVER</button>
+        <button class="ghost" id="soundBtn" aria-pressed="true">SOUND ON</button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const TRAITS = [
+    { key: "hairColor", name: "HAIR COLOUR", opts: ["BLACK", "BROWN", "BLONDE", "RED"] },
+    { key: "hairType",  name: "HAIR",        opts: ["STRAIGHT", "WAVY", "CURLY"] },
+    { key: "eyes",      name: "EYES",        opts: ["BROWN", "HAZEL", "GREEN", "BLUE"] },
+    { key: "height",    name: "HEIGHT",      opts: ["TALL", "MEDIUM", "SHORT"] },
+    { key: "dimples",   name: "DIMPLES",     opts: ["BOTH", "ONE", "NONE"] },
+    { key: "freckles",  name: "FRECKLES",    opts: ["NONE", "A FEW", "LOTS"] },
+    { key: "hand",      name: "HANDED",      opts: ["RIGHT", "LEFT", "BOTH"] },
+    { key: "voice",     name: "VOICE",       opts: ["SINGER", "AVERAGE", "TONE-DEAF"] },
+  ];
+  const N = TRAITS.length;
+  // chance of each outcome, worked out from the number of options per trait
+  const P_ALL = TRAITS.reduce((p, t) => p * t.opts.length, 1);                       // 1 in this many get every wish
+  const P_NONE = TRAITS.reduce((p, t) => p * (1 - 1 / t.opts.length), 1);            // share who get no wish at all
+  const fmt = (n) => n.toLocaleString("en-IN");
+  const ODDS_LINE = "Chance picks every trait. All eight wishes: 1 in " + fmt(P_ALL) + ".";
+
+  // random.org JSON-RPC API (v4). Anyone who can open this file can read this key.
+  // We draw numbers from 0 to 11: 12 splits evenly into 3 or 4 options, so every option stays equally likely.
+  const SPAN = 12;
+  const RANDOM_ORG_API_KEY = (() => { try { return localStorage.getItem("RANDOM_ORG_KEY") || ""; } catch (e) { return ""; } })();
+  const RANDOM_ORG_API = "https://api.random.org/json-rpc/4/invoke";
+  const RANDOM_ORG_PLAIN = "https://www.random.org/integers/?num=" + N + "&min=0&max=" + (SPAN - 1) + "&col=1&base=10&format=plain&rnd=new";
+
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const $ = (id) => document.getElementById(id);
+  const canvas = $("face"), ctx = canvas.getContext("2d");
+  const traitsEl = $("traits"), goBtn = $("goBtn"), soundBtn = $("soundBtn");
+  const statusBig = $("statusBig"), statusSmall = $("statusSmall"), caption = $("caption");
+  const hud = { lives: $("hudLives"), wishes: $("hudWishes"), source: $("hudSource") };
+
+  let state = "pick";                    // pick | drawing | result
+  const wish = TRAITS.map(() => 0);      // index of the option you wish for
+  let shown = wish.slice();              // what the portrait currently shows
+  let lives = 0, metTotal = 0, askedTotal = 0;
+  const rows = [];
+
+  // ---------- one-screen layout ----------
+  const PANEL_MIN = 470;                 // px the panel needs under the screen on a tall display
+  const stageEl = $("stage");
+  const screenEl = stageEl.querySelector(".screen");
+  const narrowQuery = window.matchMedia("(orientation: portrait), (max-width: 760px)");
+  let W = 400, H = 400;
+  function layout() {
+    const w = stageEl.clientWidth, h = stageEl.clientHeight;
+    const sz = narrowQuery.matches ? Math.min(w, h - PANEL_MIN) : Math.min(h, w - 330);
+    screenEl.style.setProperty("--sz", Math.max(200, Math.floor(sz)) + "px");
+  }
+  function resize() {
+    const r = canvas.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(r.width * dpr); canvas.height = Math.round(r.height * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    W = r.width; H = r.height;
+  }
+  function relayout() { layout(); resize(); }
+  if ("ResizeObserver" in window) new ResizeObserver(relayout).observe(stageEl);
+  window.addEventListener("resize", relayout);
+
+  // ---------- trait rows ----------
+  TRAITS.forEach((t, i) => {
+    const row = document.createElement("div");
+    row.className = "trait";
+    const name = document.createElement("span");
+    name.className = "name";
+    name.textContent = t.name;
+    row.appendChild(name);
+    const opts = document.createElement("div");
+    opts.className = "opts";
+    row.appendChild(opts);
+    const btns = t.opts.map((o, k) => {
+      const b = document.createElement("button");
+      b.id = "t" + i + "-" + k;
+      b.textContent = o;
+      b.addEventListener("click", () => setWish(i, k));
+      opts.appendChild(b);
+      return b;
+    });
+    const res = document.createElement("span");
+    res.className = "res";
+    res.textContent = "?";
+    row.appendChild(res);
+    traitsEl.appendChild(row);
+    rows.push({ btns, res });
+  });
+
+  function paintRows() {
+    rows.forEach((r, i) => r.btns.forEach((b, k) => {
+      b.classList.toggle("wish", wish[i] === k);
+      b.setAttribute("aria-pressed", String(wish[i] === k));
+    }));
+  }
+
+  function setWish(i, k) {
+    if (state === "result") reset();
+    if (state !== "pick") return;
+    wish[i] = k;
+    shown[i] = k;
+    paintRows();
+    setStatus(TRAITS[i].name + ": " + TRAITS[i].opts[k], ODDS_LINE, false);
+    beep(560 + k * 120, 0.05);
+  }
+
+  // ---------- chance: one yes/no per trait ----------
+  async function withTimeout(fn, ms) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), ms);
+    try { return await fn(ctrl.signal); } finally { clearTimeout(timer); }
+  }
+  async function fromApi() {
+    if (!RANDOM_ORG_API_KEY) throw new Error("no key");
+    return withTimeout(async (signal) => {
+      const res = await fetch(RANDOM_ORG_API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", method: "generateIntegers", params: { apiKey: RANDOM_ORG_API_KEY, n: N, min: 0, max: SPAN - 1, replacement: true }, id: Date.now() }),
+        signal,
+      });
+      const json = await res.json();
+      if (json.error) throw new Error(json.error.message);
+      return json.result.random.data;
+    }, 5000);
+  }
+  async function fromPlain() {
+    return withTimeout(async (signal) => {
+      const res = await fetch(RANDOM_ORG_PLAIN, { signal, cache: "no-store" });
+      if (!res.ok) throw new Error("status " + res.status);
+      return (await res.text()).trim().split(/\s+/).map(v => parseInt(v, 10));
+    }, 4000);
+  }
+  function fromLocal() {
+    const out = [], buf = new Uint8Array(1);
+    while (out.length < N) {
+      crypto.getRandomValues(buf);
+      if (buf[0] < 252) out.push(buf[0] % SPAN);      // 252 = 21 x 12, keeps it unbiased
+    }
+    return out;
+  }
+  async function drawChance() {
+    for (const [label, fn] of [["RANDOM.ORG API", fromApi], ["RANDOM.ORG", fromPlain]]) {
+      try {
+        const v = await fn();
+        if (v.length === N && v.every(n => n >= 0 && n < SPAN)) { hud.source.textContent = label; hud.source.classList.remove("warn"); return v; }
+      } catch (err) { console.warn(label + " failed:", err.message || err); }
+    }
+    hud.source.textContent = "LOCAL RNG";
+    hud.source.classList.add("warn");
+    return fromLocal();
+  }
+
+  // ---------- a life ----------
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+  goBtn.addEventListener("click", async () => {
+    if (state === "result") { reset(); return; }
+    if (state !== "pick") return;
+    unlockAudio();
+    state = "drawing";
+    goBtn.disabled = true;
+    rows.forEach(r => r.btns.forEach(b => b.disabled = true));
+    setStatus("MIXING MUM AND DAD...", "", true);
+    beep(220, 0.1); beep(330, 0.1, "square", 0.11); beep(440, 0.14, "square", 0.22);
+
+    const [draws] = await Promise.all([drawChance(), sleep(reduceMotion ? 100 : 900)]);   // one number per trait; its remainder picks the option you get
+
+    caption.innerHTML = '<b class="real">THE YOU CHANCE MADE</b>';
+    setStatus("DECIDING...", "", false);
+    let met = 0;
+    for (let i = 0; i < N; i++) {
+      const actual = draws[i] % TRAITS[i].opts.length;
+      await reveal(i, actual);
+      if (actual === wish[i]) met++;
+    }
+    finish(met);
+  });
+
+  // a light runs along the row's options like a slot reel and stops on the one chance chose
+  async function reveal(i, actual) {
+    const r = rows[i];
+    const K = r.btns.length;
+    r.res.className = "res spin";
+    r.res.textContent = "...";
+    const steps = reduceMotion ? 0 : K * 2 + actual;
+    for (let s = 0; s <= steps; s++) {
+      const k = reduceMotion ? actual : s % K;
+      r.btns.forEach((b, j) => b.classList.toggle("spin", j === k));
+      beep(400 + k * 90, 0.03);
+      await sleep(40 + Math.max(0, s - steps + 5) * 35);
+    }
+    r.btns.forEach(b => b.classList.remove("spin"));
+    const got = actual === wish[i];
+    shown[i] = actual;
+    r.res.className = "res " + (got ? "yes" : "no");
+    r.res.textContent = got ? "✓" : "✗";
+    r.btns[actual].classList.add("got");
+    if (!got) r.btns[wish[i]].classList.add("missed");
+    if (got) beep(880, 0.08); else beep(196, 0.12, "triangle");
+
+    await sleep(reduceMotion ? 120 : 520);
+  }
+
+  function finish(met) {
+    state = "result";
+    lives++;
+    metTotal += met; askedTotal += N;
+    hud.lives.textContent = lives;
+    hud.wishes.textContent = metTotal + "/" + askedTotal;
+    caption.innerHTML = '<b class="real">YOU</b>';
+    const small = met === N ? "Every single wish. That happens 1 time in " + fmt(P_ALL) + "."
+      : met === 0 ? "Not one wish. That happens about 1 time in " + Math.round(1 / P_NONE) + "."
+      : met >= 4 ? "More than most. People usually get 2 or 3."
+      : met <= 1 ? "Fewer than most. People usually get 2 or 3."
+      : "About average. Nobody chooses their genes.";
+    setStatus("YOU GOT " + met + " OF " + N + " WISHES", small, false, true);
+    goBtn.textContent = "AGAIN";
+    goBtn.disabled = false;
+    rows.forEach(r => r.btns.forEach(b => b.disabled = false));
+    if (met >= N / 2) [523, 659, 784, 1046].forEach((f, i) => beep(f, 0.14, "square", i * 0.12));
+    else [440, 392, 349, 330].forEach((f, i) => beep(f, 0.18, "triangle", i * 0.15));
+  }
+
+  function reset() {
+    state = "pick";
+    shown = wish.slice();
+    rows.forEach(r => {
+      r.btns.forEach(b => b.classList.remove("got", "missed"));
+      r.res.className = "res";
+      r.res.textContent = "?";
+    });
+    paintRows();
+    caption.innerHTML = "<b>THE YOU YOU WISHED FOR</b>";
+    goBtn.textContent = "PULL THE LEVER";
+    goBtn.disabled = false;
+    setStatus("CHOOSE WHAT YOU WISH FOR", ODDS_LINE, true);
+  }
+
+  function setStatus(big, small, blink, result) {
+    statusBig.className = "big" + (result ? " result" : "");
+    statusBig.innerHTML = "";
+    const s = document.createElement("span");
+    if (blink) s.className = "blink";
+    s.textContent = big;
+    statusBig.appendChild(s);
+    statusSmall.textContent = small || "";
+  }
+
+  // ---------- sound ----------
+  let audio = null, master = null, soundOn = true;
+  function unlockAudio() {
+    // browsers pause audio after a while, so wake it on every tap and before every sound
+    try {
+      if (!audio) {
+        audio = new (window.AudioContext || window.webkitAudioContext)();
+        master = audio.createGain(); master.gain.value = 0.9; master.connect(audio.destination);
+      }
+      if (audio.state !== "running") audio.resume().catch(() => {});
+    } catch (e) { audio = null; }
+  }
+  ["pointerdown", "keydown", "touchstart"].forEach(ev => document.addEventListener(ev, unlockAudio, { passive: true }));
+  document.addEventListener("visibilitychange", () => { if (!document.hidden && audio) audio.resume().catch(() => {}); });
+  function beep(freq, dur, type = "square", delay = 0, vol = 0.06) {
+    if (!soundOn || !audio) return;
+    if (audio.state !== "running") audio.resume().catch(() => {});
+    const t = audio.currentTime + delay + 0.005;
+    const o = audio.createOscillator(), g = audio.createGain();
+    o.type = type; o.frequency.setValueAtTime(freq, t);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(master);
+    o.start(t); o.stop(t + dur + 0.03);
+    o.onended = () => { o.disconnect(); g.disconnect(); };
+  }
+  soundBtn.addEventListener("click", () => {
+    unlockAudio();
+    soundOn = !soundOn;
+    soundBtn.textContent = soundOn ? "SOUND ON" : "SOUND OFF";
+    soundBtn.setAttribute("aria-pressed", String(soundOn));
+    if (soundOn) beep(880, 0.05);
+  });
+
+  // ---------- portrait (40 x 40 pixel units) ----------
+  const SKIN = "#c98c5e", SKIN_DARK = "#a8693e", SHIRT = "#2b6f8f", INK = "#0b0820";
+  const HAIR = { BLACK: "#1c1512", BROWN: "#7a4a22", BLONDE: "#d9b25a", RED: "#b4512a" };
+  const IRIS = { BROWN: "#4a2a12", HAZEL: "#8a6a2a", GREEN: "#3f9a55", BLUE: "#3a7ad0" };
+  const LIFT = { TALL: -2, MEDIUM: 1, SHORT: 4 };      // shorter people sit lower in the frame
+  const RULER_TOP = { TALL: 8, MEDIUM: 14, SHORT: 20 };
+  const val = (key) => { const i = TRAITS.findIndex(t => t.key === key); return TRAITS[i].opts[shown[i]]; };
+
+  let u = 10, ox = 0, oy = 0;
+  function frame(now) {
+    const t = now / 1000;
+    const pTop = H * 0.08, pAvail = H * 0.97 - pTop;   // below the caption, using the full screen
+    u = Math.min(W, pAvail) / 40;
+    ox = (W - u * 40) / 2; oy = pTop + (pAvail - u * 40) / 2;
+    const px = (x, y, w, h, c) => { ctx.fillStyle = c; ctx.fillRect(ox + x * u, oy + y * u, w * u + 0.5, h * u + 0.5); };
+    ctx.clearRect(0, 0, W, H);
+
+    // faint grid
+    ctx.strokeStyle = "rgba(42,33,96,0.5)"; ctx.lineWidth = 1;
+    for (let i = 2; i < 40; i += 2) {
+      ctx.beginPath(); ctx.moveTo(ox + i * u, oy); ctx.lineTo(ox + i * u, oy + 40 * u); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(ox, oy + i * u); ctx.lineTo(ox + 40 * u, oy + i * u); ctx.stroke();
+    }
+
+    const height = val("height");
+    const lift = LIFT[height];
+    const bob = reduceMotion ? 0 : Math.round(Math.sin(t * 1.6) * 0.5 * 2) / 2;
+    const Y = (y) => y + lift + bob;
+
+    // height ruler
+    px(4, 6, 1, 32, "#2a2160");
+    for (let y = 6; y <= 37; y += 3) px(5, y, 1, 0.5, "#2a2160");
+    const top = RULER_TOP[height];
+    px(3.5, top, 2, 37.5 - top, "rgba(255,216,74,0.35)");
+    px(3, top - 0.5, 3, 1, "#ffd84a");
+    label(val("height"), 4.5, top - 1.6, "#ffd84a", u);
+
+    // shoulders and neck
+    px(10, Y(32), 20, 10, SHIRT);
+    px(9, Y(33), 22, 9, SHIRT);
+    px(17, Y(28), 6, 5, SKIN_DARK);
+
+    // hair behind the head
+    const hc = HAIR[val("hairColor")];
+    const hairType = val("hairType");
+    const curly = hairType === "CURLY", wavy = hairType === "WAVY";
+    if (curly) {
+      for (const [x, y] of [[11,10],[13,8],[16,7],[19,6.5],[22,7],[25,8],[27,10],[28,13],[28,16],[28,19],[11,13],[11,16],[11,19],[12,22],[27,22]])
+        px(x, Y(y), 3, 3, hc);
+    } else if (wavy) {
+      px(12, Y(9), 16, 5, hc);
+      for (let y = 11; y < 25; y += 2) {
+        const off = (y % 4 === 1) ? -0.8 : 0.4;
+        px(11 + off, Y(y), 3, 2.2, hc);
+        px(26 - off, Y(y), 3, 2.2, hc);
+      }
+    } else {
+      px(12, Y(9), 16, 6, hc);
+      px(11, Y(11), 3, 13, hc);
+      px(26, Y(11), 3, 13, hc);
+    }
+
+    // face
+    px(13, Y(12), 14, 16, SKIN);
+    px(14, Y(28), 12, 1, SKIN);
+    px(12, Y(17), 1, 4, SKIN);  px(27, Y(17), 1, 4, SKIN);     // ears
+
+    // fringe on top of the face
+    if (curly) {
+      for (const [x, y] of [[13,10],[15.5,10.5],[18,10],[20.5,10.5],[23,10],[25,10.5]]) px(x, Y(y), 2.6, 2.6, hc);
+    } else if (wavy) {
+      px(13, Y(12), 14, 1.6, hc);
+      for (let x = 13; x < 27; x += 3) px(x, Y(13.4), 2, 1, hc);
+    } else {
+      px(13, Y(12), 14, 2, hc);
+      px(13, Y(14), 4, 1, hc);
+    }
+
+    // eyes
+    const iris = IRIS[val("eyes")];
+    const blink = !reduceMotion && (t % 4) < 0.12;
+    for (const ex of [15, 22]) {
+      if (blink) { px(ex, Y(19), 3, 0.6, INK); continue; }
+      px(ex, Y(18), 3, 2, "#f2ecff");
+      px(ex + 1, Y(18), 1.6, 2, iris);
+      px(ex + 1.4, Y(18.3), 0.6, 0.6, "#ffffff");
+    }
+    px(15, Y(16.5), 3, 0.6, hc); px(22, Y(16.5), 3, 0.6, hc);  // brows
+
+    // nose and mouth
+    px(19.5, Y(20.5), 1, 2.5, SKIN_DARK);
+    px(17, Y(25), 6, 1, "#6e2b25");
+    px(16.5, Y(24.3), 1, 1, "#6e2b25"); px(22.5, Y(24.3), 1, 1, "#6e2b25");
+
+    const dimples = val("dimples");
+    if (dimples !== "NONE") px(23.9, Y(24.6), 0.9, 0.9, SKIN_DARK);
+    if (dimples === "BOTH") px(15.2, Y(24.6), 0.9, 0.9, SKIN_DARK);
+    const freckles = val("freckles");
+    const FEW = [[15,21.6],[16.3,22.6],[23.5,22.6]];
+    const LOTS = FEW.concat([[17.3,21.6],[22.4,21.6],[24.6,21.6],[18.4,20.8],[21.2,20.8],[14.4,23.4],[25.4,23.4],[17,23.2],[23,23.2]]);
+    if (freckles !== "NONE") for (const [x, y] of (freckles === "LOTS" ? LOTS : FEW)) px(x, Y(y), 0.6, 0.6, "#8a4b2a");
+
+    // writing hand(s) with a pencil
+    const hand = val("hand");
+    const sides = hand === "BOTH" ? [true, false] : [hand === "LEFT"];
+    for (const left of sides) {
+      const hx = left ? 7 : 29;
+      px(hx, Y(31), 4, 3, SKIN);
+      const pdir = left ? -1 : 1;
+      for (let k = 0; k < 4; k++) px(hx + 1.5 + pdir * k * 0.8 + (left ? 0 : 1), Y(30.5 - k), 1, 1, k === 3 ? "#ff8fb8" : "#ffd84a");
+    }
+    label(hand === "BOTH" ? "BOTH HANDS" : hand, hand === "LEFT" ? 9 : hand === "RIGHT" ? 31 : 20, Y(37.5), "#8a84bf", u);
+
+    // voice: notes drifting from the mouth, steadier the better the voice
+    const voice = val("voice");
+    const shake = { SINGER: 0, AVERAGE: 0.4, "TONE-DEAF": 1.3 }[voice];
+    const rgb = { SINGER: "62,240,255", AVERAGE: "233,230,255", "TONE-DEAF": "255,90,79" }[voice];
+    for (let k = 0; k < 3; k++) {
+      const ph = ((t * 0.45 + k / 3) % 1);
+      if (reduceMotion && k > 0) continue;
+      const nx = 27 + ph * 9, ny = Y(24 - ph * 13);
+      const wob = Math.sin(t * 9 + k * 2) * shake;
+      note(nx + wob, ny, "rgba(" + rgb + "," + (1 - ph) + ")", 0.4 * shake * Math.sin(t * 7 + k), px);
+    }
+    requestAnimationFrame(frame);
+  }
+
+  function note(x, y, col, tilt, px) {
+    px(x, y + tilt, 1.6, 1.2, col);
+    px(x + 1.2, y - 3 + tilt, 0.5, 3.4, col);
+    px(x + 1.2, y - 3 + tilt, 1.4, 0.6, col);
+  }
+  function label(text, x, y, col) {
+    const fs = Math.max(7, Math.round(u * 1.05));
+    ctx.font = fs + "px 'Press Start 2P', monospace";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillStyle = col;
+    ctx.fillText(text, ox + x * u, oy + y * u);
+  }
+
+  paintRows();
+  setStatus("CHOOSE WHAT YOU WISH FOR", ODDS_LINE, true);
+  relayout();
+  requestAnimationFrame(frame);
+})();
+</script>

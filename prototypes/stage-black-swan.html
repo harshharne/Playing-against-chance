@@ -1,0 +1,490 @@
+<title>Black Swan</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap">
+<style>
+/* Layout: one wide arcade screen holding the tower, with the day count and the (lying) risk meter in its corners. Two big buttons under it. Single dark theme. */
+:root {
+  --ink: #0b0820;
+  --cabinet: #151036;
+  --grid: #2a2160;
+  --text: #e9e6ff;
+  --dim: #8a84bf;
+  --cyan: #3ef0ff;
+  --pink: #ff4fa8;
+  --yellow: #ffd84a;
+  --green: #6dff9c;
+  --red: #ff5a4f;
+  --paper: #f3eddc;
+  --paper-ink: #1f1a3a;
+  --pixel: "Press Start 2P", "Courier New", monospace;
+  --term: "VT323", "Courier New", monospace;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body { margin: 0; box-sizing: border-box; background: var(--ink); color: var(--text); font-family: var(--term); font-size: 20px; padding-inline: 16px; padding-block: 12px; overflow: hidden; }
+.cab { max-width: 1160px; height: 100%; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; gap: 12px; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: center; gap: 6px 14px; }
+.marquee { font-family: var(--pixel); font-size: 10px; letter-spacing: 0.18em; color: var(--dim); }
+h1 { margin: 0; font-family: var(--pixel); font-size: clamp(14px, 2.6vw, 22px); line-height: 1.3; color: var(--text); text-shadow: 3px 3px 0 var(--cabinet), 5px 5px 0 var(--pink); }
+
+.stage { min-height: 0; min-width: 0; display: grid; place-items: center; }
+.screen { position: relative; box-sizing: border-box; width: min(100%, 1120px); height: min(100%, 680px); border: 4px solid var(--grid); border-radius: 14px; background: #0c0b2a; box-shadow: 0 0 0 4px var(--cabinet); overflow: hidden; }
+.screen::after { content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 5; background: repeating-linear-gradient(to bottom, rgba(0,0,0,0) 0 2px, rgba(0,0,0,0.16) 2px 3px); }
+canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+.day { position: absolute; top: 16px; left: 18px; z-index: 2; display: flex; flex-direction: column; gap: 8px; font-family: var(--pixel); pointer-events: none; }
+.day small { font-size: 8px; letter-spacing: 0.12em; color: var(--dim); }
+.day b { font-weight: 400; font-size: clamp(18px, 3vw, 30px); color: var(--text); font-variant-numeric: tabular-nums; }
+.calm { position: absolute; top: 22px; left: 50%; transform: translateX(-50%); z-index: 2; font-family: var(--pixel); font-size: 10px; letter-spacing: 0.16em; color: var(--green); opacity: 0; pointer-events: none; }
+.calm.show { animation: calm 0.9s ease-out; }
+@keyframes calm { 0% { opacity: 0; transform: translate(-50%, 6px); } 20% { opacity: 1; transform: translate(-50%, 0); } 100% { opacity: 0; transform: translate(-50%, -8px); } }
+
+/* the risk meter: it gets more reassuring every calm day. The real odds never change. */
+.meter { position: absolute; top: 16px; right: 18px; z-index: 2; width: clamp(150px, 22%, 220px); box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; background: rgba(11, 8, 32, 0.8); border: 2px solid var(--grid); border-radius: 8px; font-family: var(--pixel); pointer-events: none; }
+.meter small { font-size: 7px; letter-spacing: 0.12em; color: var(--dim); }
+.meter .val { font-size: clamp(11px, 1.5vw, 15px); color: var(--green); }
+.meter .bar { height: 8px; background: var(--grid); border-radius: 4px; overflow: hidden; }
+.meter .bar i { display: block; height: 100%; width: 30%; background: var(--green); transition: width 0.4s; }
+.meter .sub { font-size: 7px; color: var(--dim); line-height: 1.6; }
+
+/* the morning paper after the swan */
+.news { position: absolute; z-index: 3; left: 50%; top: 42%; width: min(86%, 520px); box-sizing: border-box; transform: translate(-50%, -46%) scale(0.96); opacity: 0; display: flex; flex-direction: column; gap: 10px; padding: 18px 22px 20px; background: var(--paper); color: var(--paper-ink); border-radius: 4px; box-shadow: 8px 8px 0 rgba(0,0,0,0.5); text-align: center; transition: transform 0.5s ease, opacity 0.5s ease; pointer-events: none; }
+.news[hidden] { display: none; }
+.news.in { opacity: 1; transform: translate(-50%, -50%) scale(1); pointer-events: auto; }
+.news .mast { font-family: var(--pixel); font-size: 9px; letter-spacing: 0.2em; padding-bottom: 8px; border-bottom: 3px double var(--paper-ink); }
+.news canvas { position: static; width: 56px; height: 56px; margin: 4px auto 0; image-rendering: pixelated; }
+.news .head { font-family: var(--pixel); font-size: clamp(12px, 2vw, 17px); line-height: 1.5; text-wrap: balance; }
+.news .sub { font-size: 20px; line-height: 1.05; color: #4a4270; font-style: italic; }
+.news .facts { margin-top: 4px; padding-top: 10px; border-top: 1px solid #cfc6e8; font-size: 20px; line-height: 1.15; }
+.news .facts b { font-weight: 400; color: #c0392b; }
+
+.intro { position: absolute; inset: 0; z-index: 4; display: grid; place-items: center; padding: 16px; background: rgba(7, 5, 26, 0.72); }
+.intro[hidden] { display: none; }
+.card { max-width: 440px; display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 26px 24px; text-align: center; background: var(--cabinet); border: 3px solid var(--grid); border-radius: 12px; box-shadow: 0 0 0 3px var(--ink); }
+.card b { font-family: var(--pixel); font-weight: 400; font-size: clamp(14px, 2.4vw, 20px); color: var(--text); text-shadow: 2px 2px 0 var(--pink); }
+.card p { margin: 0; font-size: 22px; line-height: 1.1; color: var(--text); text-wrap: balance; }
+
+.bottom { display: flex; justify-content: center; align-items: center; gap: 14px; flex-wrap: wrap; padding-bottom: 6px; }
+.go { font-family: var(--pixel); font-size: 15px; min-width: min(200px, 40vw); padding: 18px 22px; border: 0; border-radius: 10px; cursor: pointer; letter-spacing: 0.08em; color: var(--ink); }
+.go.build { background: var(--yellow); box-shadow: 0 7px 0 #b8902a; }
+.go.brace { background: var(--cyan); box-shadow: 0 7px 0 #1f8a99; }
+.go:active:not(:disabled) { transform: translateY(5px); box-shadow: 0 2px 0 rgba(0,0,0,0.4); }
+.go:disabled { background: var(--grid); color: var(--dim); box-shadow: 0 7px 0 var(--cabinet); cursor: default; }
+.go .k { display: block; margin-top: 6px; font-size: 7px; opacity: 0.6; letter-spacing: 0.1em; }
+.go[hidden] { display: none; }
+.side { display: flex; flex-direction: column; gap: 8px; align-items: center; font-family: var(--pixel); font-size: 7px; letter-spacing: 0.08em; color: var(--dim); }
+.side b { font-weight: 400; color: var(--cyan); }
+.side b.warn { color: var(--yellow); }
+.ghost { font-family: var(--pixel); font-size: 8px; padding: 8px 10px; background: transparent; color: var(--dim); border: 2px solid var(--grid); border-radius: 6px; cursor: pointer; }
+button:focus-visible { outline: 3px solid var(--pink); outline-offset: 3px; }
+
+@media (max-width: 640px) {
+  .meter { width: 52%; padding: 8px 10px; top: 12px; right: 12px; }
+  .day { top: 12px; left: 12px; }
+  .calm { top: auto; bottom: 18%; }
+  .go { min-width: 38vw; padding: 15px 12px; font-size: 12px; }
+  .go .k { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .calm.show { animation: none; } .news, .meter .bar i { transition: none; } }
+</style>
+
+<div class="cab">
+  <header>
+    <div class="marquee">PLAYING AGAINST CHANCE</div>
+    <h1>BLACK SWAN</h1>
+  </header>
+
+  <div class="stage">
+    <div class="screen" id="screen">
+      <canvas id="scene" aria-label="Your life as a tower of floors. Braced floors have steel frames."></canvas>
+      <div class="day" aria-live="polite"><small>SAFE DAYS</small><b id="days">0</b></div>
+      <div class="calm" id="calm">A CALM DAY</div>
+      <div class="meter" aria-live="polite">
+        <small>RISK FORECAST</small>
+        <span class="val" id="riskVal">LOW · 2.9%</span>
+        <span class="bar"><i id="riskBar"></i></span>
+        <span class="sub" id="riskSub">BASED ON 0 DAYS OF DATA</span>
+      </div>
+      <div class="news" id="news" hidden role="dialog" aria-label="What happened">
+        <div class="mast">THE DAILY CHANCE</div>
+        <canvas id="newsIcon" width="10" height="10" aria-hidden="true"></canvas>
+        <div class="head" id="newsHead"></div>
+        <div class="sub">Experts now say the signs were there all along.</div>
+        <div class="facts" id="newsFacts"></div>
+      </div>
+      <div class="intro" id="intro">
+        <div class="card">
+          <b>ONE DAY, SOMETHING COMES</b>
+          <p>Every calm day, build your life higher or brace what you have.</p>
+          <p>Braced floors survive. Nobody knows when.</p>
+          <button class="go build" id="startBtn">START</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="bottom">
+    <button class="go build" id="buildBtn" disabled>BUILD<span class="k">KEY B</span></button>
+    <button class="go brace" id="braceBtn" disabled>BRACE<span class="k">KEY R</span></button>
+    <button class="go build" id="againBtn" hidden>LIVE AGAIN</button>
+    <div class="side">
+      <span>CHANCE <b id="src">RANDOM.ORG</b></span>
+      <button class="ghost" id="soundBtn" aria-pressed="true">SOUND ON</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const ODDS = 35;                     // a black swan is 1 in 35 on any given day
+  const BATCH = 60;                    // days drawn from random.org at a time
+  const FLOORS = [
+    { t: "HOME", c: "#ff9a2e" }, { t: "SAVINGS", c: "#ffd84a" }, { t: "CAREER", c: "#3ef0ff" }, { t: "FAMILY", c: "#ff4fa8" },
+    { t: "FRIENDS", c: "#6dff9c" }, { t: "PLANS", c: "#c38bff" }, { t: "DREAMS", c: "#6f97ff" }, { t: "HOBBIES", c: "#ff5a4f" },
+  ];
+  // what comes: eight things people imagine, and four that nobody had a name for
+  const SWANS = [
+    { head: "A NEW VIRUS. THE CITY SHUTS DOWN.", pal: { a: "#c0392b", b: "#1f1a3a" }, px: ["....a.....", ".a.aaa.a..", "..aaaaa...", ".aaabaaa..", "aaabbbaaa.", ".aaabaaa..", "..aaaaa...", ".a.aaa.a..", "....a.....", ".........."] },
+    { head: "MARKETS CRASH OVERNIGHT.", pal: { a: "#c0392b" }, px: ["a.........", "aa........", "a.a.......", "a..a.a....", "a...a.a...", "a......a..", "a.......a.", "a........a", "aaaaaaaaaa", ".........."] },
+    { head: "A HUNDRED-YEAR FLOOD.", pal: { a: "#2b6f8f" }, px: ["..........", "..........", ".aa...aa..", "a..aaa..aa", "..........", ".aa...aa..", "a..aaa..aa", "..........", "aaaaaaaaaa", "aaaaaaaaaa"] },
+    { head: "WAR BREAKS OUT.", pal: { a: "#1f1a3a", b: "#c0392b" }, px: ["a.........", "abbbbbb...", "abbbbbb...", "abbbbbb...", "a.........", "a.........", "a.........", "a.........", "a.........", "aaa......."] },
+    { head: "THE WHOLE INDUSTRY FOLDS.", pal: { a: "#1f1a3a", b: "#c0392b" }, px: ["..........", "...aaaa...", "...a..a...", "aaaaaaaaaa", "a........a", "aaaaaaaaaa", "a...bb...a", "a........a", "aaaaaaaaaa", ".........."] },
+    { head: "A FIRE TAKES THE BLOCK.", pal: { a: "#e0701a", b: "#c0392b" }, px: ["....a.....", "...aa.....", "...aaa..a.", "..aaaa.aa.", "..aaabaaa.", ".aaabbbaa.", ".aabbbbba.", ".aabbbbaa.", "..aabbaa..", "...aaaa..."] },
+    { head: "THE GROUND SHAKES.", pal: { a: "#6a5a4a" }, px: ["..........", "..........", "aaaa.aaaaa", "aaa..aaaaa", "aaaa.aaaaa", "aaaaa.aaaa", "aaaa..aaaa", "aaaaa.aaaa", "aaaa..aaaa", "aaaaa.aaaa"] },
+    { head: "A SUDDEN DIAGNOSIS.", pal: { a: "#c0392b" }, px: ["..........", "..........", "......a...", ".....a.a..", "aaa.a...aa", "...a......", "...a......", "..........", "..........", ".........."] },
+    ...Array.from({ length: 4 }, () => ({ head: "SOMETHING NOBODY HAD A NAME FOR.", unknown: true, pal: { a: "#1f1a3a" }, px: ["..aaaaa...", ".aa...aa..", ".......aa.", "......aa..", "....aaa...", "....aa....", "....aa....", "..........", "....aa....", "....aa...."] })),
+  ];
+
+  // random.org JSON-RPC API (v4). Anyone who can open this file can read this key.
+  const RANDOM_ORG_API_KEY = (() => { try { return localStorage.getItem("RANDOM_ORG_KEY") || ""; } catch (e) { return ""; } })();
+  const RANDOM_ORG_API = "https://api.random.org/json-rpc/4/invoke";
+
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const $ = (id) => document.getElementById(id);
+  const canvas = $("scene"), ctx = canvas.getContext("2d"), screenEl = $("screen");
+  const buildBtn = $("buildBtn"), braceBtn = $("braceBtn"), againBtn = $("againBtn"), startBtn = $("startBtn"), soundBtn = $("soundBtn");
+  const introEl = $("intro"), newsEl = $("news"), daysEl = $("days"), calmEl = $("calm"), srcEl = $("src");
+  const riskVal = $("riskVal"), riskBar = $("riskBar"), riskSub = $("riskSub");
+
+  let state = "ready";                 // ready | live | busy | swan | done
+  let floors = [];                     // { kind, braced, x, w, dropAt, bracedAt, fall: { vx, vy, rot, vr, y, x } }
+  let days = 0, pool = [], refilling = null, source = "RANDOM.ORG";
+  let swanAt = 0, shakeAt = 0;
+
+  // ---------- chance ----------
+  async function withTimeout(fn, ms) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), ms);
+    try { return await fn(ctrl.signal); } finally { clearTimeout(timer); }
+  }
+  async function apiInts(n, min, max) {
+    if (!RANDOM_ORG_API_KEY) throw new Error("no key");
+    return withTimeout(async (signal) => {
+      const res = await fetch(RANDOM_ORG_API, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", method: "generateIntegers", params: { apiKey: RANDOM_ORG_API_KEY, n, min, max, replacement: true }, id: Date.now() }),
+        signal,
+      });
+      const json = await res.json();
+      if (json.error) throw new Error(json.error.message);
+      return json.result.random.data;
+    }, 5000);
+  }
+  async function plainInts(n, min, max) {
+    return withTimeout(async (signal) => {
+      const res = await fetch("https://www.random.org/integers/?num=" + n + "&min=" + min + "&max=" + max + "&col=1&base=10&format=plain&rnd=new", { signal, cache: "no-store" });
+      if (!res.ok) throw new Error("status " + res.status);
+      return (await res.text()).trim().split(/\s+/).map(v => parseInt(v, 10));
+    }, 4000);
+  }
+  function localInts(n, min, max) {
+    const k = max - min + 1, lim = Math.floor(0x100000000 / k) * k, buf = new Uint32Array(1);
+    return Array.from({ length: n }, () => { do { crypto.getRandomValues(buf); } while (buf[0] >= lim); return min + (buf[0] % k); });
+  }
+  async function getInts(n, min, max) {
+    for (const [label, fn] of [["RANDOM.ORG API", apiInts], ["RANDOM.ORG", plainInts]]) {
+      try { const v = await fn(n, min, max); if (v.length === n && v.every(x => x >= min && x <= max)) { setSource(label); return v; } }
+      catch (err) { console.warn(label + " failed:", err.message || err); }
+    }
+    setSource("LOCAL RNG");
+    return localInts(n, min, max);
+  }
+  function setSource(label) { source = label; srcEl.textContent = label; srcEl.classList.toggle("warn", label === "LOCAL RNG"); }
+  // days are drawn in batches so each press feels instant; a 1 means the swan comes that day
+  function refill() {
+    if (!refilling) refilling = getInts(BATCH, 1, ODDS).then(v => { pool.push(...v); refilling = null; });
+    return refilling;
+  }
+  async function nextDay() {
+    if (pool.length < 8) refill();
+    if (!pool.length) await refill();
+    return pool.shift();
+  }
+
+  // ---------- a life ----------
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+  async function start() {
+    ensureAudio();
+    introEl.hidden = true;
+    newsEl.hidden = true; newsEl.classList.remove("in");
+    againBtn.hidden = true; buildBtn.hidden = false; braceBtn.hidden = false;
+    floors = []; days = 0; swanAt = 0; shakeAt = 0;
+    pool = [];
+    state = "busy";
+    setDays(); setMeter();
+    await refill();
+    addFloor();                         // everyone starts with a home
+    state = "live";
+    setButtons();
+    beep(392, 0.08); beep(523, 0.1, "square", 0.09);
+  }
+
+  function addFloor() {
+    const i = floors.length;
+    const j = (k) => ((Math.sin(i * 12.9898 + k * 78.233) * 43758.5453) % 1 + 1) % 1;   // steady wobble per floor
+    floors.push({ kind: FLOORS[i % FLOORS.length], braced: false, w: 0.8 + j(1) * 0.2, x: (j(2) - 0.5) * 0.12, dropAt: performance.now(), bracedAt: 0, fall: null });
+  }
+
+  async function act(kind) {
+    if (state !== "live") return;
+    state = "busy";
+    setButtons();
+    if (kind === "build") { addFloor(); beep(330 + Math.min(floors.length, 30) * 18, 0.07); }
+    else {
+      const f = floors.find(f => !f.braced);
+      if (f) { f.braced = true; f.bracedAt = performance.now(); beep(196, 0.05); beep(392, 0.06, "square", 0.05); }
+    }
+    const roll = await nextDay();
+    await sleep(reduceMotion ? 60 : 260);
+    if (roll === 1) { await swan(); return; }
+    days++;
+    setDays(); setMeter();
+    calmEl.classList.remove("show"); void calmEl.offsetWidth; calmEl.classList.add("show");
+    beep(660, 0.04, "triangle");
+    state = "live";
+    setButtons();
+  }
+
+  function setButtons() {
+    const live = state === "live";
+    buildBtn.disabled = !live;
+    braceBtn.disabled = !live || floors.every(f => f.braced);
+  }
+  function setDays() { daysEl.textContent = days; }
+
+  // the forecast learns from calm days and grows confident. The real chance is 1 in 35 every day.
+  function shownRisk() { return (100 / ODDS) * Math.exp(-days / 14); }
+  const fmtPct = (r) => r >= 1 ? r.toFixed(1) + "%" : r >= 0.01 ? r.toFixed(2) + "%" : "<0.01%";
+  function setMeter() {
+    const r = shownRisk();
+    const word = r >= 2 ? "LOW" : r >= 1 ? "VERY LOW" : r >= 0.3 ? "MINIMAL" : "NEGLIGIBLE";
+    riskVal.textContent = word + " · " + fmtPct(r);
+    riskBar.style.width = Math.max(2, r / (100 / ODDS) * 30) + "%";
+    riskSub.textContent = "BASED ON " + days + " DAY" + (days === 1 ? "" : "S") + " OF DATA";
+  }
+
+  async function swan() {
+    state = "swan";
+    setButtons();
+    const pick = (await getInts(1, 1, SWANS.length))[0] - 1;
+    const ev = SWANS[pick];
+    swanAt = performance.now();
+    rumble();
+    await sleep(reduceMotion ? 300 : 1300);
+
+    // the shake: unbraced floors come down, braced ones hold
+    shakeAt = performance.now();
+    floors.forEach((f, i) => {
+      if (f.braced) return;
+      const dir = Math.random() < 0.5 ? -1 : 1;
+      f.fall = { at: shakeAt + i * 40, vx: dir * (0.15 + Math.random() * 0.35), vy: -0.25 - Math.random() * 0.25, vr: dir * (0.004 + Math.random() * 0.006) };
+    });
+    for (let i = 0; i < 6; i++) beep(70 + Math.random() * 40, 0.25, "sawtooth", i * 0.12, 0.06);
+    await sleep(reduceMotion ? 300 : 1900);
+
+    const total = floors.length, standing = floors.filter(f => f.braced).length;
+    const icon = $("newsIcon").getContext("2d");
+    icon.clearRect(0, 0, 10, 10);
+    ev.px.forEach((row, y) => [...row].forEach((ch, x) => { if (ev.pal[ch]) { icon.fillStyle = ev.pal[ch]; icon.fillRect(x, y, 1, 1); } }));
+    $("newsHead").textContent = ev.head;
+    $("newsFacts").innerHTML = "";
+    const l1 = document.createElement("div");
+    l1.textContent = "Day " + (days + 1) + ". " + total + (total === 1 ? " floor built, " : " floors built, ") + standing + " still standing.";
+    const l2 = document.createElement("div");
+    const r = shownRisk();
+    l2.append("The forecast said " + fmtPct(r) + ". ");
+    const b = document.createElement("b"); b.textContent = "The real chance was 1 in " + ODDS + ", every single day.";
+    l2.appendChild(b);
+    $("newsFacts").append(l1, l2);
+    newsEl.hidden = false; void newsEl.offsetWidth; newsEl.classList.add("in");
+    state = "done";
+    buildBtn.hidden = true; braceBtn.hidden = true; againBtn.hidden = false;
+    againBtn.focus({ preventScroll: true });
+  }
+
+  startBtn.addEventListener("click", start);
+  againBtn.addEventListener("click", start);
+  buildBtn.addEventListener("click", () => act("build"));
+  braceBtn.addEventListener("click", () => act("brace"));
+  document.addEventListener("keydown", (e) => {
+    if (e.repeat) return;
+    if (e.key === "b" || e.key === "B") act("build");
+    if (e.key === "r" || e.key === "R") act("brace");
+  });
+
+  // ---------- sound that keeps working ----------
+  let audio = null, master = null, soundOn = true;
+  function ensureAudio() {
+    try {
+      if (!audio) {
+        audio = new (window.AudioContext || window.webkitAudioContext)();
+        master = audio.createGain(); master.gain.value = 0.9; master.connect(audio.destination);
+      }
+      if (audio.state !== "running") audio.resume().catch(() => {});
+    } catch (e) { audio = null; }
+  }
+  ["pointerdown", "keydown", "touchstart"].forEach(ev => document.addEventListener(ev, ensureAudio, { passive: true }));
+  document.addEventListener("visibilitychange", () => { if (!document.hidden && audio) audio.resume().catch(() => {}); });
+  function beep(freq, dur, type = "square", delay = 0, vol = 0.05) {
+    if (!soundOn || !audio) return;
+    if (audio.state !== "running") audio.resume().catch(() => {});
+    const t = audio.currentTime + delay + 0.005;
+    const o = audio.createOscillator(), g = audio.createGain();
+    o.type = type; o.frequency.setValueAtTime(freq, t);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(master);
+    o.start(t); o.stop(t + dur + 0.03);
+    o.onended = () => { o.disconnect(); g.disconnect(); };
+  }
+  function rumble() {
+    if (!soundOn || !audio) return;
+    [880, 698, 523, 392, 262].forEach((f, i) => beep(f, 0.18, "triangle", i * 0.12, 0.06));
+    beep(55, 1.2, "sawtooth", 0.5, 0.07);
+  }
+  soundBtn.addEventListener("click", () => {
+    ensureAudio();
+    soundOn = !soundOn;
+    soundBtn.textContent = soundOn ? "SOUND ON" : "SOUND OFF";
+    soundBtn.setAttribute("aria-pressed", String(soundOn));
+    if (soundOn) beep(880, 0.05);
+  });
+
+  // ---------- drawing ----------
+  let W = 800, H = 500;
+  function resize() {
+    const r = canvas.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(r.width * dpr); canvas.height = Math.round(r.height * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    W = r.width; H = r.height;
+  }
+  if ("ResizeObserver" in window) new ResizeObserver(resize).observe(canvas);
+  window.addEventListener("resize", resize);
+
+  const SWAN_PX = [
+    "...bb...........",
+    "..bbbo..........",
+    "...bb...........",
+    "....b...........",
+    "....bb.....bbb..",
+    ".....bbbbbbbbbb.",
+    "....bbbbbbbbbbbb",
+    "...bbbbbbbbbbbb.",
+    "....bbbbbbbbbb..",
+    "......bbbbbb....",
+  ];
+  function drawSwan(x, y, s, flap) {
+    SWAN_PX.forEach((row, j) => [...row].forEach((ch, i) => {
+      if (ch === ".") return;
+      ctx.fillStyle = ch === "o" ? "#ff9a2e" : "#05040f";
+      const dy = flap && i > 9 && j < 6 ? -s : 0;
+      ctx.fillRect(x + (15 - i) * s, y + j * s + dy, s, s);   // facing right
+    }));
+  }
+
+  function frame(now) {
+    const t = now / 1000;
+    const sinceSwan = swanAt ? now - swanAt : -1;
+    const shake = shakeAt && now - shakeAt < 1400 && !reduceMotion ? (1 - (now - shakeAt) / 1400) * 10 : 0;
+    ctx.save();
+    ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake);
+
+    // sky: soft dusk while it's calm, dark once the swan comes
+    const dark = swanAt ? Math.min(1, sinceSwan / 600) : 0;
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, dark ? "rgb(" + Math.round(28 - 20 * dark) + "," + Math.round(26 - 20 * dark) + "," + Math.round(80 - 64 * dark) + ")" : "#1c1a50");
+    g.addColorStop(1, dark ? "rgb(" + Math.round(70 - 30 * dark) + "," + Math.round(40 - 30 * dark) + "," + Math.round(90 - 60 * dark) + ")" : "#46306e");
+    ctx.fillStyle = g; ctx.fillRect(-20, -20, W + 40, H + 40);
+    for (let i = 0; i < 26; i++) {
+      const a = (1 - dark) * (reduceMotion ? 0.6 : 0.4 + 0.3 * Math.sin(t * 1.5 + i));
+      ctx.fillStyle = "rgba(233,230,255," + a + ")";
+      ctx.fillRect((i * 97 % 100) / 100 * W, (i * 41 % 45) / 100 * H, 2, 2);
+    }
+
+    // ground
+    const groundY = H * 0.88;
+    ctx.fillStyle = "#1b1640"; ctx.fillRect(-20, groundY, W + 40, H - groundY + 20);
+    ctx.fillStyle = "#2a2160"; ctx.fillRect(-20, groundY, W + 40, 3);
+
+    // the tower: floors shrink to fit as it grows
+    const baseW = Math.min(W * 0.34, 300);
+    const room = groundY - H * 0.12;
+    const fh = Math.max(2, Math.min(40, room / Math.max(8, floors.length + 1)));
+    const cx = W / 2;
+    floors.forEach((f, i) => {
+      let y = groundY - (i + 1) * fh;
+      const w = baseW * f.w, x = cx - w / 2 + f.x * baseW;
+      // a new floor drops in from above
+      const k = reduceMotion ? 1 : Math.min(1, (now - f.dropAt) / 260);
+      y -= (1 - k * k) * fh * 4;
+      ctx.save();
+      if (f.fall && now >= f.fall.at) {
+        const s = (now - f.fall.at);
+        const fx = f.fall.vx * s, fy = f.fall.vy * s + 0.0012 * s * s;
+        ctx.translate(x + w / 2 + fx, y + fh / 2 + fy);
+        ctx.rotate(f.fall.vr * s);
+        ctx.translate(-(x + w / 2), -(y + fh / 2));
+        ctx.globalAlpha = Math.max(0, 1 - s / 2200);
+      }
+      // the block
+      ctx.fillStyle = f.kind.c;
+      ctx.fillRect(x, y + 1, w, fh - 2);
+      ctx.fillStyle = "rgba(11,8,32,0.25)";
+      ctx.fillRect(x, y + fh - 4, w, 3);
+      if (f.braced) {
+        const flash = Math.max(0, 1 - (now - f.bracedAt) / 400);
+        ctx.strokeStyle = flash ? "rgba(255,255,255," + (0.6 + flash * 0.4) + ")" : "#d6e2ff";
+        ctx.lineWidth = Math.max(2, fh * 0.12);
+        ctx.strokeRect(x + 1, y + 2, w - 2, fh - 4);
+        ctx.strokeStyle = "rgba(11,8,32,0.55)"; ctx.lineWidth = Math.max(1.5, fh * 0.07);
+        ctx.beginPath(); ctx.moveTo(x + 3, y + 3); ctx.lineTo(x + w - 3, y + fh - 3); ctx.moveTo(x + w - 3, y + 3); ctx.lineTo(x + 3, y + fh - 3); ctx.stroke();
+      }
+      if (fh >= 15) {
+        ctx.font = Math.max(7, Math.min(11, Math.round(fh * 0.32))) + "px 'Press Start 2P', monospace";
+        ctx.fillStyle = "#0b0820"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        const label = f.kind.t;
+        const tw = ctx.measureText(label).width + 10;
+        if (f.braced) { ctx.fillStyle = f.kind.c; ctx.fillRect(x + w / 2 - tw / 2, y + fh / 2 - fh * 0.22, tw, fh * 0.44); ctx.fillStyle = "#0b0820"; }
+        ctx.fillText(label, x + w / 2, y + fh / 2 + 1);
+      }
+      ctx.restore();
+    });
+
+    // the swan crosses the sky
+    if (swanAt && sinceSwan < 2600) {
+      const k = sinceSwan / 2600;
+      const s = Math.max(4, Math.round(Math.min(W, H) * 0.012));
+      drawSwan(-16 * s + (W + 32 * s) * k, H * 0.18 + Math.sin(k * Math.PI * 3) * H * 0.03, s, !reduceMotion && Math.floor(t * 8) % 2 === 0);
+    }
+    ctx.restore();
+    requestAnimationFrame(frame);
+  }
+
+  setMeter();
+  resize();
+  requestAnimationFrame(frame);
+})();
+</script>

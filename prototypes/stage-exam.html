@@ -1,0 +1,542 @@
+<title>The Night Before</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap">
+<style>
+/* Layout: one wide arcade screen. Left: a window onto the sky with the clock. Right: the subjects at night, the question paper in the morning. Single dark theme that brightens at dawn. */
+:root {
+  --ink: #0b0820;
+  --cabinet: #151036;
+  --grid: #2a2160;
+  --text: #e9e6ff;
+  --dim: #8a84bf;
+  --cyan: #3ef0ff;
+  --pink: #ff4fa8;
+  --yellow: #ffd84a;
+  --green: #6dff9c;
+  --red: #ff5a4f;
+  --paper: #f3eddc;
+  --paper-ink: #1f1a3a;
+  --paper-rule: #cfc6e8;
+  --amb: #0a0a26;                 /* the room's light: set by the time of night */
+  --pixel: "Press Start 2P", "Courier New", monospace;
+  --term: "VT323", "Courier New", monospace;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body { margin: 0; box-sizing: border-box; background: var(--ink); color: var(--text); font-family: var(--term); font-size: 20px; padding-inline: 16px; padding-block: 12px; overflow: hidden; }
+.cab { max-width: 1160px; height: 100%; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; gap: 12px; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: center; gap: 6px 14px; }
+.marquee { font-family: var(--pixel); font-size: 10px; letter-spacing: 0.18em; color: var(--dim); }
+h1 { margin: 0; font-family: var(--pixel); font-size: clamp(14px, 2.6vw, 22px); line-height: 1.3; color: var(--yellow); text-shadow: 3px 3px 0 var(--cabinet), 5px 5px 0 var(--pink); }
+
+.stage { min-height: 0; min-width: 0; display: grid; place-items: center; }
+.screen { position: relative; box-sizing: border-box; width: min(100%, 1120px); height: min(100%, 660px); display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.25fr); gap: clamp(12px, 2vw, 22px); padding: clamp(12px, 2vw, 22px); border: 4px solid var(--grid); border-radius: 14px; background: var(--amb); box-shadow: 0 0 0 4px var(--cabinet); overflow: hidden; transition: background 1.2s; }
+.screen.day { --amb: #a9c3ee; border-color: #6f8fd0; }
+.screen::after { content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 5; background: repeating-linear-gradient(to bottom, rgba(0,0,0,0) 0 2px, rgba(0,0,0,0.14) 2px 3px); }
+
+/* the window */
+.window { position: relative; min-height: 0; display: flex; flex-direction: column; gap: 12px; }
+.sky { position: relative; flex: 1; min-height: 0; border: 6px solid #2a2160; border-radius: 8px; overflow: hidden; background: #05051a; }
+.screen.day .sky { border-color: #5a72b8; }
+.sky canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.clock { text-align: center; font-family: var(--pixel); font-size: clamp(18px, 3.2vw, 34px); color: var(--yellow); font-variant-numeric: tabular-nums; white-space: nowrap; text-shadow: 0 0 14px rgba(255, 216, 74, 0.35); }
+.screen.day .clock { color: #1f1a3a; text-shadow: none; }
+.clock.ring { animation: ring 0.25s steps(2) 8; }
+@keyframes ring { 50% { color: var(--pink); transform: translateX(2px); } }
+
+/* the subjects */
+.right { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; justify-content: center; gap: 12px; }
+.subjects { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: repeat(3, minmax(0, 1fr)); gap: clamp(6px, 1.2vw, 12px); }
+.subjects[hidden] { display: none; }
+.subject { position: relative; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10%; padding: 8px 4px; background: rgba(18, 18, 58, 0.85); color: var(--text); border: 2px solid var(--grid); border-radius: 10px; cursor: pointer; font-family: var(--pixel); font-size: clamp(7px, 0.95vw, 10px); letter-spacing: 0.04em; }
+.subject::before { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: var(--p, 0%); background: rgba(255, 216, 74, 0.2); }
+.subject canvas { position: relative; width: clamp(28px, 34%, 56px); aspect-ratio: 1; image-rendering: pixelated; }
+.subject span { position: relative; }
+.subject:hover:not(:disabled) { border-color: var(--cyan); }
+.subject.studying { border-color: var(--cyan); box-shadow: 0 0 0 2px rgba(62, 240, 255, 0.25), 0 0 20px rgba(62, 240, 255, 0.25); }
+.subject.studying canvas { animation: bob 0.5s steps(2) infinite; }
+@keyframes bob { 50% { transform: translateY(-3px); } }
+.subject.done { border-color: var(--green); }
+.subject.done::before { background: rgba(109, 255, 156, 0.18); }
+.subject.done::after { content: "✓"; position: absolute; top: 6px; right: 8px; color: var(--green); font-size: 12px; }
+.subject:disabled { cursor: default; }
+.subjects.sleeping .subject:not(.done) { opacity: 0.45; }
+
+/* the paper */
+.paper { box-sizing: border-box; width: 100%; max-height: 100%; overflow-y: auto; display: flex; flex-direction: column; padding: clamp(10px, 2vh, 20px) clamp(14px, 2.6vw, 28px); background: var(--paper); color: var(--paper-ink); border-radius: 4px; box-shadow: 6px 6px 0 rgba(11, 8, 32, 0.6); transform: translateY(14px); opacity: 0; transition: transform 0.6s ease, opacity 0.6s ease; }
+.paper[hidden] { display: none; }
+.paper.in { transform: none; opacity: 1; }
+.paper .head { text-align: center; padding-bottom: 8px; border-bottom: 2px solid var(--paper-ink); font-family: var(--pixel); font-size: clamp(8px, 1.2vw, 11px); letter-spacing: 0.08em; line-height: 1.8; }
+.qs { list-style: none; margin: 0; padding: 0; }
+.q { display: grid; grid-template-columns: 30px minmax(0, 1fr) 26px; align-items: center; gap: 12px; padding: clamp(5px, 1vh, 9px) 0; border-bottom: 1px solid var(--paper-rule); font-size: clamp(15px, min(1.7vw, 2.6vh), 20px); line-height: 1; opacity: 0; transform: translateX(-6px); transition: opacity 0.4s, transform 0.4s; }
+.q.in { opacity: 1; transform: none; }
+.q canvas { display: block; width: 30px; height: 30px; min-width: 30px; aspect-ratio: 1 / 1; image-rendering: pixelated; }
+.q .feel { font-family: var(--pixel); font-size: 16px; text-align: center; opacity: 0; transform: scale(1.8); transition: opacity 0.25s, transform 0.25s; }
+.q .feel.show { opacity: 1; transform: none; }
+.q .feel.know { color: #1f8a4c; }
+.q .feel.half { color: #b88a10; }
+.q .feel.blank { color: #c0392b; }
+.paper .pens { padding-top: 10px; text-align: center; font-family: var(--pixel); font-size: 9px; letter-spacing: 0.12em; color: #6a6290; opacity: 0; transition: opacity 0.6s; }
+.paper .pens.show { opacity: 1; }
+
+/* buttons and the intro card */
+.go { font-family: var(--pixel); font-size: 13px; padding: 16px 24px; background: var(--yellow); color: var(--ink); border: 0; border-radius: 10px; box-shadow: 0 7px 0 #b8902a; cursor: pointer; letter-spacing: 0.06em; }
+.go:active { transform: translateY(5px); box-shadow: 0 2px 0 #b8902a; }
+.again { align-self: center; }
+.again[hidden] { display: none; }
+.intro { position: absolute; inset: 0; z-index: 4; display: grid; place-items: center; padding: 16px; background: rgba(7, 5, 26, 0.72); }
+.intro[hidden] { display: none; }
+.card { max-width: 420px; display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 26px 24px; text-align: center; background: var(--cabinet); border: 3px solid var(--grid); border-radius: 12px; box-shadow: 0 0 0 3px var(--ink); }
+.card b { font-family: var(--pixel); font-weight: 400; font-size: clamp(14px, 2.4vw, 20px); color: var(--yellow); text-shadow: 2px 2px 0 var(--pink); }
+.card p { margin: 0; font-size: 22px; line-height: 1.1; color: var(--text); text-wrap: balance; }
+
+.foot { display: flex; justify-content: center; align-items: center; gap: 16px; font-family: var(--pixel); font-size: 8px; letter-spacing: 0.08em; color: var(--dim); }
+.foot b { font-weight: 400; color: var(--cyan); }
+.foot b.warn { color: var(--yellow); }
+.ghost { font-family: var(--pixel); font-size: 8px; padding: 8px 10px; background: transparent; color: var(--dim); border: 2px solid var(--grid); border-radius: 6px; cursor: pointer; }
+button:focus-visible { outline: 3px solid var(--cyan); outline-offset: 3px; }
+
+/* phones: the window becomes a strip of sky across the top */
+@media (max-width: 700px), (orientation: portrait) {
+  .screen { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(110px, 0.32fr) minmax(0, 1fr); }
+  .sky { border-width: 4px; }
+  .clock { position: absolute; left: 0; right: 0; bottom: 10px; z-index: 1; font-size: 18px; text-shadow: 0 2px 0 #0b0820; }
+  .screen.day .clock { color: #fff; text-shadow: 0 2px 0 #1f1a3a; }
+  .subject canvas { width: 46%; }
+  .q { grid-template-columns: 24px minmax(0, 1fr) 20px; gap: 8px; font-size: 15px; }
+  .q canvas { width: 24px; height: 24px; min-width: 24px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .screen, .paper, .q, .q .feel, .paper .pens { transition: none; }
+  .clock.ring, .subject.studying canvas { animation: none; }
+}
+</style>
+
+<div class="cab">
+  <header>
+    <div class="marquee">PLAYING AGAINST CHANCE</div>
+    <h1>THE NIGHT BEFORE</h1>
+  </header>
+
+  <div class="stage">
+    <div class="screen" id="screen">
+      <div class="window">
+        <div class="sky"><canvas id="sky" aria-label="The sky outside your window, getting lighter as the night goes on."></canvas></div>
+        <div class="clock" id="clock" aria-live="off">11:00 PM</div>
+      </div>
+
+      <div class="right">
+        <div class="subjects" id="subjects" role="group" aria-label="Subjects you can study tonight"></div>
+        <div class="paper" id="paper" hidden>
+          <div class="head">SCIENCE · FINAL EXAM · 3 HOURS</div>
+          <ol class="qs" id="qs"></ol>
+          <div class="pens" id="pens">— PENS DOWN —</div>
+        </div>
+        <button class="go again" id="againBtn" hidden>ANOTHER NIGHT</button>
+      </div>
+
+      <div class="intro" id="intro">
+        <div class="card">
+          <b>EXAM AT 9 AM</b>
+          <p>Study until 6. Tap a subject to learn it, one at a time.</p>
+          <p>At dawn, chance sets the paper.</p>
+          <button class="go" id="startBtn">START THE NIGHT</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <span>CHANCE <b id="src">RANDOM.ORG</b></span>
+    <button class="ghost" id="soundBtn" aria-pressed="true">SOUND ON</button>
+  </div>
+</div>
+
+<script>
+(() => {
+  // ---------- subjects, each with a 10x10 pixel icon ----------
+  const SUBJECTS = [
+    { name: "OPTICS", q: "Draw the ray diagram for an object between F and 2F of a convex lens.",
+      pal: { a: "#e9e6ff", b: "#3ef0ff", c: "#0b0820" },
+      px: ["..........", "...aaaa...", ".aa....aa.", "a..bbbb..a", "a.bbccbb.a", "a.bbccbb.a", "a..bbbb..a", ".aa....aa.", "...aaaa...", ".........."] },
+    { name: "CIRCUITS", q: "Resistors of 2Ω, 3Ω and 6Ω are joined in parallel. Find the total resistance.",
+      pal: { a: "#ffd84a" },
+      px: ["....aaaa..", "...aaaa...", "..aaaa....", ".aaaaaaa..", "....aaa...", "...aaa....", "..aaa.....", ".aa.......", ".a........", ".........."] },
+    { name: "MAGNETS", q: "State Fleming's left-hand rule with a labelled diagram.",
+      pal: { a: "#ff5a4f", b: "#e9e6ff" },
+      px: ["..........", ".bbb..bbb.", ".bbb..bbb.", ".aaa..aaa.", ".aaa..aaa.", ".aaa..aaa.", ".aaaaaaaa.", "..aaaaaa..", "..........", ".........."] },
+    { name: "HEAT", q: "State the first law of thermodynamics and give one everyday example.",
+      pal: { a: "#ff9a2e", b: "#ffd84a" },
+      px: ["....a.....", "...aa.....", "...aaa..a.", "..aaaa.aa.", "..aaabaaa.", ".aaabbbaa.", ".aabbbbba.", ".aabbbbaa.", "..aabbaa..", "...aaaa..."] },
+    { name: "WAVES", q: "Compare transverse and longitudinal waves with one example of each.",
+      pal: { a: "#3ef0ff", b: "#ff4fa8" },
+      px: ["..........", ".aa...aa..", "a..a.a..a.", "....a....a", "..........", ".bb...bb..", "b..b.b..b.", "....b....b", "..........", ".........."] },
+    { name: "GRAVITY", q: "Derive the expression for the acceleration due to gravity on Earth.",
+      pal: { a: "#ff5a4f", b: "#6dff9c", c: "#a86a3a" },
+      px: ["....c.bb..", "....cbb...", "..aa.aa...", ".aaaaaaa..", "aaaaaaaaa.", "aaaaaaaaa.", "aaaaaaaaa.", ".aaaaaaa..", "..aa.aa...", ".........."] },
+    { name: "CARBON", q: "Name the first four alkanes and draw their structures.",
+      pal: { a: "#6dff9c", b: "#3ef0ff" },
+      px: ["...aaaa...", "..a....a..", ".a......a.", "a...bb...a", "a..b..b..a", "a..b..b..a", "a...bb...a", ".a......a.", "..a....a..", "...aaaa..."] },
+    { name: "ACIDS", q: "What happens when an acid meets a metal carbonate? Write the equation.",
+      pal: { a: "#e9e6ff", b: "#ff4fa8" },
+      px: ["...aaaa...", "....aa....", "....aa....", "....aa....", "...a..a...", "..a....a..", ".abbbbbba.", "abbbbbbbba", "abbbbbbbba", ".aaaaaaaa."] },
+    { name: "ELEMENTS", q: "Why do elements in the same group behave alike?",
+      pal: { a: "#c38bff", b: "#3ef0ff" },
+      px: ["aa......aa", "aa......aa", "..........", "aa.bb.bbaa", "aa.bb.bbaa", "..........", "aabbaabbaa", "aabbaabbaa", "..........", ".........."] },
+    { name: "CELLS", q: "Draw a neat, labelled diagram of an animal cell.",
+      pal: { a: "#6dff9c", b: "#c38bff", c: "#ffd84a" },
+      px: ["...aaaa...", ".aa....aa.", ".a..c...a.", "a...bb...a", "a..bbbb..a", "a..bbbb..a", "a...bb.c.a", ".a.c....a.", ".aa....aa.", "...aaaa..."] },
+    { name: "GENES", q: "Explain Mendel's law of segregation with a monohybrid cross.",
+      pal: { a: "#3ef0ff", b: "#ff4fa8", c: "#e9e6ff" },
+      px: ["a......b..", ".a....b...", "..accb....", "...ba.....", "..b..a....", ".bcccca...", "b......a..", ".b....a...", "..bcca....", "...ab....."] },
+    { name: "ECOLOGY", q: "Draw a food chain with four trophic levels. Explain the 10% law.",
+      pal: { a: "#6dff9c", b: "#a86a3a" },
+      px: ["...aaaa...", "..aaaaaa..", ".aaaaaaaa.", ".aaaaaaaa.", "..aaaaaa..", "...aaaa...", "....bb....", "....bb....", "...bbbb...", ".........."] },
+  ];
+  const N = SUBJECTS.length, ON_PAPER = 5;
+  const NIGHT_MS = 32000;          // 11 PM to 6 AM
+  const STUDY_MS = 4600;           // time to learn one subject properly
+  const HALF = 0.5;                // past this, you half remember it
+
+  // random.org JSON-RPC API (v4). Anyone who can open this file can read this key.
+  const RANDOM_ORG_API_KEY = (() => { try { return localStorage.getItem("RANDOM_ORG_KEY") || ""; } catch (e) { return ""; } })();
+  const RANDOM_ORG_API = "https://api.random.org/json-rpc/4/invoke";
+  const RANDOM_ORG_PLAIN = "https://www.random.org/sequences/?min=0&max=" + (N - 1) + "&col=1&format=plain&rnd=new";
+
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const $ = (id) => document.getElementById(id);
+  const screenEl = $("screen"), subjectsEl = $("subjects"), clockEl = $("clock");
+  const paperEl = $("paper"), qsEl = $("qs"), pensEl = $("pens");
+  const introEl = $("intro"), startBtn = $("startBtn"), againBtn = $("againBtn"), soundBtn = $("soundBtn"), srcEl = $("src");
+  const sky = $("sky"), sctx = sky.getContext("2d");
+
+  let state = "ready";             // ready | night | waking | paper | done
+  let progress = SUBJECTS.map(() => 0);
+  let current = null;
+  let nightStart = 0, lastTick = 0, lastHour = 0;
+  let tod = 0;                     // time of night, 0 at 11 PM to 1 at 6 AM; 2 means the morning
+  const tiles = [];
+
+  function iconCanvas(s) {
+    const c = document.createElement("canvas");
+    c.width = 10; c.height = 10;
+    const x = c.getContext("2d");
+    s.px.forEach((row, y) => [...row].forEach((ch, i) => { if (s.pal[ch]) { x.fillStyle = s.pal[ch]; x.fillRect(i, y, 1, 1); } }));
+    c.setAttribute("aria-hidden", "true");
+    return c;
+  }
+
+  SUBJECTS.forEach((s, i) => {
+    const b = document.createElement("button");
+    b.className = "subject";
+    b.id = "subject-" + i;
+    b.disabled = true;
+    b.appendChild(iconCanvas(s));
+    const nm = document.createElement("span");
+    nm.textContent = s.name;
+    b.appendChild(nm);
+    b.addEventListener("click", () => study(i));
+    subjectsEl.appendChild(b);
+    tiles.push(b);
+  });
+
+  function paint(i) {
+    const b = tiles[i], p = progress[i];
+    b.style.setProperty("--p", Math.round(p * 100) + "%");
+    b.classList.toggle("studying", current === i && p < 1);
+    b.classList.toggle("done", p >= 1);
+    b.setAttribute("aria-label", SUBJECTS[i].name + (p >= 1 ? ", learnt" : p > 0 ? ", " + Math.round(p * 100) + "% studied" : ""));
+    if (p >= 1) b.disabled = true;
+  }
+
+  function study(i) {
+    if (state !== "night" || progress[i] >= 1) return;
+    current = i;
+    tiles.forEach((_, k) => paint(k));
+    beep(520, 0.05);
+  }
+
+  // ---------- the night ----------
+  function fmtClock(frac) {
+    const mins = Math.floor(frac * 7 * 60);
+    const h = (23 + Math.floor(mins / 60)) % 24, m = mins % 60;
+    const h12 = h % 12 === 0 ? 12 : h % 12;
+    return h12 + ":" + String(m).padStart(2, "0") + (h === 23 ? " PM" : " AM");
+  }
+
+  function startNight() {
+    ensureAudio();
+    introEl.hidden = true;
+    againBtn.hidden = true;
+    paperEl.hidden = true;
+    subjectsEl.hidden = false;
+    subjectsEl.classList.remove("sleeping");
+    screenEl.classList.remove("day");
+    tod = 0;
+    state = "night";
+    progress = SUBJECTS.map(() => 0);
+    current = null;
+    tiles.forEach((b, i) => { b.disabled = false; paint(i); });
+    nightStart = lastTick = performance.now();
+    lastHour = 0;
+    beep(392, 0.08); beep(523, 0.1, "square", 0.09);
+    requestAnimationFrame(nightLoop);
+  }
+
+  function nightLoop(now) {
+    if (state !== "night") return;
+    const dt = now - lastTick; lastTick = now;
+    tod = Math.min(1, (now - nightStart) / NIGHT_MS);
+    clockEl.textContent = fmtClock(tod);
+    screenEl.style.setProperty("--amb", mix("#0a0a26", "#2a2456", smooth(0.62, 1, tod)));
+    const hour = Math.floor(tod * 7);
+    if (hour !== lastHour) { lastHour = hour; beep(220, 0.07, "triangle"); }
+    if (current != null && progress[current] < 1) {
+      const before = progress[current];
+      progress[current] = Math.min(1, before + dt / STUDY_MS);
+      if (Math.floor(before * 8) !== Math.floor(progress[current] * 8)) beep(640 + progress[current] * 320, 0.02, "square", 0, 0.03);
+      if (progress[current] >= 1) { beep(880, 0.08); beep(1175, 0.1, "square", 0.08); current = null; tiles.forEach((_, k) => paint(k)); }
+      else paint(current);
+    }
+    if (tod >= 1) { dawn(); return; }
+    requestAnimationFrame(nightLoop);
+  }
+
+  // ---------- chance: the paper is set at 6 AM ----------
+  async function withTimeout(fn, ms) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), ms);
+    try { return await fn(ctrl.signal); } finally { clearTimeout(timer); }
+  }
+  async function fromApi() {
+    if (!RANDOM_ORG_API_KEY) throw new Error("no key");
+    return withTimeout(async (signal) => {
+      const res = await fetch(RANDOM_ORG_API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", method: "generateIntegers", params: { apiKey: RANDOM_ORG_API_KEY, n: ON_PAPER, min: 0, max: N - 1, replacement: false }, id: Date.now() }),
+        signal,
+      });
+      const json = await res.json();
+      if (json.error) throw new Error(json.error.message);
+      return json.result.random.data;
+    }, 5000);
+  }
+  async function fromPlain() {
+    return withTimeout(async (signal) => {
+      const res = await fetch(RANDOM_ORG_PLAIN, { signal, cache: "no-store" });
+      if (!res.ok) throw new Error("status " + res.status);
+      return (await res.text()).trim().split(/\s+/).map(v => parseInt(v, 10)).slice(0, ON_PAPER);
+    }, 4000);
+  }
+  function fromLocal() {
+    const a = [...Array(N).keys()];
+    for (let i = a.length - 1; i > 0; i--) {
+      const buf = new Uint32Array(1), lim = Math.floor(0x100000000 / (i + 1)) * (i + 1);
+      do { crypto.getRandomValues(buf); } while (buf[0] >= lim);
+      const j = buf[0] % (i + 1);
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a.slice(0, ON_PAPER);
+  }
+  async function drawPaper() {
+    for (const [label, fn] of [["RANDOM.ORG API", fromApi], ["RANDOM.ORG", fromPlain]]) {
+      try {
+        const v = await fn();
+        if (v.length === ON_PAPER && new Set(v).size === ON_PAPER && v.every(n => n >= 0 && n < N)) { srcEl.textContent = label; srcEl.classList.remove("warn"); return v; }
+      } catch (err) { console.warn(label + " failed:", err.message || err); }
+    }
+    srcEl.textContent = "LOCAL RNG";
+    srcEl.classList.add("warn");
+    return fromLocal();
+  }
+
+  // ---------- dawn and the paper ----------
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+  async function dawn() {
+    state = "waking";
+    current = null;
+    tiles.forEach((b, i) => { b.disabled = true; paint(i); });
+    subjectsEl.classList.add("sleeping");
+    clockEl.textContent = "6:00 AM";
+    clockEl.classList.add("ring");
+    for (let i = 0; i < 8; i++) beep(i % 2 ? 1046 : 1318, 0.09, "square", i * 0.14);
+    const paperDraw = drawPaper();
+    await sleep(reduceMotion ? 400 : 2200);
+    clockEl.classList.remove("ring");
+
+    // the sun comes up, the room fills with light
+    tod = 2;
+    screenEl.classList.add("day");
+    screenEl.style.removeProperty("--amb");
+    clockEl.textContent = "9:00 AM";
+    const picks = await paperDraw;
+    await sleep(reduceMotion ? 100 : 900);
+
+    state = "paper";
+    subjectsEl.hidden = true;
+    paperEl.hidden = false;
+    qsEl.innerHTML = "";
+    pensEl.classList.remove("show");
+    paperEl.classList.remove("in");
+    void paperEl.offsetWidth;
+    paperEl.classList.add("in");
+    beep(330, 0.05, "triangle");
+    await sleep(reduceMotion ? 100 : 800);
+
+    for (let k = 0; k < picks.length; k++) {
+      const i = picks[k];
+      const li = document.createElement("li");
+      li.className = "q";
+      li.appendChild(iconCanvas(SUBJECTS[i]));
+      const txt = document.createElement("span");
+      txt.textContent = "Q" + (k + 1) + ". " + SUBJECTS[i].q;
+      li.appendChild(txt);
+      const feel = document.createElement("span");
+      feel.className = "feel";
+      li.appendChild(feel);
+      qsEl.appendChild(li);
+      void li.offsetWidth;
+      li.classList.add("in");
+      beep(300 + k * 40, 0.04, "triangle");
+      await sleep(reduceMotion ? 300 : 1400);
+
+      const p = progress[i];
+      if (p >= 1) { feel.textContent = "✓"; feel.classList.add("know"); beep(880, 0.08); }
+      else if (p >= HALF) { feel.textContent = "~"; feel.classList.add("half"); beep(520, 0.09, "triangle"); }
+      else { feel.textContent = "?"; feel.classList.add("blank"); beep(196, 0.15, "triangle"); }
+      feel.classList.add("show");
+      await sleep(reduceMotion ? 300 : 1000);
+    }
+    pensEl.classList.add("show");
+    state = "done";
+    againBtn.hidden = false;
+  }
+
+  startBtn.addEventListener("click", startNight);
+  againBtn.addEventListener("click", startNight);
+
+  // ---------- the sky outside the window ----------
+  const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+  function hex(c) { const n = parseInt(c.slice(1), 16); return [n >> 16, (n >> 8) & 255, n & 255]; }
+  function mix(a, b, k) { const A = hex(a), B = hex(b); return "rgb(" + A.map((v, i) => Math.round(v + (B[i] - v) * k)).join(",") + ")"; }
+  const STARS = Array.from({ length: 40 }, (_, i) => ({ x: (i * 37 % 100) / 100, y: (i * 53 % 60) / 100, s: i % 3 === 0 ? 2 : 1, p: i * 1.3 }));
+  const CITY = [[0, 0.22], [0.08, 0.3], [0.16, 0.18], [0.24, 0.38], [0.34, 0.26], [0.42, 0.33], [0.52, 0.2], [0.6, 0.42], [0.7, 0.28], [0.8, 0.35], [0.9, 0.24]];
+
+  let SW = 300, SH = 300;
+  function sizeSky() {
+    const r = sky.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    sky.width = Math.max(1, Math.round(r.width * dpr)); sky.height = Math.max(1, Math.round(r.height * dpr));
+    sctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    SW = r.width; SH = r.height;
+  }
+  if ("ResizeObserver" in window) new ResizeObserver(sizeSky).observe(sky);
+  window.addEventListener("resize", sizeSky);
+
+  function drawSky(now) {
+    const t = now / 1000;
+    const day = tod >= 2;
+    const k = day ? 1 : tod;
+    // sky colours: deep night, then purple before dawn, then sunrise; full blue in the morning
+    let top, bot;
+    if (day) { top = "#4f8ee8"; bot = "#bfe0ff"; }
+    else {
+      const a = smooth(0.6, 0.88, k), b = smooth(0.85, 1, k);
+      top = b > 0 ? mix("#1d1a55", "#3a5bb0", b) : mix("#05051a", "#1d1a55", a);
+      bot = b > 0 ? mix("#6a3d7a", "#ffb27a", b) : mix("#12123a", "#6a3d7a", a);
+    }
+    const g = sctx.createLinearGradient(0, 0, 0, SH);
+    g.addColorStop(0, top); g.addColorStop(1, bot);
+    sctx.fillStyle = g; sctx.fillRect(0, 0, SW, SH);
+
+    // stars fade out towards dawn
+    const starA = day ? 0 : 1 - smooth(0.6, 0.92, k);
+    if (starA > 0) for (const s of STARS) {
+      const tw = reduceMotion ? 1 : 0.6 + 0.4 * Math.sin(t * 2 + s.p);
+      sctx.fillStyle = "rgba(233,230,255," + (starA * tw) + ")";
+      sctx.fillRect(Math.round(s.x * SW), Math.round(s.y * SH), s.s, s.s);
+    }
+
+    // the moon crosses the sky and sets
+    if (!day && k < 0.95) {
+      const mx = SW * (0.18 + 0.7 * k), my = SH * (0.22 + 0.55 * k * k), r = Math.max(10, Math.min(SW, SH) * 0.08);
+      sctx.fillStyle = "rgba(243,237,220," + (1 - smooth(0.8, 0.95, k)) + ")";
+      sctx.beginPath(); sctx.arc(mx, my, r, 0, Math.PI * 2); sctx.fill();
+      sctx.fillStyle = "rgba(201,192,166,0.7)";
+      sctx.beginPath(); sctx.arc(mx + r * 0.3, my + r * 0.25, r * 0.28, 0, Math.PI * 2); sctx.fill();
+    }
+    // the sun rises at dawn and sits high in the morning
+    const sunK = day ? 1 : smooth(0.86, 1, k);
+    if (sunK > 0) {
+      const r = Math.max(14, Math.min(SW, SH) * 0.1);
+      const sx = SW * (day ? 0.72 : 0.5), sy = day ? SH * 0.24 : SH * (1.05 - 0.38 * sunK);
+      sctx.fillStyle = day ? "#ffe680" : "#ffcf5a";
+      sctx.shadowColor = "#ffd84a"; sctx.shadowBlur = 24;
+      sctx.beginPath(); sctx.arc(sx, sy, r, 0, Math.PI * 2); sctx.fill();
+      sctx.shadowBlur = 0;
+    }
+
+    // the city: windows go dark one by one through the night
+    const lightsOn = day ? 0 : Math.max(0, 1 - k * 1.25);
+    CITY.forEach(([x, h], i) => {
+      const bx = x * SW, bw = SW * 0.1, bh = h * SH;
+      sctx.fillStyle = day ? "#6f86b8" : mix("#0d0b2a", "#2a2456", smooth(0.7, 1, k));
+      sctx.fillRect(bx, SH - bh, bw + 1, bh);
+      for (let wy = SH - bh + 6; wy < SH - 6; wy += 9) for (let wx = bx + 4; wx < bx + bw - 4; wx += 7) {
+        const seed = ((i * 13 + Math.round(wx) * 7 + Math.round(wy) * 3) % 100) / 100;
+        if (seed < lightsOn * 0.55) { sctx.fillStyle = "#ffd84a"; sctx.fillRect(wx, wy, 3, 3); }
+      }
+    });
+
+    // window panes
+    sctx.fillStyle = day ? "#5a72b8" : "#2a2160";
+    sctx.fillRect(SW / 2 - 3, 0, 6, SH);
+    sctx.fillRect(0, SH * 0.48 - 3, SW, 6);
+    requestAnimationFrame(drawSky);
+  }
+
+  // ---------- sound that keeps working ----------
+  // Browsers can pause audio after a while (another tab, a sleeping screen, an idle frame).
+  // We wake it on every tap and before every sound, and route everything through one master volume.
+  let audio = null, master = null, soundOn = true;
+  function ensureAudio() {
+    try {
+      if (!audio) {
+        audio = new (window.AudioContext || window.webkitAudioContext)();
+        master = audio.createGain();
+        master.gain.value = 0.9;
+        master.connect(audio.destination);
+      }
+      if (audio.state !== "running") audio.resume().catch(() => {});
+    } catch (e) { audio = null; }
+  }
+  ["pointerdown", "keydown", "touchstart"].forEach(ev => document.addEventListener(ev, ensureAudio, { passive: true }));
+  document.addEventListener("visibilitychange", () => { if (!document.hidden && audio) audio.resume().catch(() => {}); });
+  function beep(freq, dur, type = "square", delay = 0, vol = 0.05) {
+    if (!soundOn || !audio) return;
+    if (audio.state !== "running") { audio.resume().catch(() => {}); }
+    const t = audio.currentTime + delay + 0.005;
+    const o = audio.createOscillator(), g = audio.createGain();
+    o.type = type; o.frequency.setValueAtTime(freq, t);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(master);
+    o.start(t); o.stop(t + dur + 0.03);
+    o.onended = () => { o.disconnect(); g.disconnect(); };
+  }
+  soundBtn.addEventListener("click", () => {
+    ensureAudio();
+    soundOn = !soundOn;
+    soundBtn.textContent = soundOn ? "SOUND ON" : "SOUND OFF";
+    soundBtn.setAttribute("aria-pressed", String(soundOn));
+    if (soundOn) beep(880, 0.05);
+  });
+
+  tiles.forEach((_, i) => paint(i));
+  sizeSky();
+  requestAnimationFrame(drawSky);
+})();
+</script>

@@ -138,6 +138,25 @@ button:focus-visible { outline: 3px solid var(--cyan); outline-offset: 2px; }
 .foot { font-size: 18px; color: var(--dim); text-align: center; line-height: 1.3; }
 .foot b { color: var(--text); font-weight: 400; }
 @media (prefers-reduced-motion: reduce) { .ticker .blink { animation: none; } }
+
+/* ---- one-screen layout: the game screen and the controls share the viewport, no page scroll ---- */
+html, body { height: 100%; }
+body { margin: 0; box-sizing: border-box; padding-block: 12px; }
+.cab { max-width: 1180px; height: 100%; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 10px; }
+header { flex-direction: row; flex-wrap: wrap; align-items: baseline; justify-content: center; gap: 6px 14px; }
+h1 { font-size: clamp(14px, 2.6vw, 22px); }
+.stage { min-height: 0; display: grid; grid-template-columns: auto minmax(280px, 400px); justify-content: center; align-items: center; gap: 20px; }
+.screen { box-sizing: border-box; aspect-ratio: auto; width: var(--sz, 400px); height: var(--sz, 400px); max-width: 100%; }
+.panel { min-width: 0; min-height: 0; max-height: 100%; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 4px; }
+.panel .hud { grid-template-columns: repeat(2, 1fr); }
+.result:not([hidden]) + .ticker { display: none; }
+@media (orientation: portrait), (max-width: 760px) {
+  .stage { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); justify-items: center; align-items: start; gap: 10px; }
+  .panel { width: 100%; gap: 10px; }
+  .panel .hud { grid-template-columns: repeat(4, 1fr); }
+  .foot { display: none; }
+}
+@media (orientation: portrait) and (max-width: 460px) { .panel .hud { grid-template-columns: repeat(2, 1fr); } }
 </style>
 
 <div class="cab">
@@ -146,54 +165,50 @@ button:focus-visible { outline: 3px solid var(--cyan); outline-offset: 2px; }
     <h1>STAGE 01 · BIRTH</h1>
   </header>
 
-  <div class="hud" aria-live="polite">
-    <div><span>TRIES</span><b id="hudTries">0</b></div>
-    <div><span>YOU BORN</span><b id="hudBorn">0</b></div>
-    <div><span>YOUR PICK</span><b id="hudPick">--</b></div>
-    <div><span>CHANCE BY</span><b id="hudSource">RANDOM.ORG</b></div>
-  </div>
-
-  <div class="screen">
-    <canvas id="pond" aria-label="Six numbered sperm swimming around an egg. Tap one to choose it."></canvas>
-  </div>
-
-  <div class="odds">
-    <div class="odds-head">
-      <span>ALL POSSIBLE OUTCOMES</span>
-      <span>YOUR ODDS <b id="oddsYou">1 IN 12</b> · NOBODY <b id="oddsNone">50%</b></span>
+  <div class="stage" id="stage">
+    <div class="screen">
+      <canvas id="pond" aria-label="Six numbered sperm swimming around an egg. Tap one to choose it."></canvas>
     </div>
-    <div class="slots" id="slots" aria-label="Each slot is one equally likely outcome"></div>
-    <div class="tuner">
-      <span>NOT-BORN SLOTS</span>
-      <button id="lessVoid" aria-label="Fewer not-born outcomes">−</button>
-      <output id="voidCount">6</output>
-      <button id="moreVoid" aria-label="More not-born outcomes">+</button>
+
+    <div class="panel">
+      <div class="hud" aria-live="polite">
+        <div><span>TRIES</span><b id="hudTries">0</b></div>
+        <div><span>YOU BORN</span><b id="hudBorn">0</b></div>
+        <div><span>YOUR PICK</span><b id="hudPick">--</b></div>
+        <div><span>CHANCE BY</span><b id="hudSource">RANDOM.ORG</b></div>
+      </div>
+
+      <div class="odds">
+        <div class="odds-head">
+          <span>ALL POSSIBLE OUTCOMES</span>
+          <span>YOUR ODDS <b id="oddsYou">1 IN 6</b></span>
+        </div>
+        <div class="slots" id="slots" aria-label="Each slot is one equally likely outcome"></div>
+      </div>
+
+      <div class="result" id="result" hidden aria-live="polite">
+        <div class="big" id="resultBig"></div>
+        <div class="small" id="resultSmall"></div>
+      </div>
+
+      <div class="ticker" id="ticker"><span class="blink">TAP A SWIMMER TO CHOOSE WHO YOU ARE</span></div>
+
+      <div class="picker" id="picker" role="group" aria-label="Choose a sperm by number"></div>
+
+      <div class="controls">
+        <button class="go" id="goBtn" disabled>SWIM!</button>
+        <button class="ghost" id="soundBtn" aria-pressed="true">SOUND ON</button>
+      </div>
+
+      <p class="foot">Six swimmers, one egg. Here your odds are <b>1 in 6</b>.<br>In real life they are closer to <b>1 in 250,000,000</b>.</p>
     </div>
   </div>
-
-  <div class="result" id="result" hidden aria-live="polite">
-    <div class="big" id="resultBig"></div>
-    <div class="small" id="resultSmall"></div>
-  </div>
-
-  <div class="ticker" id="ticker"><span class="blink">TAP A SWIMMER TO CHOOSE WHO YOU ARE</span></div>
-
-  <div class="picker" id="picker" role="group" aria-label="Choose a sperm by number"></div>
-
-  <div class="controls">
-    <button class="go" id="goBtn" disabled>SWIM!</button>
-    <button class="ghost" id="soundBtn" aria-pressed="true">SOUND ON</button>
-  </div>
-
-  <p class="foot">Six swimmers, one egg, and some draws where nobody makes it.<br>Every slot above is equally likely.</p>
 </div>
 
 <script>
 (() => {
   const SPERM = 6;
-  const VOID_MIN = 0, VOID_MAX = 18;
-  let voidSlots = 6;                       // outcomes where nobody is born
-  const total = () => SPERM + voidSlots;
+  const total = () => SPERM;
 
   // random.org JSON-RPC API (v4). Anyone who can open this file can read this key.
   const RANDOM_ORG_API_KEY = (() => { try { return localStorage.getItem("RANDOM_ORG_KEY") || ""; } catch (e) { return ""; } })();
@@ -204,7 +219,7 @@ button:focus-visible { outline: 3px solid var(--cyan); outline-offset: 2px; }
   const $ = (id) => document.getElementById(id);
   const canvas = $("pond"), ctx = canvas.getContext("2d");
   const picker = $("picker"), goBtn = $("goBtn"), soundBtn = $("soundBtn"), ticker = $("ticker");
-  const slotsEl = $("slots"), lessVoid = $("lessVoid"), moreVoid = $("moreVoid"), voidCount = $("voidCount");
+  const slotsEl = $("slots");
   const resultBox = $("result"), resultBig = $("resultBig"), resultSmall = $("resultSmall");
   const hud = { tries: $("hudTries"), born: $("hudBorn"), pick: $("hudPick"), source: $("hudSource") };
   const COLORS = { cyan: "#3ef0ff", pink: "#ff4fa8", yellow: "#ffd84a", text: "#e9e6ff", dim: "#8a84bf", egg: "#ffcf9e" };
@@ -220,6 +235,20 @@ button:focus-visible { outline: 3px solid var(--cyan); outline-offset: 2px; }
   const ENTER_MS = reduceMotion ? 400 : 1100;
 
   const pad = (n) => String(n).padStart(2, "0");
+
+  const PANEL_MIN = 330;   // px the controls need under the screen on a tall display
+
+  // ---------- one-screen layout: size the game screen to whatever space the viewport leaves ----------
+  const stageEl = document.getElementById("stage");
+  const screenEl = stageEl.querySelector(".screen");
+  const narrowQuery = window.matchMedia("(orientation: portrait), (max-width: 760px)");
+  function layout() {
+    const w = stageEl.clientWidth, h = stageEl.clientHeight;
+    const sz = narrowQuery.matches ? Math.min(w, h - PANEL_MIN) : Math.min(h, w - 320);
+    screenEl.style.setProperty("--sz", Math.max(200, Math.floor(sz)) + "px");
+  }
+  function relayout() { layout(); resize(); }
+  if ("ResizeObserver" in window) new ResizeObserver(relayout).observe(stageEl);
 
   // ---------- swimmers ----------
   const swimmers = [];
@@ -244,7 +273,7 @@ button:focus-visible { outline: 3px solid var(--cyan); outline-offset: 2px; }
     W = rect.width; H = rect.height; cx = W / 2; cy = H / 2;
     eggR = Math.max(36, W * 0.11);
   }
-  window.addEventListener("resize", resize);
+  window.addEventListener("resize", () => relayout());
 
   // ---------- odds strip ----------
   function renderSlots() {
@@ -252,19 +281,13 @@ button:focus-visible { outline: 3px solid var(--cyan); outline-offset: 2px; }
     slotsEl.style.setProperty("--count", Math.min(total(), 12));
     for (let i = 1; i <= total(); i++) {
       const d = document.createElement("div");
-      d.className = "slot" + (i > SPERM ? " void" : "") + (i === picked ? " mine" : "");
-      d.textContent = i <= SPERM ? pad(i) : "✕";
-      d.title = i <= SPERM ? "Swimmer " + i + " is born" : "Nobody is born";
+      d.className = "slot" + (i === picked ? " mine" : "");
+      d.textContent = pad(i);
+      d.title = "Swimmer " + i + " is born";
       slotsEl.appendChild(d);
     }
-    voidCount.textContent = voidSlots;
     $("oddsYou").textContent = "1 IN " + total();
-    $("oddsNone").textContent = Math.round((voidSlots / total()) * 100) + "%";
-    lessVoid.disabled = state !== "pick" || voidSlots <= VOID_MIN;
-    moreVoid.disabled = state !== "pick" || voidSlots >= VOID_MAX;
   }
-  lessVoid.addEventListener("click", () => { if (state === "pick" && voidSlots > VOID_MIN) { voidSlots--; renderSlots(); beep(440, 0.04); } });
-  moreVoid.addEventListener("click", () => { if (state === "pick" && voidSlots < VOID_MAX) { voidSlots++; renderSlots(); beep(330, 0.04); } });
 
   // light runs along the slots like a roulette, then lands on the drawn outcome
   function spinTo(target) {
@@ -277,7 +300,7 @@ button:focus-visible { outline: 3px solid var(--cyan); outline-offset: 2px; }
         cells.forEach(c => c.classList.remove("hot"));
         const idx = i % cells.length;
         cells[idx].classList.add("hot");
-        beep(idx < SPERM ? 700 : 300, 0.03, "square");
+        beep(700, 0.03, "square");
         if (i >= steps) {
           cells[idx].classList.remove("hot");
           cells[idx].classList.add("land");
@@ -388,7 +411,7 @@ button:focus-visible { outline: 3px solid var(--cyan); outline-offset: 2px; }
     setTicker("ASKING THE UNIVERSE...", true);
     outcome = await drawChance();
     await spinTo(outcome);
-    winner = outcome <= SPERM ? outcome : null;
+    winner = outcome;
     startRace();
   });
 
@@ -464,21 +487,31 @@ button:focus-visible { outline: 3px solid var(--cyan); outline-offset: 2px; }
   // ---------- sound ----------
   let audio = null, soundOn = true;
   function unlockAudio() {
-    if (!audio) { try { audio = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { audio = null; } }
-    if (audio && audio.state === "suspended") audio.resume();
+    // Browsers can pause audio after a while (another tab, a sleeping screen, an idle frame), so wake it on every tap and before every sound.
+    try {
+      if (!audio) {
+        audio = new (window.AudioContext || window.webkitAudioContext)();
+        audio.__master = audio.createGain();
+        audio.__master.gain.value = 0.9;
+        audio.__master.connect(audio.destination);
+      }
+      if (audio.state !== "running") audio.resume().catch(() => {});
+    } catch (e) { audio = null; }
   }
+  ["pointerdown", "keydown", "touchstart"].forEach(ev => document.addEventListener(ev, unlockAudio, { passive: true }));
+  document.addEventListener("visibilitychange", () => { if (!document.hidden && audio) audio.resume().catch(() => {}); });
   function beep(freq, dur, type = "square", delay = 0) {
-    if (!soundOn) return;
-    unlockAudio();
-    if (!audio) return;
+    if (!soundOn || !audio) return;
+    if (audio.state !== "running") audio.resume().catch(() => {});
     const t = audio.currentTime + delay;
     const o = audio.createOscillator(), g = audio.createGain();
     o.type = type; o.frequency.setValueAtTime(freq, t);
     g.gain.setValueAtTime(0.0001, t);
     g.gain.exponentialRampToValueAtTime(0.07, t + 0.01);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    o.connect(g).connect(audio.destination);
-    o.start(t); o.stop(t + dur + 0.02);
+    o.connect(g); g.connect(audio.__master || audio.destination);
+    o.start(t); o.stop(t + dur + 0.03);
+    o.onended = () => { o.disconnect(); g.disconnect(); };
   }
   function raceMusic(ms) {
     const notes = [262, 330, 392, 330, 294, 349, 440, 349, 330, 392, 494, 392, 523];
@@ -696,7 +729,7 @@ button:focus-visible { outline: 3px solid var(--cyan); outline-offset: 2px; }
     requestAnimationFrame(frame);
   }
 
-  resize();
+  relayout();
   renderSlots();
   update(performance.now());
   requestAnimationFrame(frame);
