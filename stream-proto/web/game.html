@@ -76,13 +76,13 @@ button:focus-visible { outline: 3px solid #888; outline-offset: 2px; }
 
 <script type="module">
 import { createLive } from "./live.js";
-import { BIRTH, BODY, HOME, WORLD, PROMPTS, STYLE } from "./stages.js";
+import { BIRTH, BODY, HOME, WORLD, PROMPTS, STYLE, LOOK } from "./stages.js";
 
 const $ = (id) => document.getElementById(id);
 const msgEl = $("msg"), go = $("go"), choicesEl = $("choices"), statusEl = $("status");
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 let stageStrength = 0.75;
-const live = createLive({ out: $("out"), video: $("pip"), params: () => ({ strength: stageStrength, steady: 0.4, style: 0.8 }) });
+const live = createLive({ out: $("out"), video: $("pip"), params: () => ({ strength: stageStrength, steady: 0.4, style: 0.8, look: LOOK === "paint" ? "" : LOOK }) });
 
 // ---------- chance ----------
 let source = "";
@@ -218,7 +218,7 @@ function drawBirth(g, W, H, now) {
   g.fillStyle = "#c98f8a"; g.beginPath(); g.arc(cx - er * 0.08, cy - er * 0.3, er * 0.16, 0, 7); g.fill();
   // the sperm, spread evenly around it (none straight above or below)
   const n = BIRTH.sperm, ring = er + H * 0.15, tail = H * 0.12;
-  const hx = Math.max(7, H * 0.034), hy = Math.max(5, H * 0.024);
+  const big = LOOK === "pixel" ? 1.5 : 1, hx = Math.max(7, H * 0.034) * big, hy = Math.max(5, H * 0.024) * big;
   for (let i = 1; i <= n; i++) {
     const a = -Math.PI / 2 + (Math.PI * 2 / n) * (i - 0.5);
     const ux = Math.cos(a), uy = Math.sin(a);                 // pointing out from the egg
@@ -231,7 +231,7 @@ function drawBirth(g, W, H, now) {
     }
     const x = cx + ux * d, y = cy + uy * d, sel = i === mine;
     // tail: trails outward, wriggling sideways
-    g.strokeStyle = sel ? "#111" : "rgba(255,255,255,0.92)"; g.lineWidth = sel ? 3 : 2; g.lineCap = "round";
+    g.strokeStyle = sel ? "#111" : "rgba(255,255,255,0.95)"; g.lineWidth = LOOK === "pixel" ? (sel ? 6 : 5) : (sel ? 3 : 2); g.lineCap = "round";   // thicker so it survives the pixel filter
     g.beginPath();
     for (let s = 0; s <= 24; s++) {
       const along = hx + (s / 24) * tail, side = Math.sin(t * 9 + s * 0.5 + i) * (s * 0.3);

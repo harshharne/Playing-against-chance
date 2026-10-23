@@ -13,6 +13,10 @@ If the download stops halfway, run `python download_models.py` again: it carries
 - http://localhost:8766/game — the game: BIRTH → BODY → HOME → WORLD → the baseline. Space / Enter = the big button, keys 1–6 pick a sperm.
 - http://localhost:8766 — the lab: type prompts and add references by hand to tune the look. References set here carry over into the game.
 
+## The look
+`LOOK` at the top of `web/stages.js`: "pixel" (8-bit), "line" (ink drawing) or "paint" (as generated). It sets a filter over the whole picture and the style words in every prompt. In the lab, the LOOK menu tries them live.
+Filter details (block size, colour levels, dither) are at the top of the look section in `web/live.js`.
+
 ## Changing the trajectories
 Everything chance can hand out (options, odds, prompt fragments, wording) is in `web/stages.js`. Edit it and reload the page; no restart needed.
 

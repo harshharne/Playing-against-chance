@@ -1,7 +1,7 @@
 // The live engine shared by the lab page (index.html) and the game (game.html):
 // camera -> person cut-out -> generated person over a generated background, drawn into one canvas.
 //
-//   const live = createLive({ out, video, params });   params() -> { strength, steady, style }
+//   const live = createLive({ out, video, params });   params() -> { strength, steady, style, look }   look: "pixel" | "line" | ""
 //   live.setPerson("a baby girl ...")     // null = show the real you (or nothing)
 //   await live.setBackground("a village") // null = your real room
 //   live.setScene(fn)                     // draw your own scene instead (fn(ctx, W, H, now)); null = back to live
@@ -126,11 +126,63 @@ export function createLive({ out, video, params }) {
           if (k < 1) { octx.globalAlpha = 1 - k; follow(octx, prevPose, () => octx.drawImage(prevCut, 0, 0)); octx.globalAlpha = 1; }
         } else if (bgImg) octx.drawImage(cutout(grab, mask), 0, 0);          // the real you, on the new background
       }
+      applyLook(params().look);                                              // 8-bit / line drawing, on everything
     }
     const t = stat.times;
     stat.fps = t.length > 1 ? ((t.length - 1) / ((t[t.length - 1] - t[0]) / 1000)).toFixed(1) : "–";
     stat.online = online;
     requestAnimationFrame(render);
+  }
+
+  // ---------- the look: a filter over the finished frame, so the world always looks the same ----------
+  // "pixel": big blocks, each colour channel cut to a few levels, with a checkerboard dither (the classic 8-bit trick).
+  // "line": ink outlines on paper. Anything else: as generated.
+  const PIXEL = 4;                                            // size of one 8-bit pixel, in picture pixels
+  const LEVELS = 6;                                           // per colour channel: 6 x 6 x 6 = 216 colours
+  const DITHER = 0.3;                                         // 0 = flat bands, 1 = heavy checkerboard
+  const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map(v => (v / 16 - 0.47) * DITHER);
+  const lookCanvas = document.createElement("canvas");
+  let lastLook = null;
+  function applyLook(look) {
+    if (look !== lastLook) { out.style.imageRendering = look === "pixel" ? "pixelated" : "auto"; lastLook = look; }
+    if (look === "pixel") pixelate(PIXEL);
+    else if (look === "line") lineDrawing();
+  }
+  function pixelate(block) {
+    const pw = Math.round(W / block), ph = Math.round(H / block);
+    lookCanvas.width = pw; lookCanvas.height = ph;
+    const g = lookCanvas.getContext("2d", { willReadFrequently: true });
+    g.imageSmoothingEnabled = true; g.drawImage(out, 0, 0, pw, ph);
+    const img = g.getImageData(0, 0, pw, ph), d = img.data, step = 255 / (LEVELS - 1);
+    for (let y = 0; y < ph; y++) for (let x = 0; x < pw; x++) {
+      const o = (y * pw + x) * 4, j = BAYER[(y & 3) * 4 + (x & 3)] * step;
+      for (let c = 0; c < 3; c++) d[o + c] = Math.max(0, Math.min(255, Math.round((d[o + c] + j) / step) * step));
+    }
+    g.putImageData(img, 0, 0);
+    octx.imageSmoothingEnabled = false; octx.drawImage(lookCanvas, 0, 0, W, H); octx.imageSmoothingEnabled = true;
+  }
+  function lineDrawing() {
+    const lw = Math.round(W / 2), lh = Math.round(H / 2);
+    lookCanvas.width = lw; lookCanvas.height = lh;
+    const g = lookCanvas.getContext("2d", { willReadFrequently: true });
+    g.filter = "blur(1px)"; g.drawImage(out, 0, 0, lw, lh); g.filter = "none";
+    const img = g.getImageData(0, 0, lw, lh), d = img.data, n = lw * lh;
+    const grey = new Float32Array(n);
+    for (let i = 0; i < n; i++) grey[i] = d[i * 4] * 0.3 + d[i * 4 + 1] * 0.59 + d[i * 4 + 2] * 0.11;
+    const paper = [247, 244, 236], ink = [26, 26, 26], T = 70;
+    for (let y = 0; y < lh; y++) for (let x = 0; x < lw; x++) {
+      const i = y * lw + x;
+      let a = 0;
+      if (x > 0 && y > 0 && x < lw - 1 && y < lh - 1) {     // edge strength (Sobel)
+        const gx = grey[i - lw + 1] + 2 * grey[i + 1] + grey[i + lw + 1] - grey[i - lw - 1] - 2 * grey[i - 1] - grey[i + lw - 1];
+        const gy = grey[i + lw - 1] + 2 * grey[i + lw] + grey[i + lw + 1] - grey[i - lw - 1] - 2 * grey[i - lw] - grey[i - lw + 1];
+        a = Math.max(0, Math.min(1, (Math.abs(gx) + Math.abs(gy) - T) / T));
+      }
+      const o = i * 4;
+      d[o] = paper[0] + (ink[0] - paper[0]) * a; d[o + 1] = paper[1] + (ink[1] - paper[1]) * a; d[o + 2] = paper[2] + (ink[2] - paper[2]) * a;
+    }
+    g.putImageData(img, 0, 0);
+    octx.drawImage(lookCanvas, 0, 0, W, H);
   }
 
   // ---------- following you between generated frames ----------
