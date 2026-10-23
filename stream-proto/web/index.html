@@ -36,7 +36,7 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: ui-sans
 .slot.nope { opacity: 0.45; }
 .slot .x { position: absolute; top: 2px; right: 2px; z-index: 1; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 50%; background: rgba(17,17,17,0.85); color: #fff; font-size: 12px; line-height: 18px; cursor: pointer; display: none; }
 .slot.full .x { display: block; }
-.sliders { display: flex; flex-direction: column; justify-content: center; gap: 8px; padding: 0 6px; }
+.sliders { display: flex; flex-direction: column; justify-content: center; gap: 4px; padding: 0 6px; }
 .change { display: grid; grid-template-columns: 54px 110px; align-items: center; gap: 8px; font-size: 10px; font-weight: 600; letter-spacing: 0.1em; color: var(--dim); }
 .change input { width: 100%; margin: 0; accent-color: var(--ink); }
 .enter { font: inherit; font-size: 15px; font-weight: 600; letter-spacing: 0.08em; padding: 0 34px; border: 1.5px solid var(--ink); border-radius: 4px; background: var(--ink); color: #fff; cursor: pointer; }
@@ -75,6 +75,7 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: ui-sans
     </div>
     <div class="sliders">
       <label class="change" title="How much you get re-imagined">CHANGE<input id="strength" type="range" min="0.3" max="0.9" step="0.05" value="0.6"></label>
+      <label class="change" title="How strongly the STYLE / IMAGE references steer the look">STYLE<input id="style" type="range" min="0" max="1.2" step="0.05" value="0.8"></label>
       <label class="change" title="Less flicker (higher) vs. quicker to follow you (lower)">STEADY<input id="steady" type="range" min="0" max="0.8" step="0.05" value="0.4"></label>
     </div>
     <button type="submit" class="enter">ENTER</button>
@@ -90,8 +91,10 @@ let grab, mask, sendMask, personMask, fg, send, prevCut, gen;   // working canva
 const tiny = Object.assign(document.createElement("canvas"), { width: 32, height: 20 });   // for "has anything moved?"
 const video = $("pip");                              // the small camera window is also what we read frames from
 
-let online = false, fgPrompt = "", bgPrompt = "", inFlight = false, engine = "", refsOk = true;
+let online = false, fgPrompt = "", bgPrompt = "", flying = 0, seq = 0, shownSeq = 0, engine = "", refsOk = true;
 let bgImg = null, oldBg = null, bgAt = 0, person = null, personAt = 0, fade = 150, lastSig = null;
+let personPose = null, prevPose = null, livePose = null;     // where you were when a frame was made, and where you are now
+const poseCanvas = Object.assign(document.createElement("canvas"), { width: 64, height: 38 });
 let segmenter = null, segImage = null, segOk = false;
 const stat = { ms: 0, bgMs: 0, times: [], note: "", seg: "" };
 
@@ -200,15 +203,44 @@ function render() {
     else {
       drawBackground(octx);
       if (fgPrompt && person) {                                                    // the re-imagined you
-        octx.drawImage(cutout(person, personMask), 0, 0);
+        livePose = smoothPose(livePose, poseOf(mask));
+        follow(octx, personPose, () => octx.drawImage(cutout(person, personMask), 0, 0));
         const k = Math.min(1, (performance.now() - personAt) / fade);
-        if (k < 1) { octx.globalAlpha = 1 - k; octx.drawImage(prevCut, 0, 0); octx.globalAlpha = 1; }   // the last frame melts into the new one
+        if (k < 1) { octx.globalAlpha = 1 - k; follow(octx, prevPose, () => octx.drawImage(prevCut, 0, 0)); octx.globalAlpha = 1; }   // the last frame melts into the new one
       }
       else if (bgImg) octx.drawImage(cutout(grab, mask), 0, 0);                  // the real you, on the new background
     }
   }
   setStatus();
   requestAnimationFrame(render);
+}
+
+// ---------- following you between generated frames ----------
+// A new picture only arrives a few times a second. In between, the last picture is moved and scaled
+// to wherever your body is right now (read from the live camera outline), so the motion stays fluid.
+function poseOf(maskCanvas) {
+  const g = poseCanvas.getContext("2d", { willReadFrequently: true });
+  g.clearRect(0, 0, 64, 38); g.drawImage(maskCanvas, 0, 0, 64, 38);
+  const d = g.getImageData(0, 0, 64, 38).data;
+  let sum = 0, sx = 0, sy = 0, top = 38;
+  for (let y = 0; y < 38; y++) for (let x = 0; x < 64; x++) {
+    const a = d[(y * 64 + x) * 4 + 3] / 255;
+    if (a > 0.5) { sum += a; sx += a * x; sy += a * y; if (y < top) top = y; }
+  }
+  if (sum < 20) return null;                                  // nobody there
+  return { cx: sx / sum / 64 * W, cy: sy / sum / 38 * H, h: (sy / sum - top) / 38 * H };
+}
+function smoothPose(a, b) {
+  if (!a || !b) return b;
+  const k = 0.5;
+  return { cx: a.cx + (b.cx - a.cx) * k, cy: a.cy + (b.cy - a.cy) * k, h: a.h + (b.h - a.h) * k };
+}
+function follow(g, from, draw) {
+  if (!from || !livePose) { draw(); return; }
+  const s = Math.max(0.85, Math.min(1.18, livePose.h / Math.max(1, from.h)));
+  let tx = livePose.cx - s * from.cx, ty = livePose.cy - s * from.cy;
+  const lim = W * 0.2; tx = Math.max(-lim, Math.min(lim, tx)); ty = Math.max(-lim, Math.min(lim, ty));
+  g.save(); g.setTransform(s, 0, 0, s, tx, ty); draw(); g.restore();
 }
 
 // ---------- server ----------
@@ -221,40 +253,49 @@ async function connect() {
     online = true; pump();
   } catch (e) { online = false; setTimeout(connect, 2000); }
 }
-const offline = () => { online = false; inFlight = false; setTimeout(connect, 2000); };
+const offline = () => { online = false; flying = 0; setTimeout(connect, 2000); };
 
-// the person: one frame at a time, so nothing gets stale
+// the person: up to two frames in the pipeline, so the GPU never waits for the browser
+const MAX_FLYING = 2;
+let pumpTimer = 0;
+const schedule = (ms) => { clearTimeout(pumpTimer); pumpTimer = setTimeout(pump, ms); };   // only ever one waiting call
 async function pump() {
-  if (!fgPrompt || inFlight || !online) return;
-  if (!video.videoWidth) { setTimeout(pump, 100); return; }
+  if (!fgPrompt || flying >= MAX_FLYING || !online) return;
+  if (!video.videoWidth) { schedule(100); return; }
   // if you haven't moved, don't make a new frame: a still person stays perfectly still
   const sig = signature();
-  if (lastSig && moved(sig, lastSig) < 1.5) { setTimeout(pump, 60); return; }
+  if (lastSig && moved(sig, lastSig) < 1.5) { schedule(60); return; }
   lastSig = sig;
-  inFlight = true;
+  flying++;
+  const mine = ++seq;
   // you, cut out and placed on the background, so the light and colours blend
   const s = send.getContext("2d");
   drawBackground(s);
   s.drawImage(cutout(grab, mask), 0, 0);
-  const sm = sendMask.getContext("2d");
-  sm.clearRect(0, 0, W, H); sm.drawImage(mask, 0, 0);          // remember which pixels were you in this frame
+  const myMask = mk(); myMask.getContext("2d").drawImage(mask, 0, 0);   // which pixels were you in this frame
+  const myPose = poseOf(mask);
+  // start the next one about halfway through this one
+  schedule(Math.max(40, stat.ms * 0.5));
   try {
     const jpeg = await new Promise(r => send.toBlob(r, "image/jpeg", 0.85));
-    const q = `strength=${$("strength").value}&steady=${$("steady").value}&prompt=` + encodeURIComponent(fgPrompt);
+    const q = `strength=${$("strength").value}&steady=${$("steady").value}&style=${$("style").value}&prompt=` + encodeURIComponent(fgPrompt);
     const res = await fetch("/frame?" + q, { method: "POST", body: jpeg, headers: { "Content-Type": "image/jpeg" } });
     if (!res.ok) throw new Error("status " + res.status);
     stat.ms = +res.headers.get("X-Gen-Ms") || 0;
     const bmp = await createImageBitmap(await res.blob());
+    flying--;
+    if (mine < shownSeq || !fgPrompt) { bmp.close(); pump(); return; }   // an older frame arriving late: skip it
+    shownSeq = mine;
     const now = performance.now();
     if (person) {                                       // keep the current frame to fade out from
       const pc = prevCut.getContext("2d"); pc.clearRect(0, 0, W, H); pc.drawImage(cutout(person, personMask), 0, 0);
+      prevPose = personPose;
       person.close();
       fade = Math.min(220, Math.max(60, (now - personAt) * 0.7));
     }
-    person = bmp; personAt = now;
-    fitMask(bmp, sendMask);
+    person = bmp; personAt = now; personPose = myPose;
+    fitMask(bmp, myMask);
     stat.times.push(now); while (stat.times.length && now - stat.times[0] > 2000) stat.times.shift();
-    inFlight = false;
     pump();
   } catch (e) { offline(); }
 }
@@ -270,14 +311,14 @@ function signature() {
 function moved(a, b) { let t = 0; for (let i = 0; i < a.length; i++) t += Math.abs(a[i] - b[i]); return t / a.length; }
 // changing a prompt, a slider or a reference always makes a fresh frame
 const refresh = () => { lastSig = null; };
-["strength", "steady"].forEach(id => $(id).addEventListener("input", refresh));
+["strength", "steady", "style"].forEach(id => $(id).addEventListener("input", refresh));
 
 // the background: once per Enter, a fresh one every time
 async function makeBackground() {
   if (!bgPrompt) { oldBg = null; bgImg = null; return; }
   stat.note = "making background…";
   try {
-    const res = await fetch("/background?prompt=" + encodeURIComponent(bgPrompt), { cache: "no-store" });
+    const res = await fetch(`/background?style=${$("style").value}&prompt=` + encodeURIComponent(bgPrompt), { cache: "no-store" });
     if (!res.ok) throw new Error("status " + res.status);
     stat.bgMs = +res.headers.get("X-Gen-Ms") || 0;
     oldBg = bgImg; bgImg = await createImageBitmap(await res.blob()); bgAt = performance.now(); refresh();

@@ -43,14 +43,14 @@ SEED = 7                          # noise used for the live person frames
 ENGINE = os.environ.get("ENGINE", "sd15")
 MOCK = os.environ.get("MOCK") == "1"
 
-SD15_MODEL = "Lykon/dreamshaper-8"
+SD15_MODEL = os.environ.get("MODEL", "Lykon/dreamshaper-8")   # any SD 1.5 model on Hugging Face
 LCM_LORA = "latent-consistency/lcm-lora-sdv1-5"
-IP_ADAPTER = ("h94/IP-Adapter", "models", "ip-adapter_sd15.safetensors")
+IP_ADAPTER = ("h94/IP-Adapter", "models", "ip-adapter-plus_sd15.safetensors")   # "plus" copies drawing style much better than the basic one
 TURBO_MODEL = "stabilityai/sd-turbo"
 TINY_VAE = "madebyollin/taesd"
 
 PERSON_STEPS = 1                  # 1 = faster and smoother, 2 = cleaner but about half the fps (sd15 only)
-REF_SCALE = {"person": 0.5, "background": 0.7}  # how strongly the reference images steer each side
+# how strongly the reference images steer each side comes from the STYLE slider on the page
 BG_IMAGE_KEEP = 0.35              # background IMAGE reference: how much of the picture survives (0.2–0.6)
 # from the sliders on the page: CHANGE = how much the person is re-imagined,
 # STEADY = how much each frame leans on the previous one (less flicker, more lag/ghosting)
@@ -110,9 +110,10 @@ class Generator:
         self.refs = {s: {"style": None, "image": None} for s in ("person", "background")}
         self.ip = {"person": None, "background": None}           # side -> combined image embedding
         self.ip_scale = None
+        self.style = {"person": 0.8, "background": 0.8}           # set live by the STYLE slider
         if self.has_ip:
-            dim = pipe.image_encoder.config.projection_dim
-            self.ip_zero = torch.zeros((1, 1, dim), device=self.device, dtype=self.dtype)
+            self.ip_plus = "plus" in IP_ADAPTER[2]
+            self.ip_zero = self.encode_images([Image.new("RGB", (224, 224), (128, 128, 128))]) * 0
         print(f"[gen] ready · prediction={self.prediction} · references={'yes' if self.has_ip else 'background image only'}")
 
     # --- prompts and references ---
@@ -133,16 +134,23 @@ class Generator:
         if not imgs:
             self.ip[side] = None
             return
+        self.ip[side] = self.encode_images(imgs)
+
+    def encode_images(self, imgs):
+        """Reference images -> one IP-Adapter embedding (several images are mixed together)."""
         with self.torch.no_grad():
             px = self.pipe.feature_extractor(images=imgs, return_tensors="pt").pixel_values.to(self.device, self.dtype)
-            e = self.pipe.image_encoder(px).image_embeds              # one embedding per reference image
-            self.ip[side] = e.mean(0, keepdim=True)[:, None, :]       # mixed together: (1, 1, dim)
+            if self.ip_plus:   # plus reads the encoder's detailed patch features, which carry the style
+                e = self.pipe.image_encoder(px, output_hidden_states=True).hidden_states[-2]
+            else:
+                e = self.pipe.image_encoder(px).image_embeds
+            return e.mean(0, keepdim=True)[:, None]                   # (1, 1, ...)
 
     def unet_kwargs(self, side):
         if not self.has_ip:
             return {}
         emb = self.ip[side]
-        scale = REF_SCALE[side] if emb is not None else 0.0
+        scale = self.style[side] if emb is not None else 0.0
         if scale != self.ip_scale:
             self.pipe.set_ip_adapter_scale(scale)
             self.ip_scale = scale
@@ -272,7 +280,9 @@ def jpeg_bytes(img):
     return buf.getvalue()
 
 
-def run_person(jpeg, prompt, strength, steady=0.4):
+def run_person(jpeg, prompt, strength, steady=0.4, style=None):
+    if style is not None and hasattr(gen, "style"):
+        gen.style["person"] = style
     t0 = time.perf_counter()
     img = Image.open(io.BytesIO(jpeg)).convert("RGB")
     if img.size != (WIDTH, HEIGHT):
@@ -281,7 +291,9 @@ def run_person(jpeg, prompt, strength, steady=0.4):
     return jpeg_bytes(out), (time.perf_counter() - t0) * 1000
 
 
-def run_background(prompt, seed):
+def run_background(prompt, seed, style=None):
+    if style is not None and hasattr(gen, "style"):
+        gen.style["background"] = style
     t0 = time.perf_counter()
     out = gen.background(prompt, seed)
     return jpeg_bytes(out), (time.perf_counter() - t0) * 1000
@@ -322,23 +334,23 @@ async def reference(request: Request, side: str, kind: str):
 
 
 @app.post("/frame")
-async def frame(request: Request, prompt: str = "", strength: float = 0.6, steady: float = 0.4):
+async def frame(request: Request, prompt: str = "", strength: float = 0.6, steady: float = 0.4, style: float = 0.8):
     """One camera frame in (JPEG), the person re-imagined out (JPEG)."""
     jpeg = await request.body()
     prompt = prompt.strip() or "a person"
     strength = max(0.1, min(0.95, strength))
     steady = max(0.0, min(0.85, steady))
     async with lock:
-        out, ms = await asyncio.to_thread(run_person, jpeg, prompt, strength, steady)
+        out, ms = await asyncio.to_thread(run_person, jpeg, prompt, strength, steady, max(0.0, min(1.5, style)))
     return Response(out, media_type="image/jpeg", headers={"X-Gen-Ms": str(round(ms)), "Cache-Control": "no-store"})
 
 
 @app.get("/background")
-async def background(prompt: str = ""):
+async def background(prompt: str = "", style: float = 0.8):
     """A fresh background for the prompt. A new random seed every time, so every Enter is a new place."""
     prompt = prompt.strip() or "an empty landscape"
     async with lock:
-        out, ms = await asyncio.to_thread(run_background, prompt, random.randrange(1 << 30))
+        out, ms = await asyncio.to_thread(run_background, prompt, random.randrange(1 << 30), max(0.0, min(1.5, style)))
     return Response(out, media_type="image/jpeg", headers={"X-Gen-Ms": str(round(ms)), "Cache-Control": "no-store"})
 
 
