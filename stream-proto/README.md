@@ -1,21 +1,39 @@
-# Live generation — webcam → SD-Turbo, one step per frame
+# Live generation — webcam → fast diffusion, you and the background separately
 
-## Run on the Mac
+## First time only: download the models (~5 GB, saved in ~/.cache/huggingface)
 ```
 cd ~/Downloads/stream-proto
-source ~/Downloads/chance-proto/.venv/bin/activate   # the venv that already runs SD-Turbo
+source ~/Downloads/chance-proto/.venv/bin/activate
+python -m pip install -U diffusers transformers peft accelerate
+python download_models.py
+```
+If the download stops halfway, run `python download_models.py` again: it carries on.
+
+## Run
+```
+cd ~/Downloads/stream-proto
+source ~/Downloads/chance-proto/.venv/bin/activate
 python stream_server.py
 ```
-Open http://localhost:8766 in Chrome, allow the camera.
-Type a prompt for YOU and/or for the BACKGROUND, press Enter. Either can be left empty.
-CHANGE slider: how much you get re-imagined (0.3 = still you, 0.9 = mostly invented).
-Every Enter makes a new background, even with the same prompt.
-The person cut-out (MediaPipe) loads from the internet, so the Mac needs to be online.
-The first start downloads the tiny VAE (madebyollin/taesd, ~10 MB) and warms up.
+Open http://localhost:8766 in Chrome and allow the camera. The Mac needs to be online (the person cut-out loads from the internet).
 
-Test the page without the model: `MOCK=1 python stream_server.py`
+- YOU / BACKGROUND: a prompt for each, press Enter. Either can be left empty.
+- STYLE / IMAGE slots next to each prompt: click or drag an image in; × removes it.
+  - STYLE steers the look.
+  - IMAGE for you: what you should resemble (mixed with the style).
+  - IMAGE for the background: becomes the starting picture, re-imagined by the prompt.
+- CHANGE: how much you get re-imagined (0.3 = still you, 0.9 = mostly invented).
+- Every Enter makes a new background, even with the same prompt.
+- The small window in the corner is the plain camera.
+
+## Engines
+- default `sd15`: DreamShaper 8 + LCM-LoRA + IP-Adapter. All reference slots work.
+- `ENGINE=turbo python stream_server.py`: the earlier SD-Turbo version. Faster, but only the background IMAGE slot works.
+- `MOCK=1 python stream_server.py`: no model, fake effect, to test the page.
 
 ## Knobs (top of stream_server.py)
-- SMOOTH 0.25 — blends with the previous frame; higher = calmer but ghostier
+- PERSON_STEPS 2 — set to 1 for more fps, rougher image
+- REF_SCALE — how strongly references steer you / the background
+- BG_IMAGE_KEEP 0.35 — how much of the background IMAGE reference survives
+- SMOOTH 0.2 — blends with the previous frame; higher = calmer but ghostier
 - WIDTH × HEIGHT 640×384 — smaller (e.g. 512×320) = faster
-- SEED — a different "look" for the same prompt

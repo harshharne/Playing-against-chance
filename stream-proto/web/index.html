@@ -5,35 +5,51 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Live Generation</title>
 <style>
-/* Layout (from H's sketch): one framed screen. A large generation area on top; prompts and an Enter button underneath.
-   Two prompts: one for the person (foreground), one for the background. White, minimal. */
+/* Layout (from H's sketch): one framed screen. A large generation area on top, with a small live camera window in its corner.
+   Underneath: a prompt for YOU and one for the BACKGROUND, each with two reference-image slots (STYLE, IMAGE), a CHANGE slider and ENTER. White, minimal. */
 :root { --ink: #111; --line: #d6d6d6; --dim: #8a8a8a; --bg: #fff; color-scheme: light; }
 html, body { height: 100%; }
 body { margin: 0; background: var(--bg); color: var(--ink); font-family: ui-sans-serif, system-ui, -apple-system, "Helvetica Neue", sans-serif; }
-.frame { box-sizing: border-box; height: 100%; max-width: 1200px; margin: 0 auto; padding: 24px; display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: 18px; }
+.frame { box-sizing: border-box; height: 100%; max-width: 1240px; margin: 0 auto; padding: 24px; display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: 18px; }
 .gen { position: relative; min-height: 0; border: 1.5px solid var(--ink); border-radius: 4px; overflow: hidden; display: grid; place-items: center; background: #f5f5f5; }
 .gen canvas { width: 100%; height: 100%; object-fit: contain; display: block; }
-.status { position: absolute; top: 12px; left: 14px; font-size: 12px; letter-spacing: 0.04em; color: var(--dim); background: rgba(255,255,255,0.88); padding: 4px 8px; border-radius: 3px; }
+.status { position: absolute; top: 12px; left: 14px; font-size: 12px; letter-spacing: 0.04em; color: var(--dim); background: rgba(255,255,255,0.88); padding: 4px 8px; border-radius: 3px; max-width: 70%; }
 .status b { font-weight: 600; color: var(--ink); }
 .status.off b { color: #c0392b; }
+.pip { position: absolute; top: 12px; right: 12px; width: clamp(120px, 20%, 240px); aspect-ratio: 16 / 9; object-fit: cover; transform: scaleX(-1); border: 1.5px solid var(--ink); border-radius: 3px; background: #ddd; }
 .hint { position: absolute; inset: 0; display: grid; place-items: center; font-size: 15px; color: var(--dim); text-align: center; padding: 24px; }
 .hint[hidden] { display: none; }
+
 .bar { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto auto; gap: 12px; align-items: stretch; }
-.field { position: relative; display: flex; }
+.side { display: flex; gap: 8px; min-width: 0; }
+.field { position: relative; display: flex; flex: 1; min-width: 0; }
 .field span { position: absolute; top: 7px; left: 14px; font-size: 10px; font-weight: 600; letter-spacing: 0.1em; color: var(--dim); pointer-events: none; }
 .field input { flex: 1; min-width: 0; font: inherit; font-size: 16px; padding: 24px 14px 10px; border: 1.5px solid var(--ink); border-radius: 4px; outline: none; background: #fff; color: var(--ink); }
 .field input:focus { box-shadow: 0 0 0 3px rgba(0,0,0,0.08); }
+.slot { position: relative; flex: none; width: 58px; border: 1.5px dashed #9a9a9a; border-radius: 4px; display: grid; place-items: center; cursor: pointer; overflow: hidden; background: #fafafa; font-size: 9px; font-weight: 600; letter-spacing: 0.08em; color: var(--dim); text-align: center; line-height: 1.4; }
+.slot:hover, .slot.drag { border-color: var(--ink); color: var(--ink); }
+.slot input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.slot:focus-within { outline: 3px solid #888; outline-offset: 2px; }
+.slot img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.slot.full { border-style: solid; border-color: var(--ink); }
+.slot.full .lab { position: absolute; left: 0; right: 0; bottom: 0; padding: 2px 0; background: rgba(255,255,255,0.9); color: var(--ink); font-size: 8px; }
+.slot.nope { opacity: 0.45; }
+.slot .x { position: absolute; top: 2px; right: 2px; z-index: 1; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 50%; background: rgba(17,17,17,0.85); color: #fff; font-size: 12px; line-height: 18px; cursor: pointer; display: none; }
+.slot.full .x { display: block; }
 .change { display: flex; flex-direction: column; justify-content: center; gap: 6px; padding: 0 6px; font-size: 10px; font-weight: 600; letter-spacing: 0.1em; color: var(--dim); }
 .change input { width: 110px; accent-color: var(--ink); }
-.bar button { font: inherit; font-size: 15px; font-weight: 600; letter-spacing: 0.08em; padding: 0 34px; border: 1.5px solid var(--ink); border-radius: 4px; background: var(--ink); color: #fff; cursor: pointer; }
-.bar button:active { transform: translateY(1px); }
-.bar button:focus-visible { outline: 3px solid #888; outline-offset: 2px; }
-@media (max-width: 760px) {
+.enter { font: inherit; font-size: 15px; font-weight: 600; letter-spacing: 0.08em; padding: 0 34px; border: 1.5px solid var(--ink); border-radius: 4px; background: var(--ink); color: #fff; cursor: pointer; }
+.enter:active { transform: translateY(1px); }
+.enter:focus-visible { outline: 3px solid #888; outline-offset: 2px; }
+@media (max-width: 980px) { .bar { grid-template-columns: minmax(0, 1fr) auto; } .side { grid-column: 1 / -1; } }
+@media (max-width: 640px) {
   .frame { padding: 16px; }
   .bar { grid-template-columns: 1fr; }
   .change { flex-direction: row; align-items: center; padding: 4px 0; }
   .change input { flex: 1; width: auto; }
-  .bar button { padding: 14px; }
+  .enter { padding: 14px; }
+  .slot { width: 52px; }
+  .pip { top: auto; bottom: 12px; }
 }
 </style>
 </head>
@@ -41,14 +57,23 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: ui-sans
 <div class="frame">
   <div class="gen">
     <canvas id="out" width="640" height="384" aria-label="Live generation: you in the foreground, a generated background behind"></canvas>
+    <video id="pip" class="pip" muted playsinline aria-label="Your camera"></video>
     <div class="status" id="status">connecting…</div>
     <div class="hint" id="hint">Allow the camera to start.</div>
   </div>
   <form class="bar" id="form">
-    <label class="field"><span>YOU</span><input id="fgPrompt" type="text" placeholder="e.g. an old fisherman, oil painting" autocomplete="off"></label>
-    <label class="field"><span>BACKGROUND</span><input id="bgPrompt" type="text" placeholder="e.g. a desert at dusk, wide shot" autocomplete="off"></label>
+    <div class="side">
+      <label class="field"><span>YOU</span><input id="fgPrompt" type="text" placeholder="e.g. an old fisherman, oil painting" autocomplete="off"></label>
+      <label class="slot" data-side="person" data-kind="style" title="Style reference for you"><input type="file" accept="image/*"><span class="lab">STYLE</span><button type="button" class="x" aria-label="Remove">×</button></label>
+      <label class="slot" data-side="person" data-kind="image" title="Image reference for you"><input type="file" accept="image/*"><span class="lab">IMAGE</span><button type="button" class="x" aria-label="Remove">×</button></label>
+    </div>
+    <div class="side">
+      <label class="field"><span>BACKGROUND</span><input id="bgPrompt" type="text" placeholder="e.g. a desert at dusk, wide shot" autocomplete="off"></label>
+      <label class="slot" data-side="background" data-kind="style" title="Style reference for the background"><input type="file" accept="image/*"><span class="lab">STYLE</span><button type="button" class="x" aria-label="Remove">×</button></label>
+      <label class="slot" data-side="background" data-kind="image" title="Image reference for the background: it becomes the starting picture"><input type="file" accept="image/*"><span class="lab">IMAGE</span><button type="button" class="x" aria-label="Remove">×</button></label>
+    </div>
     <label class="change">CHANGE<input id="strength" type="range" min="0.3" max="0.9" step="0.05" value="0.6" aria-label="How much you change"></label>
-    <button type="submit">ENTER</button>
+    <button type="submit" class="enter">ENTER</button>
   </form>
 </div>
 
@@ -58,9 +83,9 @@ const out = $("out"), octx = out.getContext("2d"), statusEl = $("status"), hint 
 let W = 640, H = 384;
 const mk = () => { const c = document.createElement("canvas"); c.width = W; c.height = H; return c; };
 let grab, mask, sendMask, personMask, fg, send;     // working canvases, sized once the server tells us W x H
-const video = Object.assign(document.createElement("video"), { muted: true, playsInline: true });
+const video = $("pip");                              // the small camera window is also what we read frames from
 
-let online = false, fgPrompt = "", bgPrompt = "", inFlight = false;
+let online = false, fgPrompt = "", bgPrompt = "", inFlight = false, engine = "", refsOk = true;
 let bgImg = null, oldBg = null, bgAt = 0, person = null;
 let segmenter = null, segOk = false;
 const stat = { ms: 0, bgMs: 0, times: [], note: "", seg: "" };
@@ -163,6 +188,8 @@ async function connect() {
   try {
     const m = await (await fetch("/config", { cache: "no-store" })).json();
     if (m.width !== W || m.height !== H) { W = m.width; H = m.height; sizeCanvases(); }
+    engine = m.engine; refsOk = m.references;
+    paintSlots();
     online = true; pump();
   } catch (e) { online = false; setTimeout(connect, 2000); }
 }
@@ -208,6 +235,46 @@ async function makeBackground() {
     stat.note = "";
   } catch (e) { stat.note = ""; offline(); }
 }
+
+// ---------- reference images ----------
+const slots = [...document.querySelectorAll(".slot")];
+// with SD-Turbo only the background IMAGE slot does anything; the others are dimmed
+function paintSlots() {
+  slots.forEach(sl => sl.classList.toggle("nope", !refsOk && !(sl.dataset.side === "background" && sl.dataset.kind === "image")));
+}
+async function shrink(file) {                          // big photos are scaled down before sending
+  const bmp = await createImageBitmap(file);
+  const k = Math.min(1, 768 / Math.max(bmp.width, bmp.height));
+  const c = document.createElement("canvas"); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+  c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height); bmp.close();
+  return new Promise(r => c.toBlob(r, "image/jpeg", 0.9));
+}
+async function setRef(sl, file) {
+  const { side, kind } = sl.dataset;
+  const old = sl.querySelector("img"); if (old) { URL.revokeObjectURL(old.src); old.remove(); }
+  sl.classList.toggle("full", !!file);
+  if (file) { const img = new Image(); img.src = URL.createObjectURL(file); img.alt = ""; sl.prepend(img); }
+  stat.note = file ? "sending reference…" : "";
+  try {
+    const body = file ? await shrink(file) : new Blob([]);
+    const res = await fetch(`/reference?side=${side}&kind=${kind}`, { method: "POST", body, headers: { "Content-Type": "image/jpeg" } });
+    const r = await res.json();
+    stat.note = file && !r.works ? "this reference needs the sd15 engine" : "";
+    if (side === "background" && bgPrompt) makeBackground();   // show the new background straight away
+  } catch (e) { stat.note = ""; offline(); }
+}
+slots.forEach(sl => {
+  const input = sl.querySelector("input");
+  input.addEventListener("change", () => { if (input.files[0]) setRef(sl, input.files[0]); input.value = ""; });
+  sl.querySelector(".x").addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); setRef(sl, null); });
+  sl.addEventListener("dragover", (e) => { e.preventDefault(); sl.classList.add("drag"); });
+  sl.addEventListener("dragleave", () => sl.classList.remove("drag"));
+  sl.addEventListener("drop", (e) => {
+    e.preventDefault(); sl.classList.remove("drag");
+    const f = [...e.dataTransfer.files].find(f => f.type.startsWith("image/"));
+    if (f) setRef(sl, f);
+  });
+});
 
 function setStatus() {
   statusEl.classList.toggle("off", !online);
