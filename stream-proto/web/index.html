@@ -5,139 +5,237 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Live Generation</title>
 <style>
-/* Layout (from H's sketch): one framed screen. A large generation area on top; a prompt field and an Enter button underneath. White, minimal. */
+/* Layout (from H's sketch): one framed screen. A large generation area on top; prompts and an Enter button underneath.
+   Two prompts: one for the person (foreground), one for the background. White, minimal. */
 :root { --ink: #111; --line: #d6d6d6; --dim: #8a8a8a; --bg: #fff; color-scheme: light; }
 html, body { height: 100%; }
 body { margin: 0; background: var(--bg); color: var(--ink); font-family: ui-sans-serif, system-ui, -apple-system, "Helvetica Neue", sans-serif; }
 .frame { box-sizing: border-box; height: 100%; max-width: 1200px; margin: 0 auto; padding: 24px; display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: 18px; }
 .gen { position: relative; min-height: 0; border: 1.5px solid var(--ink); border-radius: 4px; overflow: hidden; display: grid; place-items: center; background: #f5f5f5; }
-.gen canvas { max-width: 100%; max-height: 100%; aspect-ratio: var(--ar, 5 / 3); width: 100%; height: auto; object-fit: contain; display: block; }
-.status { position: absolute; top: 12px; left: 14px; font-size: 12px; letter-spacing: 0.04em; color: var(--dim); background: rgba(255,255,255,0.85); padding: 4px 8px; border-radius: 3px; }
+.gen canvas { width: 100%; height: 100%; object-fit: contain; display: block; }
+.status { position: absolute; top: 12px; left: 14px; font-size: 12px; letter-spacing: 0.04em; color: var(--dim); background: rgba(255,255,255,0.88); padding: 4px 8px; border-radius: 3px; }
 .status b { font-weight: 600; color: var(--ink); }
 .status.off b { color: #c0392b; }
-.bar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; }
-.bar input { min-width: 0; font: inherit; font-size: 17px; padding: 16px 18px; border: 1.5px solid var(--ink); border-radius: 4px; outline: none; background: #fff; color: var(--ink); }
-.bar input:focus { box-shadow: 0 0 0 3px rgba(0,0,0,0.08); }
+.hint { position: absolute; inset: 0; display: grid; place-items: center; font-size: 15px; color: var(--dim); text-align: center; padding: 24px; }
+.hint[hidden] { display: none; }
+.bar { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto auto; gap: 12px; align-items: stretch; }
+.field { position: relative; display: flex; }
+.field span { position: absolute; top: 7px; left: 14px; font-size: 10px; font-weight: 600; letter-spacing: 0.1em; color: var(--dim); pointer-events: none; }
+.field input { flex: 1; min-width: 0; font: inherit; font-size: 16px; padding: 24px 14px 10px; border: 1.5px solid var(--ink); border-radius: 4px; outline: none; background: #fff; color: var(--ink); }
+.field input:focus { box-shadow: 0 0 0 3px rgba(0,0,0,0.08); }
+.change { display: flex; flex-direction: column; justify-content: center; gap: 6px; padding: 0 6px; font-size: 10px; font-weight: 600; letter-spacing: 0.1em; color: var(--dim); }
+.change input { width: 110px; accent-color: var(--ink); }
 .bar button { font: inherit; font-size: 15px; font-weight: 600; letter-spacing: 0.08em; padding: 0 34px; border: 1.5px solid var(--ink); border-radius: 4px; background: var(--ink); color: #fff; cursor: pointer; }
 .bar button:active { transform: translateY(1px); }
 .bar button:focus-visible { outline: 3px solid #888; outline-offset: 2px; }
-.hint { position: absolute; inset: 0; display: grid; place-items: center; font-size: 15px; color: var(--dim); text-align: center; padding: 24px; }
-.hint[hidden] { display: none; }
-@media (max-width: 640px) { .frame { padding: 16px; } .bar { grid-template-columns: 1fr; } .bar button { padding: 14px; } }
+@media (max-width: 760px) {
+  .frame { padding: 16px; }
+  .bar { grid-template-columns: 1fr; }
+  .change { flex-direction: row; align-items: center; padding: 4px 0; }
+  .change input { flex: 1; width: auto; }
+  .bar button { padding: 14px; }
+}
 </style>
 </head>
 <body>
 <div class="frame">
   <div class="gen">
-    <canvas id="out" width="640" height="384" aria-label="Live generation from your camera"></canvas>
+    <canvas id="out" width="640" height="384" aria-label="Live generation: you in the foreground, a generated background behind"></canvas>
     <div class="status" id="status">connecting…</div>
     <div class="hint" id="hint">Allow the camera to start.</div>
   </div>
   <form class="bar" id="form">
-    <input id="prompt" type="text" placeholder="Prompt — e.g. a child in a watercolor village at dusk" autocomplete="off" aria-label="Prompt">
+    <label class="field"><span>YOU</span><input id="fgPrompt" type="text" placeholder="e.g. an old fisherman, oil painting" autocomplete="off"></label>
+    <label class="field"><span>BACKGROUND</span><input id="bgPrompt" type="text" placeholder="e.g. a desert at dusk, wide shot" autocomplete="off"></label>
+    <label class="change">CHANGE<input id="strength" type="range" min="0.3" max="0.9" step="0.05" value="0.6" aria-label="How much you change"></label>
     <button type="submit">ENTER</button>
   </form>
 </div>
 
-<script>
-(() => {
-  const $ = (id) => document.getElementById(id);
-  const out = $("out"), octx = out.getContext("2d"), statusEl = $("status"), hint = $("hint");
-  let W = 640, H = 384;
-  const grab = document.createElement("canvas"), gctx = grab.getContext("2d");
-  const video = document.createElement("video");
-  video.muted = true; video.playsInline = true;
+<script type="module">
+const $ = (id) => document.getElementById(id);
+const out = $("out"), octx = out.getContext("2d"), statusEl = $("status"), hint = $("hint");
+let W = 640, H = 384;
+const mk = () => { const c = document.createElement("canvas"); c.width = W; c.height = H; return c; };
+let grab, mask, sendMask, personMask, fg, send;     // working canvases, sized once the server tells us W x H
+const video = Object.assign(document.createElement("video"), { muted: true, playsInline: true });
 
-  let online = false, prompt = null, inFlight = false, lastMs = 0;
-  const times = [];
+let online = false, fgPrompt = "", bgPrompt = "", inFlight = false;
+let bgImg = null, oldBg = null, bgAt = 0, person = null;
+let segmenter = null, segOk = false;
+const stat = { ms: 0, bgMs: 0, times: [], note: "", seg: "" };
 
-  // ---------- camera ----------
-  async function startCamera() {
-    try {
-      video.srcObject = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 }, audio: false });
-      await video.play();
-      hint.hidden = true;
-      requestAnimationFrame(preview);
-    } catch (e) {
-      hint.textContent = "No camera: " + (e.message || e.name);
-    }
-  }
-  // crop the middle of the camera to the generation shape, mirrored like a mirror
-  function capture(ctx, w, h) {
-    const vw = video.videoWidth, vh = video.videoHeight;
-    if (!vw) return false;
-    const ar = w / h;
-    let sw = vw, sh = vw / ar;
-    if (sh > vh) { sh = vh; sw = vh * ar; }
-    ctx.save(); ctx.translate(w, 0); ctx.scale(-1, 1);
-    ctx.drawImage(video, (vw - sw) / 2, (vh - sh) / 2, sw, sh, 0, 0, w, h);
-    ctx.restore();
-    return true;
-  }
-  // before a prompt is entered, the screen just shows you
-  function preview() {
-    if (!prompt) capture(octx, W, H);
-    requestAnimationFrame(preview);
-  }
+function sizeCanvases() {
+  out.width = W; out.height = H;
+  [grab, mask, sendMask, personMask, fg, send] = [mk(), mk(), mk(), mk(), mk(), mk()];
+}
+sizeCanvases();
 
-  // ---------- server (plain web requests, no extra packages needed) ----------
-  async function connect() {
-    try {
-      const m = await (await fetch("/config", { cache: "no-store" })).json();
-      W = m.width; H = m.height; out.width = W; out.height = H; grab.width = W; grab.height = H;
-      out.style.setProperty("--ar", W + " / " + H);
-      online = true; setStatus(); pump();
-    } catch (e) {
-      online = false; setStatus("server offline · retrying", true);
-      setTimeout(connect, 2000);
-    }
-  }
+// ---------- camera ----------
+async function startCamera() {
+  try {
+    video.srcObject = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 }, audio: false });
+    await video.play();
+    hint.hidden = true;
+    requestAnimationFrame(render);
+  } catch (e) { hint.textContent = "No camera: " + (e.message || e.name); }
+}
+// the middle of the camera, cropped to the generation shape and mirrored like a mirror
+function capture() {
+  const vw = video.videoWidth, vh = video.videoHeight;
+  if (!vw) return false;
+  const g = grab.getContext("2d"), ar = W / H;
+  let sw = vw, sh = vw / ar;
+  if (sh > vh) { sh = vh; sw = vh * ar; }
+  g.save(); g.translate(W, 0); g.scale(-1, 1);
+  g.drawImage(video, (vw - sw) / 2, (vh - sh) / 2, sw, sh, 0, 0, W, H);
+  g.restore();
+  return true;
+}
 
-  // one frame at a time: the next frame is captured only when the last result is back, so nothing gets stale
-  async function pump() {
-    if (!prompt || inFlight || !online) return;
-    if (!capture(gctx, W, H)) { setTimeout(pump, 100); return; }
-    inFlight = true;
-    try {
-      const jpeg = await new Promise(r => grab.toBlob(r, "image/jpeg", 0.8));
-      const res = await fetch("/frame?prompt=" + encodeURIComponent(prompt), { method: "POST", body: jpeg, headers: { "Content-Type": "image/jpeg" } });
-      if (!res.ok) throw new Error("status " + res.status);
-      lastMs = +res.headers.get("X-Gen-Ms") || 0;
-      const bmp = await createImageBitmap(await res.blob());
-      if (prompt) octx.drawImage(bmp, 0, 0, W, H);
-      bmp.close();
-      const now = performance.now();
-      times.push(now); while (times.length && now - times[0] > 2000) times.shift();
-      inFlight = false;
-      setStatus();
-      pump();
-    } catch (e) {
-      inFlight = false; online = false;
-      setStatus("server offline · retrying", true);
-      setTimeout(connect, 2000);
-    }
+// ---------- cutting the person out (MediaPipe selfie segmentation, in the browser) ----------
+async function startSegmenter() {
+  try {
+    const v = "0.10.14";
+    const { FilesetResolver, ImageSegmenter } = await import(`https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${v}/vision_bundle.mjs`);
+    const files = await FilesetResolver.forVisionTasks(`https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${v}/wasm`);
+    segmenter = await ImageSegmenter.createFromOptions(files, {
+      baseOptions: { modelAssetPath: "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite", delegate: "GPU" },
+      runningMode: "VIDEO", outputConfidenceMasks: true, outputCategoryMask: false,
+    });
+    segOk = true;
+  } catch (e) {
+    console.warn("segmentation unavailable:", e);
+    stat.seg = "no person cut-out (segmenter didn't load: check internet)";
   }
-
-  function setStatus(text, off) {
-    statusEl.classList.toggle("off", !!off);
-    if (text) { statusEl.innerHTML = "<b>" + text + "</b>"; return; }
-    const fps = times.length > 1 ? ((times.length - 1) / ((times[times.length - 1] - times[0]) / 1000)).toFixed(1) : "–";
-    statusEl.innerHTML = prompt ? "<b>generating</b> · " + fps + " fps · " + lastMs + " ms" : "<b>camera</b> · type a prompt, press Enter";
-  }
-
-  // ---------- prompt ----------
-  $("form").addEventListener("submit", (e) => {
-    e.preventDefault();
-    const p = $("prompt").value.trim();
-    prompt = p || null;
-    times.length = 0;
-    setStatus();
-    pump();
+}
+let maskData = null;
+function segment() {
+  const m = mask.getContext("2d");
+  if (!segOk) { m.fillStyle = "#000"; m.fillRect(0, 0, W, H); return; }   // no segmenter: everything counts as "you"
+  segmenter.segmentForVideo(grab, performance.now(), (res) => {
+    const conf = res.confidenceMasks && res.confidenceMasks[0];
+    if (!conf) return;
+    const f = conf.getAsFloat32Array();
+    if (!maskData || maskData.width !== W) maskData = m.createImageData(W, H);
+    const d = maskData.data;
+    for (let i = 0, j = 3; i < f.length; i++, j += 4) d[j] = f[i] > 0.15 ? Math.min(255, f[i] * 320) : 0;
+    m.putImageData(maskData, 0, 0);
   });
+}
+// draw an image keeping only the parts where the mask says "person", with soft edges
+function cutout(src, maskCanvas) {
+  const g = fg.getContext("2d");
+  g.globalCompositeOperation = "source-over"; g.filter = "none";
+  g.clearRect(0, 0, W, H);
+  g.drawImage(src, 0, 0, W, H);
+  g.globalCompositeOperation = "destination-in";
+  g.filter = "blur(2px)";
+  g.drawImage(maskCanvas, 0, 0);
+  g.filter = "none"; g.globalCompositeOperation = "source-over";
+  return fg;
+}
 
-  startCamera();
-  connect();
-})();
+// ---------- the screen ----------
+function drawBackground(g) {
+  if (!bgImg) { g.drawImage(grab, 0, 0); return; }         // no background prompt: your room stays
+  const k = Math.min(1, (performance.now() - bgAt) / 500);
+  if (oldBg && k < 1) { g.globalAlpha = 1; g.drawImage(oldBg, 0, 0, W, H); g.globalAlpha = k; }
+  g.drawImage(bgImg, 0, 0, W, H);
+  g.globalAlpha = 1;
+}
+function render() {
+  if (capture()) {
+    segment();
+    if (!fgPrompt && !bgPrompt) octx.drawImage(grab, 0, 0);            // nothing entered yet: just you
+    else {
+      drawBackground(octx);
+      if (fgPrompt && person) octx.drawImage(cutout(person, personMask), 0, 0);   // the re-imagined you
+      else if (bgImg) octx.drawImage(cutout(grab, mask), 0, 0);                  // the real you, on the new background
+    }
+  }
+  setStatus();
+  requestAnimationFrame(render);
+}
+
+// ---------- server ----------
+async function connect() {
+  try {
+    const m = await (await fetch("/config", { cache: "no-store" })).json();
+    if (m.width !== W || m.height !== H) { W = m.width; H = m.height; sizeCanvases(); }
+    online = true; pump();
+  } catch (e) { online = false; setTimeout(connect, 2000); }
+}
+const offline = () => { online = false; inFlight = false; setTimeout(connect, 2000); };
+
+// the person: one frame at a time, so nothing gets stale
+async function pump() {
+  if (!fgPrompt || inFlight || !online) return;
+  if (!video.videoWidth) { setTimeout(pump, 100); return; }
+  inFlight = true;
+  // you, cut out and placed on the background, so the light and colours blend
+  const s = send.getContext("2d");
+  drawBackground(s);
+  s.drawImage(cutout(grab, mask), 0, 0);
+  const sm = sendMask.getContext("2d");
+  sm.clearRect(0, 0, W, H); sm.drawImage(mask, 0, 0);          // remember which pixels were you in this frame
+  try {
+    const jpeg = await new Promise(r => send.toBlob(r, "image/jpeg", 0.85));
+    const strength = $("strength").value;
+    const res = await fetch(`/frame?strength=${strength}&prompt=` + encodeURIComponent(fgPrompt), { method: "POST", body: jpeg, headers: { "Content-Type": "image/jpeg" } });
+    if (!res.ok) throw new Error("status " + res.status);
+    stat.ms = +res.headers.get("X-Gen-Ms") || 0;
+    const bmp = await createImageBitmap(await res.blob());
+    if (person) person.close();
+    person = bmp;
+    const pm = personMask.getContext("2d"); pm.clearRect(0, 0, W, H); pm.drawImage(sendMask, 0, 0);
+    const now = performance.now();
+    stat.times.push(now); while (stat.times.length && now - stat.times[0] > 2000) stat.times.shift();
+    inFlight = false;
+    pump();
+  } catch (e) { offline(); }
+}
+
+// the background: once per Enter, a fresh one every time
+async function makeBackground() {
+  if (!bgPrompt) { oldBg = null; bgImg = null; return; }
+  stat.note = "making background…";
+  try {
+    const res = await fetch("/background?prompt=" + encodeURIComponent(bgPrompt), { cache: "no-store" });
+    if (!res.ok) throw new Error("status " + res.status);
+    stat.bgMs = +res.headers.get("X-Gen-Ms") || 0;
+    oldBg = bgImg; bgImg = await createImageBitmap(await res.blob()); bgAt = performance.now();
+    stat.note = "";
+  } catch (e) { stat.note = ""; offline(); }
+}
+
+function setStatus() {
+  statusEl.classList.toggle("off", !online);
+  if (!online) { statusEl.innerHTML = "<b>server offline · retrying</b>"; return; }
+  const t = stat.times, fps = t.length > 1 ? ((t.length - 1) / ((t[t.length - 1] - t[0]) / 1000)).toFixed(1) : "–";
+  const parts = [];
+  if (fgPrompt) parts.push(`<b>you</b> ${fps} fps · ${stat.ms} ms`);
+  if (bgPrompt && stat.bgMs) parts.push(`<b>background</b> ${(stat.bgMs / 1000).toFixed(2)} s`);
+  if (!parts.length) parts.push("<b>camera</b> · type a prompt, press Enter");
+  if (stat.note) parts.push(stat.note);
+  if (stat.seg) parts.push(stat.seg);
+  statusEl.innerHTML = parts.join(" &nbsp;·&nbsp; ");
+}
+
+// ---------- prompts ----------
+$("form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  fgPrompt = $("fgPrompt").value.trim();
+  bgPrompt = $("bgPrompt").value.trim();
+  stat.times.length = 0;
+  if (!fgPrompt && person) { person.close(); person = null; }
+  makeBackground();
+  pump();
+});
+
+startSegmenter();
+startCamera();
+connect();
 </script>
 </body>
 </html>
