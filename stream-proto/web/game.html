@@ -5,54 +5,56 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Playing Against Chance</title>
 <style>
-/* Layout: the same framed screen as the lab. The live picture fills it; a small card in its lower-left corner says what
-   chance is about to decide and what it decided. Underneath: the four stages, (in BIRTH) the six sperm, and one big button. White, minimal. */
-:root { --ink: #111; --dim: #8a8a8a; --line: #d6d6d6; --bg: #fff; --hit: #c0392b; color-scheme: light; }
+/* Layout: the live picture fills the framed screen; one short message sits centred at its bottom edge.
+   Underneath: the four stages (left), the choices for this round (centre), one big button (right). White, minimal. */
+:root { --ink: #111; --dim: #8a8a8a; --line: #d6d6d6; --bg: #fff; --miss: #c0392b; color-scheme: light; }
 html, body { height: 100%; }
 body { margin: 0; background: var(--bg); color: var(--ink); font-family: ui-sans-serif, system-ui, -apple-system, "Helvetica Neue", sans-serif; }
-.frame { box-sizing: border-box; height: 100%; max-width: 1240px; margin: 0 auto; padding: 24px; display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: 18px; }
+.frame { box-sizing: border-box; height: 100%; max-width: 1240px; margin: 0 auto; padding: 24px; display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: 16px; }
 .gen { position: relative; min-height: 0; border: 1.5px solid var(--ink); border-radius: 4px; overflow: hidden; display: grid; place-items: center; background: #f5f5f5; }
 .gen canvas { width: 100%; height: 100%; object-fit: contain; display: block; }
 .pip { position: absolute; top: 12px; right: 12px; width: clamp(110px, 16%, 200px); aspect-ratio: 16 / 9; object-fit: cover; transform: scaleX(-1); border: 1.5px solid var(--ink); border-radius: 3px; background: #ddd; }
 .status { position: absolute; top: 12px; left: 14px; font-size: 11px; letter-spacing: 0.04em; color: var(--dim); background: rgba(255,255,255,0.85); padding: 3px 7px; border-radius: 3px; }
 .status b { font-weight: 600; color: var(--ink); }
 
-.card { position: absolute; left: 16px; bottom: 16px; width: min(400px, calc(100% - 32px)); max-height: calc(100% - 60px); overflow: auto; box-sizing: border-box; padding: 18px 20px; background: rgba(255,255,255,0.94); border: 1.5px solid var(--ink); border-radius: 4px; display: flex; flex-direction: column; gap: 10px; }
-.card[hidden] { display: none; }
-.card.narrow { width: min(300px, calc(100% - 32px)); }   /* in BIRTH, so the sperm on the left stay visible */
-.card .kicker { font-size: 10px; font-weight: 600; letter-spacing: 0.14em; color: var(--dim); }
-.card h2 { margin: 0; font-size: 22px; line-height: 1.15; font-weight: 650; letter-spacing: -0.01em; }
-.card p { margin: 0; font-size: 15px; line-height: 1.4; color: #333; }
-.rows { display: flex; flex-direction: column; gap: 5px; margin-top: 2px; }
-.row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: baseline; font-size: 13px; padding: 4px 0; border-bottom: 1px solid #eee; }
-.row .k { color: var(--dim); font-size: 10px; font-weight: 600; letter-spacing: 0.1em; display: block; }
-.row .v { font-weight: 600; }
-.row .o { font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.row.on { background: #111; color: #fff; padding-inline: 6px; border-radius: 2px; }
-.row.on .o, .row.on .k { color: #ccc; }
-.row.got .v { color: var(--ink); }
-.row.pending .v { color: #bbb; }
-.dice { font-size: 64px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; text-align: center; padding: 6px 0; }
-.dice.lost { color: var(--hit); }
-.small { font-size: 12px; color: var(--dim); }
+/* the message: centred along the bottom of the picture */
+.msg { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); width: max-content; max-width: min(720px, calc(100% - 28px)); box-sizing: border-box; padding: 12px 20px; background: rgba(255,255,255,0.94); border: 1.5px solid var(--ink); border-radius: 4px; text-align: center; display: flex; flex-direction: column; gap: 5px; }
+.msg[hidden] { display: none; }
+.msg .kicker { font-size: 10px; font-weight: 600; letter-spacing: 0.14em; color: var(--dim); }
+.msg .line { font-size: 19px; line-height: 1.25; font-weight: 600; text-wrap: balance; }
+.msg .sub { font-size: 13px; color: #555; line-height: 1.4; text-wrap: balance; }
+.msg .sub b { color: var(--ink); }
+.msg .miss { color: var(--miss); }
+.msg dl { margin: 6px 0 2px; display: grid; grid-template-columns: auto auto; gap: 4px 14px; text-align: left; font-size: 13px; justify-content: center; }
+.msg dt { font-size: 10px; font-weight: 600; letter-spacing: 0.12em; color: var(--dim); padding-top: 2px; }
+.msg dd { margin: 0; font-weight: 600; }
 
-.bar { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 16px; align-items: center; }
+.bar { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 18px; align-items: center; min-height: 64px; }
 .steps { display: flex; gap: 6px; align-items: center; font-size: 11px; font-weight: 600; letter-spacing: 0.12em; color: #bbb; }
 .steps span.now { color: var(--ink); }
 .steps span.done { color: var(--dim); }
-.steps i { width: 18px; height: 1.5px; background: var(--line); }
-.picks { display: flex; gap: 8px; justify-content: center; }
-.picks[hidden] { display: flex; visibility: hidden; }   /* keeps its place so the button never jumps */
-.picks button { width: 52px; height: 52px; font: inherit; font-size: 18px; font-weight: 650; border: 1.5px solid var(--ink); border-radius: 50%; background: #fff; color: var(--ink); cursor: pointer; }
-.picks button.sel { background: var(--ink); color: #fff; }
-.go { font: inherit; font-size: 15px; font-weight: 600; letter-spacing: 0.08em; min-width: 180px; padding: 18px 28px; border: 1.5px solid var(--ink); border-radius: 4px; background: var(--ink); color: #fff; cursor: pointer; }
+.steps i { width: 16px; height: 1.5px; background: var(--line); }
+
+/* the choices for this round */
+.choices { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.ch { min-width: 64px; padding: 9px 14px; display: flex; flex-direction: column; align-items: center; gap: 3px; font: inherit; background: #fff; color: var(--ink); border: 1.5px solid var(--ink); border-radius: 4px; cursor: pointer; transition: background 0.08s, color 0.08s; }
+.ch b { font-size: 12px; font-weight: 650; letter-spacing: 0.05em; white-space: nowrap; }
+.ch small { font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.ch:disabled { cursor: default; }
+.ch.round { width: 52px; height: 52px; min-width: 0; padding: 0; border-radius: 50%; justify-content: center; }
+.ch.round b { font-size: 17px; }
+.ch.wish { box-shadow: 0 0 0 3px #fff, 0 0 0 5px var(--ink); }          /* what you wished for */
+.ch.on, .ch.got { background: var(--ink); color: #fff; }                  /* chance's light / chance's pick */
+.ch.on small, .ch.got small { color: #ccc; }
+.ch.dim { opacity: 0.35; }
+
+.go { font: inherit; font-size: 15px; font-weight: 600; letter-spacing: 0.08em; min-width: 170px; padding: 18px 26px; border: 1.5px solid var(--ink); border-radius: 4px; background: var(--ink); color: #fff; cursor: pointer; }
 .go:disabled { background: #fff; color: #bbb; border-color: #ccc; cursor: default; }
 .go:active:not(:disabled) { transform: translateY(1px); }
 button:focus-visible { outline: 3px solid #888; outline-offset: 2px; }
-@media (max-width: 760px) {
+@media (max-width: 900px) {
   .frame { padding: 16px; }
   .bar { grid-template-columns: 1fr; justify-items: center; }
-  .picks button { width: 44px; height: 44px; }
   .go { width: 100%; }
 }
 </style>
@@ -63,21 +65,21 @@ button:focus-visible { outline: 3px solid #888; outline-offset: 2px; }
     <canvas id="out" width="640" height="384" aria-label="The game screen"></canvas>
     <video id="pip" class="pip" muted playsinline aria-label="Your camera"></video>
     <div class="status" id="status">connecting…</div>
-    <div class="card" id="card" aria-live="polite"></div>
+    <div class="msg" id="msg" aria-live="polite"></div>
   </div>
   <div class="bar">
     <div class="steps" id="steps"><span>BIRTH</span><i></i><span>BODY</span><i></i><span>HOME</span><i></i><span>WORLD</span></div>
-    <div class="picks" id="picks" hidden role="group" aria-label="Pick your sperm"></div>
-    <button class="go" id="go">START</button>
+    <div class="choices" id="choices" role="group" aria-label="Your choices"></div>
+    <button class="go" id="go" disabled>…</button>
   </div>
 </div>
 
 <script type="module">
 import { createLive } from "./live.js";
-import { BIRTH, BODY, HOME, WORLD, PROMPTS } from "./stages.js";
+import { BIRTH, BODY, HOME, WORLD, PROMPTS, STYLE } from "./stages.js";
 
 const $ = (id) => document.getElementById(id);
-const card = $("card"), go = $("go"), picks = $("picks"), statusEl = $("status");
+const msgEl = $("msg"), go = $("go"), choicesEl = $("choices"), statusEl = $("status");
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 let stageStrength = 0.75;
 const live = createLive({ out: $("out"), video: $("pip"), params: () => ({ strength: stageStrength, steady: 0.4, style: 0.8 }) });
@@ -94,87 +96,115 @@ async function draw(n, lo, hi) {
   }
 }
 const total = (opts) => opts.reduce((s, o) => s + o.w, 0);
-async function pick(opts) {                                // a weighted pick: draw 1..total, walk the list
+async function weighted(opts) {                            // draw 1..total, walk the list
   const [v] = await draw(1, 1, total(opts));
   let c = 0;
   for (const o of opts) { c += o.w; if (v <= c) return o; }
   return opts[opts.length - 1];
 }
-const odds = (o, opts) => { const p = o.w / total(opts); return p >= 0.5 ? Math.round(p * 100) + "%" : "1 in " + Math.round(1 / p); };
+const odds = (o, opts) => { const p = o.w / total(opts); return p >= 0.1 ? Math.round(p * 100) + "%" : "1 in " + Math.round(1 / p); };   // 49%, or 1 in 20 for the rare ones
+const name = (o) => (o.short || o.label);
+const low = (s) => String(s).toLowerCase();
 
-// ---------- small helpers for the card ----------
+// ---------- the screen and the bar ----------
 const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-function showCard(html) { card.hidden = false; card.innerHTML = html; }
+function msg(kicker, line, sub = "") {
+  msgEl.hidden = false;
+  msgEl.innerHTML = `<span class="kicker">${kicker}</span>${line ? `<span class="line">${line}</span>` : ""}${sub ? `<span class="sub">${sub}</span>` : ""}`;
+}
 function setSteps(i) { [...$("steps").querySelectorAll("span")].forEach((s, k) => { s.className = k < i ? "done" : k === i ? "now" : ""; }); }
 let action = null;
-function button(label, fn, enabled = true) { go.textContent = label; go.disabled = !enabled; action = fn; }
+function button(label, fn) { go.textContent = label; go.disabled = !fn; action = fn; }
 go.addEventListener("click", () => { if (!go.disabled && action) action(); });
+const waitFor = (label) => new Promise(res => button(label, () => { button("…", null); res(); }));
+let choose = null;                                          // set while a round is waiting for your pick
 document.addEventListener("keydown", (e) => {
   if (e.repeat) return;
   if ((e.key === " " || e.key === "Enter") && !(e.target instanceof HTMLButtonElement)) { e.preventDefault(); go.click(); }
   const n = parseInt(e.key, 10);
-  if (n >= 1 && n <= BIRTH.sperm && !picks.hidden) choose(n);
+  if (n >= 1 && choose) choose(n - 1);
 });
 
-// ---------- the run ----------
-let r = {}, oddsAll = 1, attempts = 0;
-
-function intro() {
-  r = {}; oddsAll = 1; attempts = 0;
-  card.classList.remove("narrow");
-  setSteps(-1);
-  live.setScene(null); live.setPerson(null); live.setBackground(null);
-  showCard(`<span class="kicker">PLAYING AGAINST CHANCE</span><h2>Before you are anyone, chance gets four rolls.</h2><p>Birth, body, home, world. Stand in front of the camera.</p>`);
-  button("START", birth);
+// ---------- one round: you pick what you wish for, then chance draws what you get ----------
+function round({ kicker, line, options, showOdds = true, roundButtons = false, onPick, onRoll, onLand }) {
+  return new Promise(resolve => {
+    msg(kicker, line);
+    choicesEl.innerHTML = "";
+    const btns = options.map((o, i) => {
+      const b = document.createElement("button");
+      b.className = "ch" + (roundButtons ? " round" : "");
+      b.innerHTML = `<b>${esc(name(o))}</b>${showOdds ? `<small>${odds(o, options)}</small>` : ""}`;
+      b.addEventListener("click", () => choose && choose(i));
+      choicesEl.appendChild(b);
+      return b;
+    });
+    let wish = -1;
+    button("PICK ONE", null);
+    choose = (i) => {
+      if (i >= options.length) return;
+      wish = i;
+      btns.forEach((b, k) => b.classList.toggle("wish", k === i));
+      if (onPick) onPick(i);
+      button("ROLL", roll);
+    };
+    async function roll() {
+      choose = null; button("…", null);
+      btns.forEach(b => b.disabled = true);
+      if (onRoll) onRoll();
+      const result = weighted(options);
+      // chance's light runs along your choices while random.org answers, then stops on its pick
+      const got = options.indexOf(await result), n = options.length, steps = n * 2 + got + (n < 4 ? n : 0);
+      for (let s = 0; s <= steps; s++) {
+        btns.forEach((b, k) => b.classList.toggle("on", k === s % n));
+        await sleep(55 + Math.max(0, s - steps + 6) * 50);
+      }
+      btns.forEach((b, k) => { b.classList.remove("on"); b.classList.toggle("got", k === got); b.classList.toggle("dim", k !== got && k !== wish); });
+      const res = { wish: options[wish], got: options[got], met: wish === got };
+      if (onLand) onLand(res);
+      resolve(res);
+    }
+  });
 }
+function wishLine(res, opts) {
+  return res.met
+    ? `You wished for <b>${esc(low(name(res.wish)))}</b>, and got it. (${odds(res.got, opts)})`
+    : `You wished for <b>${esc(low(name(res.wish)))}</b>. <span class="miss">Chance gave you <b>${esc(low(name(res.got)))}</b></span> (${odds(res.got, opts)}).`;
+}
+
+// ---------- the run ----------
+let r = {}, oddsAll = 1, attempts = 0, met = 0, asked = 0;
 
 // ---------- 1. BIRTH (drawn, no generation) ----------
 let mine = 0, winner = 0, raceAt = 0, phase = "pick";
-for (let i = 1; i <= BIRTH.sperm; i++) {
-  const b = document.createElement("button"); b.textContent = i; b.setAttribute("aria-label", "Sperm " + i);
-  b.addEventListener("click", () => choose(i)); picks.appendChild(b);
-}
-function choose(n) {
-  if (phase !== "pick") return;
-  mine = n;
-  [...picks.children].forEach((b, i) => b.classList.toggle("sel", i + 1 === n));
-  button("ROLL", rollBirth);
-}
-function birth() {
+async function birth() {
+  r = {}; oddsAll = 1; attempts = 0; met = 0; asked = 0;
   setSteps(0);
-  phase = "pick"; mine = 0; winner = 0;
   live.setPerson(null); live.setBackground(null);
   live.setScene(drawBirth);
-  card.classList.add("narrow");
-  picks.hidden = false; [...picks.children].forEach(b => b.classList.remove("sel"));
-  showCard(`<span class="kicker">1 · BIRTH</span><h2>${esc(BIRTH.intro)}</h2><p>Your odds: 1 in ${BIRTH.sperm}.${attempts ? ` Attempt ${attempts + 1}.` : ""}</p>`);
-  button("PICK A NUMBER", null, false);
-}
-async function rollBirth() {
-  phase = "race"; raceAt = performance.now(); attempts++;
-  button("…", null, false); picks.hidden = true;
-  showCard(`<span class="kicker">1 · BIRTH</span><div class="dice" id="dice">?</div><p class="small">You picked ${mine}.</p>`);
-  const res = draw(1, 1, BIRTH.sperm);
-  const t0 = performance.now();                              // the dice spins while random.org answers
-  while (performance.now() - t0 < 1400) { $("dice").textContent = 1 + Math.floor(Math.random() * BIRTH.sperm); await sleep(70); }
-  winner = (await res)[0];
-  $("dice").textContent = winner;
-  phase = "result"; raceAt = performance.now();
-  if (winner === mine) {
-    oddsAll *= 1 / BIRTH.sperm;
-    showCard(`<span class="kicker">1 · BIRTH</span><div class="dice">${winner}</div><h2>${esc(BIRTH.won)}</h2><p class="small">After ${attempts} ${attempts === 1 ? "try" : "tries"}. Chance: ${source}.</p>`);
-    button("NEXT: BODY", body);
-  } else {
-    $("dice").classList.add("lost");
-    card.insertAdjacentHTML("beforeend", `<h2>${esc(BIRTH.lost(winner))}</h2>`);
-    button("TRY AGAIN", birth);
+  const sperm = Array.from({ length: BIRTH.sperm }, (_, i) => ({ label: String(i + 1), w: 1 }));
+  while (true) {
+    phase = "pick"; mine = 0; winner = 0;
+    attempts++;
+    const res = await round({
+      kicker: "1 · BIRTH" + (attempts > 1 ? ` · TRY ${attempts}` : ""),
+      line: esc(BIRTH.intro), options: sperm, showOdds: false, roundButtons: true,
+      onPick: (i) => { mine = i + 1; },
+      onRoll: () => { phase = "race"; raceAt = performance.now(); },
+      onLand: (res) => { winner = +res.got.label; phase = "result"; raceAt = performance.now(); },
+    });
+    if (res.met) break;
+    msg("1 · BIRTH", esc(BIRTH.lost(winner)), `Your odds were 1 in ${BIRTH.sperm}.`);
+    await waitFor("TRY AGAIN");
   }
+  oddsAll *= 1 / BIRTH.sperm;
+  msg("1 · BIRTH", esc(BIRTH.won), `After ${attempts} ${attempts === 1 ? "try" : "tries"}. Chance: ${source}.`);
+  await waitFor("NEXT: BODY");
+  body();
 }
-// the drawn womb: an egg, the sperm, a race
 function drawBirth(g, W, H, now) {
   // H's sketch: the egg in the middle, the sperm around it, heads pointing in, tails trailing out
   const t = now / 1000;
-  const cx = W * 0.63, cy = H * 0.5, er = H * 0.17;          // a little right of centre, clear of the card
+  const cx = W * 0.5, cy = H * 0.47, er = H * 0.17;          // centred, a touch high to clear the message
   const bg = g.createRadialGradient(cx, cy, 10, cx, cy, W * 0.75);
   bg.addColorStop(0, "#f6c7c2"); bg.addColorStop(1, "#7a1f2b");
   g.fillStyle = bg; g.fillRect(0, 0, W, H);
@@ -219,101 +249,83 @@ function drawBirth(g, W, H, now) {
   }
 }
 
+
 // ---------- 2. BODY ----------
+// your avatar appears as soon as the first trait lands, and fills in trait by trait
+function bodyPrompt() {
+  // while traits are still landing (the full prompt, once all are in, comes from stages.js)
+  const b = r.body, hair = [b.hair && b.hair.p, b.curl && b.curl.p].filter(Boolean).join(" ");
+  return [`a newborn ${b.sex ? b.sex.baby : "baby"}`, hair && `${hair} hair`, b.eyes && `${b.eyes.p} eyes`, "wrapped in a soft blanket", STYLE].filter(Boolean).join(", ");
+}
 async function body() {
   setSteps(1);
-  live.setScene(null); picks.hidden = true;
-  card.classList.remove("narrow");
+  live.setScene(null);
   stageStrength = BODY.strength;
-  live.setPerson(null); live.setBackground(null);
-  const rows = BODY.traits.map(tr => `<div class="row pending" id="t-${tr.key}"><span><span class="k">${tr.name}</span><span class="v">?</span></span><span class="o">${tr.options.map(o => o.label.toLowerCase()).join(" / ")}</span></div>`).join("");
-  showCard(`<span class="kicker">2 · BODY</span><h2>${esc(BODY.intro)}</h2><div class="rows">${rows}</div>`);
-  button("ROLL", rollBody);
-}
-async function rollBody() {
-  button("…", null, false);
   r.body = {};
-  for (const tr of BODY.traits) {                          // one draw per trait, revealed one by one
-    const o = await pick(tr.options);
-    r.body[tr.key] = o; oddsAll *= o.w / total(tr.options);
-    const row = $("t-" + tr.key);
-    row.classList.remove("pending"); row.classList.add("got");
-    row.querySelector(".v").textContent = o.label;
-    row.querySelector(".o").textContent = odds(o, tr.options);
-    await sleep(350);
+  live.setBackground(PROMPTS.body({ body: { sex: {}, hair: {}, curl: {}, eyes: {}, build: {} } }).background);
+  for (const tr of BODY.traits) {
+    const res = await round({ kicker: "2 · BODY · " + tr.name, line: esc(BODY.intro), options: tr.options });
+    r.body[tr.key] = res.got; oddsAll *= res.got.w / total(tr.options); asked++; if (res.met) met++;
+    msg("2 · BODY · " + tr.name, "", wishLine(res, tr.options));
+    live.setPerson(bodyPrompt());
+    await sleep(1600);
   }
-  card.insertAdjacentHTML("beforeend", `<p class="small">This is you, newborn. Chance: ${source}.</p>`);
-  const pr = PROMPTS.body(r);
-  live.setBackground(pr.background); live.setPerson(pr.person);
-  button("NEXT: HOME", home);
+  live.setPerson(PROMPTS.body(r).person);
+  msg("2 · BODY", "This is you, newborn.", `You got ${met} of ${asked} wishes.`);
+  await waitFor("NEXT: HOME");
+  home();
 }
 
 // ---------- 3. HOME ----------
-function home() {
+async function home() {
   setSteps(2);
   stageStrength = HOME.strength;
-  const rows = HOME.options.map((o, i) => `<div class="row" id="h-${i}"><span class="v">${esc(o.label.toLowerCase())}</span><span class="o">${odds(o, HOME.options)}</span></div>`).join("");
-  showCard(`<span class="kicker">3 · HOME</span><h2>${esc(HOME.intro)}</h2><div class="rows">${rows}</div>`);
-  button("ROLL", rollHome);
-}
-// a light runs down the list and stops on chance's pick
-async function spin(prefix, opts, chosen) {
-  const n = opts.length, end = opts.indexOf(chosen), steps = n * 2 + end;
-  for (let s = 0; s <= steps; s++) {
-    opts.forEach((_, i) => $(prefix + i).classList.toggle("on", i === s % n));
-    await sleep(60 + Math.max(0, s - steps + 6) * 45);
-  }
-}
-async function rollHome() {
-  button("…", null, false);
-  const o = pick(HOME.options);
-  await spin("h-", HOME.options, await o);
-  r.home = await o; oddsAll *= r.home.w / total(HOME.options);
-  card.insertAdjacentHTML("beforeend", `<p><b>${esc(r.home.label.toLowerCase())}</b>: ${r.home.privileges.map(esc).join(" · ")}.</p>`);
+  const res = await round({ kicker: "3 · HOME", line: esc(HOME.intro), options: HOME.options });
+  r.home = res.got; oddsAll *= res.got.w / total(HOME.options); asked++; if (res.met) met++;
   const pr = PROMPTS.home(r);
   live.setBackground(pr.background); live.setPerson(pr.person);
-  button("NEXT: WORLD", world);
+  msg("3 · HOME", esc(r.home.label.toLowerCase().replace(/^./, c => c.toUpperCase())) + ".", wishLine(res, HOME.options) + "<br>" + r.home.privileges.map(esc).join(" · "));
+  await waitFor("NEXT: WORLD");
+  world();
 }
 
 // ---------- 4. WORLD ----------
-function world() {
+async function world() {
   setSteps(3);
   stageStrength = WORLD.strength;
-  const rows = WORLD.where.map((o, i) => `<div class="row" id="w-${i}"><span class="v">${esc(o.label.toLowerCase())}</span><span class="o">${odds(o, WORLD.where)}</span></div>`).join("");
-  showCard(`<span class="kicker">4 · WORLD</span><h2>${esc(WORLD.intro)}</h2><div class="rows">${rows}</div><div class="rows" id="when"></div>`);
-  button("ROLL", rollWorld);
-}
-async function rollWorld() {
-  button("…", null, false);
-  const where = pick(WORLD.where);
-  await spin("w-", WORLD.where, await where);
-  const w = await where;
-  const [ci] = await draw(1, 1, w.cities.length);
-  const city = w.cities[ci - 1];
-  $("when").innerHTML = WORLD.when.map((o, i) => `<div class="row" id="e-${i}"><span class="v">${esc(o.label.toLowerCase())}</span><span class="o">${odds(o, WORLD.when)}</span></div>`).join("");
-  const when = pick(WORLD.when);
-  await spin("e-", WORLD.when, await when);
-  r.world = { where: w, city, when: await when };
-  oddsAll *= (w.w / total(WORLD.where)) * (1 / w.cities.length) * (r.world.when.w / total(WORLD.when));
-  card.insertAdjacentHTML("beforeend", `<p><b>${esc(city)}, ${esc(r.world.when.label.toLowerCase())}</b>.</p>`);
+  const where = await round({ kicker: "4 · WORLD · WHERE", line: esc(WORLD.intro), options: WORLD.where });
+  const [ci] = await draw(1, 1, where.got.cities.length);   // the city inside the region: pure chance, no wish
+  const city = where.got.cities[ci - 1];
+  asked++; if (where.met) met++;
+  msg("4 · WORLD · WHERE", esc(city) + ".", wishLine(where, WORLD.where));
+  await sleep(1800);
+  const when = await round({ kicker: "4 · WORLD · WHEN", line: esc(WORLD.introWhen || "And when?"), options: WORLD.when });
+  asked++; if (when.met) met++;
+  r.world = { where: where.got, city, when: when.got };
+  oddsAll *= (where.got.w / total(WORLD.where)) * (1 / where.got.cities.length) * (when.got.w / total(WORLD.when));
   const pr = PROMPTS.world(r);
   live.setBackground(pr.background); live.setPerson(pr.person);
-  button("WHO CHANCE MADE", summary);
+  msg("4 · WORLD", `${esc(city)}, ${esc(low(r.world.when.label))}.`, wishLine(when, WORLD.when));
+  await waitFor("WHO CHANCE MADE");
+  summary();
 }
 
 // ---------- the baseline ----------
-function summary() {
+async function summary() {
   setSteps(4);
+  choicesEl.innerHTML = "";
   const b = r.body;
-  showCard(`<span class="kicker">THE BASELINE</span><h2>This is the start chance gave you.</h2>
-    <div class="rows">
-      <div class="row"><span><span class="k">BIRTH</span><span class="v">born on try ${attempts}</span></span></div>
-      <div class="row"><span><span class="k">BODY</span><span class="v">${esc(`${b.sex.label.toLowerCase()} · ${b.hair.label.toLowerCase()} ${b.curl.label.toLowerCase()} hair · ${b.eyes.label.toLowerCase()} eyes · ${b.build.label.toLowerCase()}`)}</span></span></div>
-      <div class="row"><span><span class="k">HOME</span><span class="v">${esc(r.home.label.toLowerCase())}</span></span></div>
-      <div class="row"><span><span class="k">WORLD</span><span class="v">${esc(r.world.city)}, ${esc(r.world.when.label.toLowerCase())}</span></span></div>
-    </div>
-    <p>Odds of this exact start: <b>1 in ${Math.round(1 / oddsAll).toLocaleString("en-IN")}</b>. Nobody chose any of it.</p>`);
-  button("AGAIN", intro);
+  msgEl.hidden = false;
+  msgEl.innerHTML = `<span class="kicker">THE BASELINE</span><span class="line">This is the start chance gave you.</span>
+    <dl>
+      <dt>BIRTH</dt><dd>born on try ${attempts}</dd>
+      <dt>BODY</dt><dd>${esc(`${low(b.sex.label)} · ${low(b.hair.label)} ${low(b.curl.label)} hair · ${low(b.eyes.label)} eyes · ${low(b.build.label)}`)}</dd>
+      <dt>HOME</dt><dd>${esc(low(r.home.label))}</dd>
+      <dt>WORLD</dt><dd>${esc(r.world.city)}, ${esc(low(r.world.when.label))}</dd>
+    </dl>
+    <span class="sub">You got <b>${met} of ${asked}</b> wishes. Odds of this exact start: <b>1 in ${Math.round(1 / oddsAll).toLocaleString("en-IN")}</b>.</span>`;
+  await waitFor("AGAIN");
+  birth();
 }
 
 // ---------- status ----------
@@ -324,8 +336,8 @@ function status() {
   requestAnimationFrame(status);
 }
 status();
-live.camera.catch(e => showCard(`<h2>No camera</h2><p>${esc(e.message || e.name)}</p>`));
-intro();
+live.camera.catch(e => msg("NO CAMERA", esc(e.message || e.name)));
+birth();                                                    // straight into birth
 </script>
 </body>
 </html>
