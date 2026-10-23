@@ -34,6 +34,11 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: ui-sans
 .steps span.now { color: var(--ink); }
 .steps span.done { color: var(--dim); }
 .steps i { width: 16px; height: 1.5px; background: var(--line); }
+.left { display: flex; flex-direction: column; gap: 10px; }
+.looks { display: inline-flex; align-self: flex-start; border: 1.5px solid var(--ink); border-radius: 4px; overflow: hidden; }
+.looks button { font: inherit; font-size: 10px; font-weight: 600; letter-spacing: 0.1em; padding: 6px 11px; border: 0; background: #fff; color: var(--ink); cursor: pointer; }
+.looks button + button { border-left: 1.5px solid var(--ink); }
+.looks button[aria-pressed="true"] { background: var(--ink); color: #fff; }
 
 /* the choices for this round */
 .choices { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
@@ -68,7 +73,10 @@ button:focus-visible { outline: 3px solid #888; outline-offset: 2px; }
     <div class="msg" id="msg" aria-live="polite"></div>
   </div>
   <div class="bar">
-    <div class="steps" id="steps"><span>BIRTH</span><i></i><span>BODY</span><i></i><span>HOME</span><i></i><span>WORLD</span></div>
+    <div class="left">
+      <div class="steps" id="steps"><span>BIRTH</span><i></i><span>BODY</span><i></i><span>HOME</span><i></i><span>WORLD</span></div>
+      <div class="looks" role="group" aria-label="Look"><button data-look="pixel">PIXEL</button><button data-look="line">LINE</button><button data-look="paint">PAINT</button></div>
+    </div>
     <div class="choices" id="choices" role="group" aria-label="Your choices"></div>
     <button class="go" id="go" disabled>…</button>
   </div>
@@ -76,13 +84,33 @@ button:focus-visible { outline: 3px solid #888; outline-offset: 2px; }
 
 <script type="module">
 import { createLive } from "./live.js";
-import { BIRTH, BODY, HOME, WORLD, PROMPTS, STYLE, LOOK } from "./stages.js";
+import { BIRTH, BODY, HOME, WORLD, PROMPTS, STYLE, LOOK, setLook } from "./stages.js";
 
 const $ = (id) => document.getElementById(id);
 const msgEl = $("msg"), go = $("go"), choicesEl = $("choices"), statusEl = $("status");
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 let stageStrength = 0.75;
-const live = createLive({ out: $("out"), video: $("pip"), params: () => ({ strength: stageStrength, steady: 0.4, style: 0.8, look: LOOK === "paint" ? "" : LOOK }) });
+// ---------- the look switch: PIXEL / LINE / PAINT ----------
+let look = LOOK;
+try { look = localStorage.getItem("pac-look") || LOOK; } catch (e) {}
+const live = createLive({ out: $("out"), video: $("pip"), params: () => ({ strength: stageStrength, steady: 0.4, style: 0.8, look: look === "paint" ? "" : look }) });
+// what's on screen, so it can be redrawn in a new look: a function giving { person, background } prompts
+let current = null, lastBg = null;
+function show(fn) {
+  current = fn;
+  const p = fn();
+  if (p.background !== lastBg) { lastBg = p.background; live.setBackground(p.background); }   // backgrounds only when they change
+  live.setPerson(p.person);
+}
+function clearShow() { current = null; lastBg = null; live.setPerson(null); live.setBackground(null); }
+function setLookTo(v) {
+  look = v; setLook(v);
+  try { localStorage.setItem("pac-look", v); } catch (e) {}
+  document.querySelectorAll(".looks button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.look === v)));
+  if (current) { lastBg = null; show(current); }      // redraw what's on screen in the new look
+}
+document.querySelectorAll(".looks button").forEach(b => b.addEventListener("click", () => setLookTo(b.dataset.look)));
+setLookTo(look);
 
 // ---------- chance ----------
 let source = "";
@@ -179,7 +207,7 @@ let mine = 0, winner = 0, raceAt = 0, phase = "pick";
 async function birth() {
   r = {}; oddsAll = 1; attempts = 0; met = 0; asked = 0;
   setSteps(0);
-  live.setPerson(null); live.setBackground(null);
+  clearShow();
   live.setScene(drawBirth);
   const sperm = Array.from({ length: BIRTH.sperm }, (_, i) => ({ label: String(i + 1), w: 1 }));
   while (true) {
@@ -218,7 +246,7 @@ function drawBirth(g, W, H, now) {
   g.fillStyle = "#c98f8a"; g.beginPath(); g.arc(cx - er * 0.08, cy - er * 0.3, er * 0.16, 0, 7); g.fill();
   // the sperm, spread evenly around it (none straight above or below)
   const n = BIRTH.sperm, ring = er + H * 0.15, tail = H * 0.12;
-  const big = LOOK === "pixel" ? 1.5 : 1, hx = Math.max(7, H * 0.034) * big, hy = Math.max(5, H * 0.024) * big;
+  const big = look === "pixel" ? 1.5 : 1, hx = Math.max(7, H * 0.034) * big, hy = Math.max(5, H * 0.024) * big;
   for (let i = 1; i <= n; i++) {
     const a = -Math.PI / 2 + (Math.PI * 2 / n) * (i - 0.5);
     const ux = Math.cos(a), uy = Math.sin(a);                 // pointing out from the egg
@@ -231,7 +259,7 @@ function drawBirth(g, W, H, now) {
     }
     const x = cx + ux * d, y = cy + uy * d, sel = i === mine;
     // tail: trails outward, wriggling sideways
-    g.strokeStyle = sel ? "#111" : "rgba(255,255,255,0.95)"; g.lineWidth = LOOK === "pixel" ? (sel ? 6 : 5) : (sel ? 3 : 2); g.lineCap = "round";   // thicker so it survives the pixel filter
+    g.strokeStyle = sel ? "#111" : "rgba(255,255,255,0.95)"; g.lineWidth = look === "pixel" ? (sel ? 6 : 5) : (sel ? 3 : 2); g.lineCap = "round";   // thicker so it survives the pixel filter
     g.beginPath();
     for (let s = 0; s <= 24; s++) {
       const along = hx + (s / 24) * tail, side = Math.sin(t * 9 + s * 0.5 + i) * (s * 0.3);
@@ -262,15 +290,16 @@ async function body() {
   live.setScene(null);
   stageStrength = BODY.strength;
   r.body = {};
-  live.setBackground(PROMPTS.body({ body: { sex: {}, hair: {}, curl: {}, eyes: {}, build: {} } }).background);
+  const nurseryBg = () => PROMPTS.body({ body: { sex: {}, hair: {}, curl: {}, eyes: {}, build: {} } }).background;
+  show(() => ({ person: null, background: nurseryBg() }));
   for (const tr of BODY.traits) {
     const res = await round({ kicker: "2 · BODY · " + tr.name, line: esc(BODY.intro), options: tr.options });
     r.body[tr.key] = res.got; oddsAll *= res.got.w / total(tr.options); asked++; if (res.met) met++;
     msg("2 · BODY · " + tr.name, "", wishLine(res, tr.options));
-    live.setPerson(bodyPrompt());
+    show(() => ({ person: bodyPrompt(), background: nurseryBg() }));
     await sleep(1600);
   }
-  live.setPerson(PROMPTS.body(r).person);
+  show(() => PROMPTS.body(r));
   msg("2 · BODY", "This is you, newborn.", `You got ${met} of ${asked} wishes.`);
   await waitFor("NEXT: HOME");
   home();
@@ -282,8 +311,7 @@ async function home() {
   stageStrength = HOME.strength;
   const res = await round({ kicker: "3 · HOME", line: esc(HOME.intro), options: HOME.options });
   r.home = res.got; oddsAll *= res.got.w / total(HOME.options); asked++; if (res.met) met++;
-  const pr = PROMPTS.home(r);
-  live.setBackground(pr.background); live.setPerson(pr.person);
+  show(() => PROMPTS.home(r));
   msg("3 · HOME", esc(r.home.label.toLowerCase().replace(/^./, c => c.toUpperCase())) + ".", wishLine(res, HOME.options) + "<br>" + r.home.privileges.map(esc).join(" · "));
   await waitFor("NEXT: WORLD");
   world();
@@ -303,8 +331,7 @@ async function world() {
   asked++; if (when.met) met++;
   r.world = { where: where.got, city, when: when.got };
   oddsAll *= (where.got.w / total(WORLD.where)) * (1 / where.got.cities.length) * (when.got.w / total(WORLD.when));
-  const pr = PROMPTS.world(r);
-  live.setBackground(pr.background); live.setPerson(pr.person);
+  show(() => PROMPTS.world(r));
   msg("4 · WORLD", `${esc(city)}, ${esc(low(r.world.when.label))}.`, wishLine(when, WORLD.when));
   await waitFor("WHO CHANCE MADE");
   summary();

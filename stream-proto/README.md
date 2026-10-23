@@ -14,7 +14,7 @@ If the download stops halfway, run `python download_models.py` again: it carries
 - http://localhost:8766 — the lab: type prompts and add references by hand to tune the look. References set here carry over into the game.
 
 ## The look
-`LOOK` at the top of `web/stages.js`: "pixel" (8-bit), "line" (ink drawing) or "paint" (as generated). It sets a filter over the whole picture and the style words in every prompt. In the lab, the LOOK menu tries them live.
+In the game, the PIXEL / LINE / PAINT switch under the stage names changes the look at any moment (it redraws what's on screen and is remembered). `LOOK` at the top of `web/stages.js` is the one it starts with. In the lab, the LOOK menu does the same.
 Filter details (block size, colour levels, dither) are at the top of the look section in `web/live.js`.
 
 ## Changing the trajectories

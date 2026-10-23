@@ -9,13 +9,14 @@
 
 // added to every prompt, so all stages share one look (a STYLE reference in the lab also carries over)
 // THE LOOK of the whole world: "pixel" (8-bit) or "line" (ink drawing). "paint" = no filter, as generated.
-export const LOOK = "pixel";
-const STYLES = {
+export const LOOK = "pixel";                 // the look it starts with (the PIXEL / LINE / PAINT switch changes it live)
+export const STYLES = {
   pixel: "8-bit pixel art, retro video game sprite, flat colours, simple shapes",
   line: "black ink line drawing, clean bold outlines, white paper, minimal, no shading",
   paint: "storybook illustration, soft painterly colours, gentle light",
 };
-export const STYLE = STYLES[LOOK] || STYLES.paint;
+export let STYLE = STYLES[LOOK] || STYLES.paint;
+export function setLook(look) { STYLE = STYLES[look] || STYLES.paint; }   // the prompts below pick up the new words
 
 // ---------- 1. BIRTH ----------  (drawn, no generation)
 // You pick one of the sperm, the dice decides which one reaches the egg.
