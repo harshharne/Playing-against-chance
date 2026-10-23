@@ -86,18 +86,18 @@ const $ = (id) => document.getElementById(id);
 const out = $("out"), octx = out.getContext("2d"), statusEl = $("status"), hint = $("hint");
 let W = 640, H = 384;
 const mk = () => { const c = document.createElement("canvas"); c.width = W; c.height = H; return c; };
-let grab, mask, sendMask, personMask, fg, send, prevCut;   // working canvases, sized once the server tells us W x H
+let grab, mask, sendMask, personMask, fg, send, prevCut, gen;   // working canvases, sized once the server tells us W x H
 const tiny = Object.assign(document.createElement("canvas"), { width: 32, height: 20 });   // for "has anything moved?"
 const video = $("pip");                              // the small camera window is also what we read frames from
 
 let online = false, fgPrompt = "", bgPrompt = "", inFlight = false, engine = "", refsOk = true;
 let bgImg = null, oldBg = null, bgAt = 0, person = null, personAt = 0, fade = 150, lastSig = null;
-let segmenter = null, segOk = false;
+let segmenter = null, segImage = null, segOk = false;
 const stat = { ms: 0, bgMs: 0, times: [], note: "", seg: "" };
 
 function sizeCanvases() {
   out.width = W; out.height = H;
-  [grab, mask, sendMask, personMask, fg, send, prevCut] = [mk(), mk(), mk(), mk(), mk(), mk(), mk()];
+  [grab, mask, sendMask, personMask, fg, send, prevCut, gen] = [mk(), mk(), mk(), mk(), mk(), mk(), mk(), mk()];
 }
 sizeCanvases();
 
@@ -129,29 +129,48 @@ async function startSegmenter() {
     const v = "0.10.14";
     const { FilesetResolver, ImageSegmenter } = await import(`https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${v}/vision_bundle.mjs`);
     const files = await FilesetResolver.forVisionTasks(`https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${v}/wasm`);
-    segmenter = await ImageSegmenter.createFromOptions(files, {
+    const opts = (mode) => ({
       baseOptions: { modelAssetPath: "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite", delegate: "GPU" },
-      runningMode: "VIDEO", outputConfidenceMasks: true, outputCategoryMask: false,
+      runningMode: mode, outputConfidenceMasks: true, outputCategoryMask: false,
     });
+    segmenter = await ImageSegmenter.createFromOptions(files, opts("VIDEO"));   // you, in the camera
+    segImage = await ImageSegmenter.createFromOptions(files, opts("IMAGE"));    // the person the model drew
     segOk = true;
   } catch (e) {
     console.warn("segmentation unavailable:", e);
     stat.seg = "no person cut-out (segmenter didn't load: check internet)";
   }
 }
-let maskData = null;
+// turn MediaPipe's "how sure is this pixel a person" into a mask canvas; returns how much of the frame is person
+function writeMask(res, canvas) {
+  const conf = res.confidenceMasks && res.confidenceMasks[0];
+  if (!conf) return -1;
+  const f = conf.getAsFloat32Array(), m = canvas.getContext("2d");
+  const data = m.createImageData(W, H), d = data.data;
+  let cover = 0;
+  for (let i = 0, j = 3; i < f.length; i++, j += 4) { const a = f[i] > 0.15 ? Math.min(255, f[i] * 320) : 0; d[j] = a; cover += a; }
+  m.putImageData(data, 0, 0);
+  return cover / (255 * f.length);
+}
+let camCover = 0;
 function segment() {
   const m = mask.getContext("2d");
   if (!segOk) { m.fillStyle = "#000"; m.fillRect(0, 0, W, H); return; }   // no segmenter: everything counts as "you"
-  segmenter.segmentForVideo(grab, performance.now(), (res) => {
-    const conf = res.confidenceMasks && res.confidenceMasks[0];
-    if (!conf) return;
-    const f = conf.getAsFloat32Array();
-    if (!maskData || maskData.width !== W) maskData = m.createImageData(W, H);
-    const d = maskData.data;
-    for (let i = 0, j = 3; i < f.length; i++, j += 4) d[j] = f[i] > 0.15 ? Math.min(255, f[i] * 320) : 0;
-    m.putImageData(maskData, 0, 0);
+  segmenter.segmentForVideo(grab, performance.now(), (res) => { const c = writeMask(res, mask); if (c >= 0) camCover = c; });
+}
+// the outline of the person the MODEL drew (hat, beard, costume and all), so nothing gets clipped.
+// If it doesn't look like a person any more (say, "a tree"), fall back to your camera outline.
+function fitMask(bmp, fallback) {
+  const pm = personMask.getContext("2d");
+  const useFallback = () => { pm.clearRect(0, 0, W, H); pm.drawImage(fallback, 0, 0); };
+  if (!segImage) return useFallback();
+  const g = gen.getContext("2d"); g.clearRect(0, 0, W, H); g.drawImage(bmp, 0, 0, W, H);
+  let done = false;
+  segImage.segment(gen, (res) => {
+    const c = writeMask(res, personMask);
+    done = c >= 0 && c > camCover * 0.3;
   });
+  if (!done) useFallback();
 }
 // draw an image keeping only the parts where the mask says "person", with soft edges
 function cutout(src, maskCanvas) {
@@ -233,7 +252,7 @@ async function pump() {
       fade = Math.min(220, Math.max(60, (now - personAt) * 0.7));
     }
     person = bmp; personAt = now;
-    const pm = personMask.getContext("2d"); pm.clearRect(0, 0, W, H); pm.drawImage(sendMask, 0, 0);
+    fitMask(bmp, sendMask);
     stat.times.push(now); while (stat.times.length && now - stat.times[0] > 2000) stat.times.shift();
     inFlight = false;
     pump();
