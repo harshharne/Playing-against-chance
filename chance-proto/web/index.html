@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Playing Against Chance · baseline prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500&family=Martian+Mono:wght@400;500&display=swap">
+<style>
+  :root{
+    --paper:#ffffff; --ink:#121417; --muted:#8a8f98; --rule:#e6e8eb;
+    --you:#2456ff; --chance:#ff5a1f;
+    --display:'Bricolage Grotesque','Helvetica Neue',Arial,sans-serif;
+    --mono:'Martian Mono',ui-monospace,Menlo,monospace;
+  }
+  [hidden]{display:none!important}
+  html,body{margin:0;height:100%;background:var(--paper);color:var(--ink);font-family:var(--display);overflow:hidden}
+  .bg{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity 1.6s ease;mix-blend-mode:multiply}
+  .bg.on{opacity:.9}
+  #c{position:fixed;inset:0;width:100%;height:100%}
+  .eyebrow{font:500 10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+
+  #stages{position:fixed;left:20px;top:18px;display:flex;gap:18px}
+  #stages span{font:500 10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:#c4c8ce}
+  #stages span.on{color:var(--ink)} #stages span.done{color:var(--muted)}
+  #score{position:fixed;left:20px;top:40px;font:400 11px var(--mono);color:var(--muted)}
+
+  #cam{position:fixed;right:20px;top:18px;display:grid;gap:6px;justify-items:end}
+  #cam video{width:150px;border:1px solid var(--rule);transform:scaleX(-1);background:#f4f5f6}
+  #camStatus{font:400 10px var(--mono);color:var(--muted)}
+  #camStatus.ok::before{content:"● ";color:var(--you)}
+
+  #prompt{position:fixed;left:50%;top:74px;transform:translateX(-50%);text-align:center;width:min(680px,92vw);display:grid;gap:6px;pointer-events:none}
+  #q{font-size:clamp(24px,3.6vw,38px);font-weight:500;letter-spacing:-.01em;line-height:1.08;text-wrap:balance}
+  #hint{font:400 11px var(--mono);color:var(--muted)}
+  #verdict{font:500 13px var(--mono);min-height:1.4em}
+  #verdict.win{color:var(--you)} #verdict.lose{color:var(--chance)}
+  #reveal{font-size:clamp(18px,2.4vw,24px);min-height:1.3em}
+
+  #dice{position:fixed;left:50%;top:50%;width:110px;height:110px;margin:-55px 0 0 -55px;border:2.5px solid var(--ink);border-radius:20px;background:var(--paper);
+        display:grid;grid-template:repeat(3,1fr)/repeat(3,1fr);padding:14px;box-sizing:border-box;transition:transform .25s ease,border-color .2s}
+  #dice i{width:20px;height:20px;border-radius:50%;place-self:center;background:transparent}
+  #dice i.p{background:var(--ink)}
+  #dice.landed{border-color:var(--chance);transform:scale(1.12)}
+  #dice.landed i.p{background:var(--chance)}
+
+  #cards{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;width:min(980px,94vw)}
+  .card{background:var(--paper);border:1.5px solid var(--ink);border-radius:12px;padding:12px 10px 12px;display:grid;gap:8px;justify-items:center;text-align:center;cursor:pointer;font:inherit;color:inherit;min-width:0}
+  .card:hover:not(:disabled){border-width:2.5px;padding:11px 9px}
+  .card b{font:500 13px var(--mono);width:24px;height:24px;border-radius:50%;background:var(--ink);color:var(--paper);display:grid;place-items:center}
+  .card svg{width:42px;height:42px;fill:none;stroke:var(--ink);stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+  .card span{font-size:12.5px;line-height:1.25;overflow-wrap:anywhere}
+  .card.you{border-color:var(--you);border-width:2.5px;padding:11px 9px} .card.you b{background:var(--you)}
+  .card.chance{border-color:var(--chance);border-width:2.5px;padding:11px 9px;background:#fff4ef} .card.chance b{background:var(--chance)}
+  .card.dim{opacity:.35}
+  .card:disabled{cursor:default}
+  @media (max-width:760px){#cards{grid-template-columns:repeat(3,minmax(0,1fr))}}
+
+  button.pill{font:500 12px var(--mono);letter-spacing:.04em;color:var(--ink);background:var(--paper);border:1.5px solid var(--ink);border-radius:999px;padding:12px 20px;cursor:pointer}
+  button.pill:hover{background:var(--ink);color:var(--paper)}
+  #nextBtn{position:fixed;left:50%;bottom:30px;transform:translateX(-50%)}
+  button:focus-visible{outline:2px solid var(--you);outline-offset:3px}
+
+  .panel{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(560px,90vw);background:var(--paper);display:grid;gap:20px;padding:30px 0}
+  .panel h1{font-size:clamp(36px,6vw,60px);font-weight:500;letter-spacing:-.03em;line-height:1;margin:0}
+  .panel p{margin:0;font-size:17px;line-height:1.45;color:#3a3e45}
+  #summary{font:400 13px/1.8 var(--mono)}
+  #prompts{font:400 10.5px/1.6 var(--mono);color:var(--muted)}
+</style>
+</head>
+<body>
+<img id="bgA" class="bg" alt="">
+<img id="bgB" class="bg" alt="">
+<canvas id="c" aria-label="Egg, sperm and your baby avatar"></canvas>
+
+<div id="stages" hidden><span data-s="birth">Birth</span><span data-s="home">To whom</span><span data-s="world">Where &amp; when</span></div>
+<div id="score" hidden></div>
+<div id="cam" hidden><video id="video" playsinline muted></video><div id="camStatus">looking for you…</div></div>
+
+<div id="prompt" hidden><div id="q"></div><div id="hint"></div><div id="verdict"></div><div id="reveal"></div></div>
+<div id="dice" hidden></div>
+<div id="cards" hidden></div>
+<button id="nextBtn" class="pill" hidden>Continue</button>
+
+<div id="intro" class="panel">
+  <div class="eyebrow">Playing against chance · baseline prototype</div>
+  <h1>Before you are anyone, chance gets three rolls.</h1>
+  <p>Stand where the camera can see you. At each roll, pick a number (click it, or press 1–6). Then the dice decides.</p>
+  <div><button id="beginBtn" class="pill">Begin</button></div>
+  <div id="sys" class="eyebrow"></div>
+</div>
+
+<div id="end" class="panel" hidden>
+  <div class="eyebrow">Your baseline</div>
+  <div id="summary"></div>
+  <details><summary class="eyebrow" style="cursor:pointer">Prompts sent to the image model</summary><div id="prompts"></div></details>
+  <div><button id="againBtn" class="pill">Another life</button></div>
+</div>
+
+<script type="module">
+/* Playing Against Chance · baseline prototype (front end)
+   Stages: birth (egg + six sperm) → to whom (home) → where & when (world)
+   The server (server.py) rolls the dice with random.org and generates the backgrounds.
+   This page: camera + pose → baby avatar, the egg, the cards, the dice. */
+const MP = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21";
+const INK = "#121417", YOU = "#2456ff", CHANCE = "#ff5a1f";
+const $ = id => document.getElementById(id);
+const cv = $("c"), ctx = cv.getContext("2d"), video = $("video");
+let W, H;
+function resize() { const d = devicePixelRatio || 1; W = innerWidth; H = innerHeight; cv.width = W * d; cv.height = H * d; ctx.setTransform(d, 0, 0, d, 0, 0); }
+addEventListener("resize", resize); resize();
+
+/* ---------------- game state ---------------- */
+let G = { sid: null, stage: null, options: [], mode: "intro", pick: null, roll: null, prompts: [], body: null };
+let born = false, bornAt = 0, growth = 0, growthTarget = 0, smoothK = .55;
+
+async function api(path, body) {
+  const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText);
+  return r.json();
+}
+
+$("beginBtn").onclick = async () => {
+  $("intro").hidden = true;
+  startCamera();               // in parallel: the camera starts looking for you
+  await newLife();
+};
+$("againBtn").onclick = () => newLife();
+$("nextBtn").onclick = () => nextStage();
+addEventListener("keydown", e => {
+  if (G.mode === "pick" && /^[1-6]$/.test(e.key)) pick(+e.key);
+  else if ((e.key === "Enter" || e.key === " ") && !$("nextBtn").hidden) { e.preventDefault(); nextStage(); }
+});
+
+async function newLife() {
+  $("end").hidden = true; ["bgA", "bgB"].forEach(id => { $(id).classList.remove("on"); });
+  born = false; growth = growthTarget = 0; G.prompts = []; G.body = null;
+  sperm = makeSperm();
+  $("stages").hidden = false; $("score").hidden = false; $("cam").hidden = false;
+  showStage(await api("/api/start"));
+}
+
+function showStage(d) {
+  Object.assign(G, { sid: d.sid, stage: d.stage, options: d.options, mode: "pick", pick: null, roll: null });
+  document.querySelectorAll("#stages span").forEach(s => {
+    const i = ["birth", "home", "world"].indexOf(s.dataset.s);
+    s.className = i === d.index ? "on" : i < d.index ? "done" : "";
+  });
+  $("q").textContent = d.question; $("hint").textContent = d.hint;
+  $("verdict").textContent = ""; $("verdict").className = ""; $("reveal").textContent = "";
+  $("prompt").hidden = false; $("nextBtn").hidden = true; $("dice").hidden = true;
+  const cards = $("cards"); cards.innerHTML = "";
+  d.options.forEach(o => {
+    const b = document.createElement("button"); b.className = "card"; b.dataset.n = o.n;
+    b.innerHTML = `<b>${o.n}</b>${ICONS[o.icon] || ""}<span></span>`;
+    b.querySelector("span").textContent = d.stage === "birth" ? "sealed" : o.label;
+    b.onclick = () => pick(o.n);
+    cards.appendChild(b);
+  });
+  cards.hidden = d.stage === "birth";   // at birth the sperm themselves are the choices
+}
+
+async function pick(n) {
+  if (G.mode !== "pick") return;
+  G.mode = "rolling"; G.pick = n;
+  document.querySelectorAll(".card").forEach(c => { c.disabled = true; if (+c.dataset.n === n) c.classList.add("you"); });
+  const rollP = api("/api/roll", { sid: G.sid, pick: n });
+  const res = await rollDice(rollP);
+  if (!res) return;
+  G.roll = res;
+  document.querySelectorAll(".card").forEach(c => {
+    const k = +c.dataset.n;
+    if (k === res.dice) c.classList.add("chance"); else if (k !== n) c.classList.add("dim");
+    if (G.stage === "birth" && (k === res.dice || k === n)) c.querySelector("span").textContent = k === res.dice ? res.reveal : res.pick_reveal;
+  });
+  $("verdict").textContent = res.win ? "Called it." : `You picked ${n}. The dice rolled ${res.dice}.`;
+  $("verdict").className = res.win ? "win" : "lose";
+  $("score").textContent = `bets won ${res.bets.won}/${res.bets.total} · chance from ${res.source}`;
+  if (res.prompt) G.prompts.push(res.prompt);
+
+  if (G.stage === "birth") {
+    G.body = res.state.body;
+    smoothK = { restless: .85, anxious: .75, stubborn: .5, steady: .35, dreamy: .3 }[G.body.temperament] || .55;
+    await fertilise(res.dice);
+    $("reveal").textContent = res.reveal;
+    born = true; bornAt = performance.now(); growthTarget = 0;
+  } else {
+    $("reveal").textContent = res.reveal;
+    if (res.image) await showBackground(res.image);
+    growthTarget = G.stage === "home" ? .45 : .9;   // the baby grows a little older
+  }
+  G.mode = "resolved";
+  setTimeout(() => {
+    $("dice").hidden = true;
+    if (res.last) { $("nextBtn").textContent = "See your baseline"; }
+    else $("nextBtn").textContent = G.stage === "birth" ? "Next: to whom" : "Next: where & when";
+    $("cards").hidden = true; $("nextBtn").hidden = false;
+  }, 1600);
+}
+
+async function nextStage() {
+  if (G.mode !== "resolved") return;
+  if (G.roll.last) return showEnd();
+  $("nextBtn").hidden = true;
+  showStage(await api("/api/next", { sid: G.sid }));
+}
+
+function showEnd() {
+  const s = G.roll.state, b = s.body, h = s.home, w = s.world;
+  $("prompt").hidden = true; $("nextBtn").hidden = true; $("cards").hidden = true;
+  const lines = [
+    `${b.sex}, ${b.temperament}${b.aptitude ? ", good with " + b.aptitude : ""}${b.health === "fragile" ? ", fragile" : ""}`,
+    `${h.order}, in a family ${h.economy}`,
+    `${w.place}, ${w.region}, ${w.year}`,
+    `bets won: ${G.roll.bets.won} of ${G.roll.bets.total}`
+  ];
+  $("summary").innerHTML = ""; lines.forEach(t => { const d = document.createElement("div"); d.textContent = t; $("summary").appendChild(d); });
+  $("prompts").innerHTML = ""; G.prompts.forEach(t => { const d = document.createElement("p"); d.textContent = t; $("prompts").appendChild(d); });
+  $("end").hidden = false; G.mode = "end";
+}
+
+/* ---------------- the dice ---------------- */
+const PIPS = { 1: [4], 2: [0, 8], 3: [0, 4, 8], 4: [0, 2, 6, 8], 5: [0, 2, 4, 6, 8], 6: [0, 2, 3, 5, 6, 8] };
+function face(n) { $("dice").innerHTML = Array.from({ length: 9 }, (_, i) => `<i class="${PIPS[n].includes(i) ? "p" : ""}"></i>`).join(""); }
+async function rollDice(resultPromise) {
+  const d = $("dice"); d.hidden = false; d.classList.remove("landed");
+  let result = null, error = null;
+  resultPromise.then(r => result = r).catch(e => error = e);
+  const t0 = performance.now(); let k = 0;
+  while (true) {
+    const el = performance.now() - t0;
+    if ((result || error) && el > 1600) break;
+    face(1 + Math.floor(Math.random() * 6));
+    d.style.transform = `rotate(${(Math.random() - .5) * 30}deg)`;
+    await sleep(60 + Math.min(220, k++ * k * 1.4));
+  }
+  d.style.transform = "";
+  if (error) { $("verdict").textContent = "Something went wrong: " + error.message; G.mode = "pick"; d.hidden = true; return null; }
+  face(result.dice); d.classList.add("landed");
+  return result;
+}
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+/* ---------------- backgrounds (crossfade) ---------------- */
+let bgFront = "bgA";
+function showBackground(url) {
+  return new Promise(res => {
+    const back = bgFront === "bgA" ? "bgB" : "bgA", img = $(back);
+    img.onload = () => { $(back).classList.add("on"); $(bgFront).classList.remove("on"); bgFront = back; res(); };
+    img.onerror = () => res();
+    img.src = url;
+  });
+}
+
+/* ---------------- birth: egg and six sperm ---------------- */
+let sperm = makeSperm();
+function makeSperm() {
+  return Array.from({ length: 6 }, (_, i) => ({ n: i + 1, a: -Math.PI / 2 + i * Math.PI / 3 + (Math.random() - .5) * .3, r: 1, phase: Math.random() * 7, speed: .1 + Math.random() * .06, fade: 1, target: null }));
+}
+function eggPos() { return { x: W / 2, y: H * .53, r: Math.min(W, H) * .1 }; }
+function fertilise(winner) {
+  return new Promise(res => {
+    sperm.forEach(s => { s.target = s.n === winner ? "in" : "out"; });
+    setTimeout(res, 1700);
+  });
+}
+function drawBirth(t) {
+  const e = eggPos();
+  const hatch = born ? Math.min(1, (t - bornAt) / 900) : 0;
+  if (hatch >= 1) return;
+  ctx.save(); ctx.globalAlpha = 1 - hatch;
+  // egg
+  const pulse = sperm.some(s => s.target === "in" && s.r < .05) ? 1 + Math.sin(t / 120) * .03 : 1;
+  ctx.strokeStyle = INK; ctx.lineWidth = 2.5; ctx.fillStyle = "#fff";
+  ctx.beginPath(); ctx.arc(e.x, e.y, e.r * pulse, 0, 7); ctx.fill(); ctx.stroke();
+  ctx.lineWidth = 1; ctx.strokeStyle = "#c4c8ce"; ctx.beginPath(); ctx.arc(e.x, e.y, e.r * 1.25 * pulse, 0, 7); ctx.stroke();
+  // sperm
+  for (const s of sperm) {
+    if (s.target === "in") s.r = Math.max(0, s.r - .012); else if (s.target === "out") { s.r += .01; s.fade = Math.max(0, s.fade - .012); }
+    s.a += s.target ? 0 : s.speed * .01;
+    const R = e.r * (s.target === "in" ? .55 + 1.25 * s.r : 1.8) + s.r * Math.min(W, H) * .06;
+    const hx = e.x + Math.cos(s.a) * R, hy = e.y + Math.sin(s.a) * R;
+    const dir = Math.atan2(e.y - hy, e.x - hx);
+    s.head = { x: hx, y: hy };
+    const col = G.roll && G.roll.dice === s.n ? CHANCE : G.pick === s.n ? YOU : INK;
+    ctx.globalAlpha = (1 - hatch) * s.fade;
+    // tail: a wiggling line trailing away from the egg
+    ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.beginPath();
+    for (let k = 0; k <= 26; k++) {
+      const d = k * 3.4, wig = Math.sin(t / 90 + s.phase - k * .5) * Math.min(10, k * .6);
+      const x = hx - Math.cos(dir) * (d + 10) + Math.cos(dir + Math.PI / 2) * wig, y = hy - Math.sin(dir) * (d + 10) + Math.sin(dir + Math.PI / 2) * wig;
+      k ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+    }
+    ctx.stroke();
+    ctx.fillStyle = "#fff"; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(hx, hy, 11, 8, dir, 0, 7); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = col; ctx.font = "500 13px 'Martian Mono', monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(s.n, hx - Math.cos(dir) * 30 + Math.cos(dir - Math.PI / 2) * 18, hy - Math.sin(dir) * 30 + Math.sin(dir - Math.PI / 2) * 18);
+  }
+  ctx.restore();
+}
+cv.addEventListener("pointerdown", e => {
+  if (G.mode !== "pick" || G.stage !== "birth") return;
+  for (const s of sperm) if (s.head && Math.hypot(e.clientX - s.head.x, e.clientY - s.head.y) < 34) return pick(s.n);
+});
+
+/* ---------------- camera + pose ---------------- */
+let landmarker = null, lastVideoTime = -1, pose = null, smooth = null;
+async function startCamera() {
+  try {
+    const { PoseLandmarker, FilesetResolver } = await import(`${MP}/vision_bundle.mjs`);
+    const vision = await FilesetResolver.forVisionTasks(`${MP}/wasm`);
+    landmarker = await PoseLandmarker.createFromOptions(vision, {
+      baseOptions: { modelAssetPath: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task", delegate: "GPU" },
+      runningMode: "VIDEO", numPoses: 1
+    });
+    video.srcObject = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 }, audio: false });
+    await video.play();
+  } catch (err) {
+    console.warn("camera/pose unavailable:", err);
+    $("camStatus").textContent = "no camera: using a stand-in body"; video.hidden = true;
+  }
+}
+function toScreen(p) {
+  const vw = video.videoWidth, vh = video.videoHeight, s = Math.max(W / vw, H / vh);
+  return { x: (W - vw * s) / 2 + (1 - p.x) * vw * s, y: (H - vh * s) / 2 + p.y * vh * s, v: p.visibility ?? 1 };
+}
+function readPose() {
+  if (!landmarker || video.readyState < 2 || video.currentTime === lastVideoTime) return;
+  lastVideoTime = video.currentTime;
+  const r = landmarker.detectForVideo(video, performance.now());
+  if (r.landmarks && r.landmarks[0]) {
+    const raw = r.landmarks[0].map(toScreen);
+    smooth = smooth ? raw.map((p, i) => ({ x: smooth[i].x + (p.x - smooth[i].x) * smoothK, y: smooth[i].y + (p.y - smooth[i].y) * smoothK, v: p.v })) : raw;
+    pose = smooth; $("camStatus").textContent = "we see you"; $("camStatus").className = "ok";
+  } else { pose = null; $("camStatus").textContent = "step into frame"; $("camStatus").className = ""; }
+}
+// a stand-in body when there's no camera, so the flow still works
+function standIn(t) {
+  const cx = W / 2, top = H * .36, u = Math.min(W, H) / 13, sway = Math.sin(t / 900) * u * .08, arm = Math.sin(t / 600) * u * .3;
+  const L = Array.from({ length: 33 }, () => ({ x: cx, y: top, v: 1 }));
+  const set = (i, x, y) => L[i] = { x: cx + x * u + sway, y: top + y * u, v: 1 };
+  set(0, 0, 0); set(11, -1, 1.1); set(12, 1, 1.1); set(13, -1.4, 2.2); set(14, 1.4, 2.0 - arm / u); set(15, -1.5, 3.2); set(16, 1.9, 1.2 - arm / u * 2);
+  set(23, -.6, 3.2); set(24, .6, 3.2); set(25, -.65, 4.4); set(26, .65, 4.4); set(27, -.7, 5.6); set(28, .7, 5.6);
+  return L;
+}
+
+/* ---------------- the baby (drawn from your skeleton; grows with `growth`) ---------------- */
+const lerp = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+function drawBaby(L, g, alpha) {
+  const sh = lerp(L[11], L[12], .5), hp = lerp(L[23], L[24], .5);
+  const shoulderW = Math.max(30, Math.hypot(L[11].x - L[12].x, L[11].y - L[12].y));
+  const torsoLen = Math.hypot(hp.x - sh.x, hp.y - sh.y) * (.75 + .12 * g);
+  const down = { x: hp.x - sh.x, y: hp.y - sh.y }, dl = Math.hypot(down.x, down.y) || 1;
+  const hipC = { x: sh.x + down.x / dl * torsoLen, y: sh.y + down.y / dl * torsoLen };
+  const fragile = G.body && G.body.health === "fragile" ? .85 : 1;
+  ctx.save(); ctx.globalAlpha = alpha; ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.strokeStyle = INK; ctx.fillStyle = "#fff";
+  for (const [hi, ki, ai] of [[23, 25, 27], [24, 26, 28]]) {
+    if (L[ki].v < .4) continue;
+    const hip = { x: hipC.x + (L[hi].x - hp.x) * .8, y: hipC.y + (L[hi].y - hp.y) * .8 };
+    const knee = lerp(hip, { x: hip.x + L[ki].x - L[hi].x, y: hip.y + L[ki].y - L[hi].y }, .55 + .2 * g);
+    const ankle = L[ai].v > .4 ? lerp(knee, { x: knee.x + L[ai].x - L[ki].x, y: knee.y + L[ai].y - L[ki].y }, .5 + .22 * g) : knee;
+    limb([hip, knee, ankle], shoulderW * .28 * fragile);
+  }
+  ctx.lineWidth = 3; ctx.beginPath();
+  ctx.ellipse((sh.x + hipC.x) / 2, (sh.y + hipC.y) / 2, shoulderW * (.62 - .06 * g) * fragile, torsoLen * .62, Math.atan2(down.y, down.x) - Math.PI / 2, 0, 7);
+  ctx.fill(); ctx.stroke();
+  for (const [si, ei, wi] of [[11, 13, 15], [12, 14, 16]]) {
+    if (L[ei].v < .4) continue;
+    const s = L[si], e = lerp(s, L[ei], .6 + .15 * g), w = L[wi].v > .4 ? lerp(e, { x: e.x + L[wi].x - L[ei].x, y: e.y + L[wi].y - L[ei].y }, .55 + .18 * g) : e;
+    limb([s, e, w], shoulderW * .2 * fragile);
+  }
+  const neck = lerp(sh, L[0], .35), headR = shoulderW * (.62 - .12 * g);
+  const hc = { x: neck.x + (L[0].x - sh.x) * .55, y: neck.y - headR * .55 };
+  ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(hc.x, hc.y, headR, 0, 7); ctx.fill(); ctx.stroke();
+  const fx = (L[0].x - neck.x) * .25, ey = hc.y + headR * .05;
+  ctx.fillStyle = INK; for (const k of [-1, 1]) { ctx.beginPath(); ctx.arc(hc.x + fx + k * headR * .3, ey, headR * .06, 0, 7); ctx.fill(); }
+  ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(hc.x + fx, ey + headR * .28, headR * .16, .2, Math.PI - .2); ctx.stroke();
+  // hair grows in with age
+  const strands = 1 + Math.round(g * 5);
+  for (let k = 0; k < strands; k++) { const a = -Math.PI / 2 + (k - (strands - 1) / 2) * .28; ctx.beginPath(); ctx.moveTo(hc.x + Math.cos(a) * headR, hc.y + Math.sin(a) * headR); ctx.quadraticCurveTo(hc.x + Math.cos(a) * headR * 1.25 + 6, hc.y + Math.sin(a) * headR * 1.25, hc.x + Math.cos(a) * headR * 1.12 + 10, hc.y + Math.sin(a) * headR * 1.1); ctx.stroke(); }
+  ctx.restore();
+}
+function limb(pts, w) {
+  ctx.lineWidth = w + 6; ctx.strokeStyle = INK; poly(pts);
+  ctx.lineWidth = w; ctx.strokeStyle = "#fff"; poly(pts); ctx.strokeStyle = INK;
+}
+function poly(pts) { ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y); for (const p of pts.slice(1)) ctx.lineTo(p.x, p.y); ctx.stroke(); }
+
+/* ---------------- loop ---------------- */
+function frame(t) {
+  requestAnimationFrame(frame);
+  ctx.clearRect(0, 0, W, H);
+  readPose();
+  growth += (growthTarget - growth) * .02;
+  if (G.mode !== "intro" && G.mode !== "end" && !born) drawBirth(t);
+  if (born && G.mode !== "end") {
+    drawBirth(t);   // egg fading out
+    const a = Math.min(1, (t - bornAt) / 900);
+    drawBaby(pose || standIn(t), growth, a);
+  }
+}
+requestAnimationFrame(frame);
+
+/* ---------------- icons ---------------- */
+const ICONS = {
+  seed: '<svg viewBox="0 0 48 48"><ellipse cx="30" cy="18" rx="7" ry="5.5" transform="rotate(-28 30 18)"/><path d="M24 22c-4 5 3 8-3 13s-2 7-6 9"/></svg>',
+  house: '<svg viewBox="0 0 48 48"><path d="M8 24 24 10l16 14M12 21v18h24V21M21 39V29h6v10"/></svg>',
+  tree: '<svg viewBox="0 0 48 48"><circle cx="24" cy="19" r="10"/><path d="M24 29v12M15 41h18"/></svg>',
+  tower: '<svg viewBox="0 0 48 48"><rect x="15" y="7" width="18" height="34"/><path d="M19 13h4M25 13h4M19 20h4M25 20h4M19 27h4M25 27h4M19 34h4M25 34h4"/></svg>',
+  train: '<svg viewBox="0 0 48 48"><rect x="11" y="9" width="26" height="26" rx="4"/><path d="M11 24h26M16 35l-4 6M32 35l4 6"/><circle cx="17" cy="30" r="1.5"/><circle cx="31" cy="30" r="1.5"/></svg>'
+};
+
+/* ---------------- status on the intro ---------------- */
+fetch("/api/status").then(r => r.json()).then(s => { $("sys").textContent = `image model: ${s.model}`; }).catch(() => { $("sys").textContent = "server not running: start it with python server.py"; });
+</script>
+</body>
+</html>
