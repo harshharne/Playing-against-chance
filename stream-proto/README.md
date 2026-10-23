@@ -9,6 +9,13 @@ python download_models.py
 ```
 If the download stops halfway, run `python download_models.py` again: it carries on.
 
+## Two pages
+- http://localhost:8766/game — the game: BIRTH → BODY → HOME → WORLD → the baseline. Space / Enter = the big button, keys 1–6 pick a sperm.
+- http://localhost:8766 — the lab: type prompts and add references by hand to tune the look. References set here carry over into the game.
+
+## Changing the trajectories
+Everything chance can hand out (options, odds, prompt fragments, wording) is in `web/stages.js`. Edit it and reload the page; no restart needed.
+
 ## Run
 ```
 cd ~/Downloads/stream-proto

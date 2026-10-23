@@ -83,254 +83,33 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: ui-sans
 </div>
 
 <script type="module">
+// The lab: type prompts and drop in references by hand, to tune the look. The game is at /game.
+import { createLive } from "./live.js";
 const $ = (id) => document.getElementById(id);
-const out = $("out"), octx = out.getContext("2d"), statusEl = $("status"), hint = $("hint");
-let W = 640, H = 384;
-const mk = () => { const c = document.createElement("canvas"); c.width = W; c.height = H; return c; };
-let grab, mask, sendMask, personMask, fg, send, prevCut, gen;   // working canvases, sized once the server tells us W x H
-const tiny = Object.assign(document.createElement("canvas"), { width: 32, height: 20 });   // for "has anything moved?"
-const video = $("pip");                              // the small camera window is also what we read frames from
+const statusEl = $("status"), hint = $("hint");
+const live = createLive({
+  out: $("out"), video: $("pip"),
+  params: () => ({ strength: $("strength").value, steady: $("steady").value, style: $("style").value }),
+});
+live.camera.then(() => { hint.hidden = true; }).catch(e => { hint.textContent = "No camera: " + (e.message || e.name); });
+live.whenReady().then(paintSlots);
+["strength", "steady", "style"].forEach(id => $(id).addEventListener("input", live.refresh));
 
-let online = false, fgPrompt = "", bgPrompt = "", flying = 0, seq = 0, shownSeq = 0, engine = "", refsOk = true;
-let bgImg = null, oldBg = null, bgAt = 0, person = null, personAt = 0, fade = 150, lastSig = null;
-let personPose = null, prevPose = null, livePose = null;     // where you were when a frame was made, and where you are now
-const poseCanvas = Object.assign(document.createElement("canvas"), { width: 64, height: 38 });
-let segmenter = null, segImage = null, segOk = false;
-const stat = { ms: 0, bgMs: 0, times: [], note: "", seg: "" };
-
-function sizeCanvases() {
-  out.width = W; out.height = H;
-  [grab, mask, sendMask, personMask, fg, send, prevCut, gen] = [mk(), mk(), mk(), mk(), mk(), mk(), mk(), mk()];
-}
-sizeCanvases();
-
-// ---------- camera ----------
-async function startCamera() {
-  try {
-    video.srcObject = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 }, audio: false });
-    await video.play();
-    hint.hidden = true;
-    requestAnimationFrame(render);
-  } catch (e) { hint.textContent = "No camera: " + (e.message || e.name); }
-}
-// the middle of the camera, cropped to the generation shape and mirrored like a mirror
-function capture() {
-  const vw = video.videoWidth, vh = video.videoHeight;
-  if (!vw) return false;
-  const g = grab.getContext("2d"), ar = W / H;
-  let sw = vw, sh = vw / ar;
-  if (sh > vh) { sh = vh; sw = vh * ar; }
-  g.save(); g.translate(W, 0); g.scale(-1, 1);
-  g.drawImage(video, (vw - sw) / 2, (vh - sh) / 2, sw, sh, 0, 0, W, H);
-  g.restore();
-  return true;
-}
-
-// ---------- cutting the person out (MediaPipe selfie segmentation, in the browser) ----------
-async function startSegmenter() {
-  try {
-    const v = "0.10.14";
-    const { FilesetResolver, ImageSegmenter } = await import(`https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${v}/vision_bundle.mjs`);
-    const files = await FilesetResolver.forVisionTasks(`https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${v}/wasm`);
-    const opts = (mode) => ({
-      baseOptions: { modelAssetPath: "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite", delegate: "GPU" },
-      runningMode: mode, outputConfidenceMasks: true, outputCategoryMask: false,
-    });
-    segmenter = await ImageSegmenter.createFromOptions(files, opts("VIDEO"));   // you, in the camera
-    segImage = await ImageSegmenter.createFromOptions(files, opts("IMAGE"));    // the person the model drew
-    segOk = true;
-  } catch (e) {
-    console.warn("segmentation unavailable:", e);
-    stat.seg = "no person cut-out (segmenter didn't load: check internet)";
-  }
-}
-// turn MediaPipe's "how sure is this pixel a person" into a mask canvas; returns how much of the frame is person
-function writeMask(res, canvas) {
-  const conf = res.confidenceMasks && res.confidenceMasks[0];
-  if (!conf) return -1;
-  const f = conf.getAsFloat32Array(), m = canvas.getContext("2d");
-  const data = m.createImageData(W, H), d = data.data;
-  let cover = 0;
-  for (let i = 0, j = 3; i < f.length; i++, j += 4) { const a = f[i] > 0.15 ? Math.min(255, f[i] * 320) : 0; d[j] = a; cover += a; }
-  m.putImageData(data, 0, 0);
-  return cover / (255 * f.length);
-}
-let camCover = 0;
-function segment() {
-  const m = mask.getContext("2d");
-  if (!segOk) { m.fillStyle = "#000"; m.fillRect(0, 0, W, H); return; }   // no segmenter: everything counts as "you"
-  segmenter.segmentForVideo(grab, performance.now(), (res) => { const c = writeMask(res, mask); if (c >= 0) camCover = c; });
-}
-// the outline of the person the MODEL drew (hat, beard, costume and all), so nothing gets clipped.
-// If it doesn't look like a person any more (say, "a tree"), fall back to your camera outline.
-function fitMask(bmp, fallback) {
-  const pm = personMask.getContext("2d");
-  const useFallback = () => { pm.clearRect(0, 0, W, H); pm.drawImage(fallback, 0, 0); };
-  if (!segImage) return useFallback();
-  const g = gen.getContext("2d"); g.clearRect(0, 0, W, H); g.drawImage(bmp, 0, 0, W, H);
-  let done = false;
-  segImage.segment(gen, (res) => {
-    const c = writeMask(res, personMask);
-    done = c >= 0 && c > camCover * 0.3;
-  });
-  if (!done) useFallback();
-}
-// draw an image keeping only the parts where the mask says "person", with soft edges
-function cutout(src, maskCanvas) {
-  const g = fg.getContext("2d");
-  g.globalCompositeOperation = "source-over"; g.filter = "none";
-  g.clearRect(0, 0, W, H);
-  g.drawImage(src, 0, 0, W, H);
-  g.globalCompositeOperation = "destination-in";
-  g.filter = "blur(2px)";
-  g.drawImage(maskCanvas, 0, 0);
-  g.filter = "none"; g.globalCompositeOperation = "source-over";
-  return fg;
-}
-
-// ---------- the screen ----------
-function drawBackground(g) {
-  if (!bgImg) { g.drawImage(grab, 0, 0); return; }         // no background prompt: your room stays
-  const k = Math.min(1, (performance.now() - bgAt) / 500);
-  if (oldBg && k < 1) { g.globalAlpha = 1; g.drawImage(oldBg, 0, 0, W, H); g.globalAlpha = k; }
-  g.drawImage(bgImg, 0, 0, W, H);
-  g.globalAlpha = 1;
-}
-function render() {
-  if (capture()) {
-    segment();
-    if (!fgPrompt && !bgPrompt) octx.drawImage(grab, 0, 0);            // nothing entered yet: just you
-    else {
-      drawBackground(octx);
-      if (fgPrompt && person) {                                                    // the re-imagined you
-        livePose = smoothPose(livePose, poseOf(mask));
-        follow(octx, personPose, () => octx.drawImage(cutout(person, personMask), 0, 0));
-        const k = Math.min(1, (performance.now() - personAt) / fade);
-        if (k < 1) { octx.globalAlpha = 1 - k; follow(octx, prevPose, () => octx.drawImage(prevCut, 0, 0)); octx.globalAlpha = 1; }   // the last frame melts into the new one
-      }
-      else if (bgImg) octx.drawImage(cutout(grab, mask), 0, 0);                  // the real you, on the new background
-    }
-  }
-  setStatus();
-  requestAnimationFrame(render);
-}
-
-// ---------- following you between generated frames ----------
-// A new picture only arrives a few times a second. In between, the last picture is moved and scaled
-// to wherever your body is right now (read from the live camera outline), so the motion stays fluid.
-function poseOf(maskCanvas) {
-  const g = poseCanvas.getContext("2d", { willReadFrequently: true });
-  g.clearRect(0, 0, 64, 38); g.drawImage(maskCanvas, 0, 0, 64, 38);
-  const d = g.getImageData(0, 0, 64, 38).data;
-  let sum = 0, sx = 0, sy = 0, top = 38;
-  for (let y = 0; y < 38; y++) for (let x = 0; x < 64; x++) {
-    const a = d[(y * 64 + x) * 4 + 3] / 255;
-    if (a > 0.5) { sum += a; sx += a * x; sy += a * y; if (y < top) top = y; }
-  }
-  if (sum < 20) return null;                                  // nobody there
-  return { cx: sx / sum / 64 * W, cy: sy / sum / 38 * H, h: (sy / sum - top) / 38 * H };
-}
-function smoothPose(a, b) {
-  if (!a || !b) return b;
-  const k = 0.5;
-  return { cx: a.cx + (b.cx - a.cx) * k, cy: a.cy + (b.cy - a.cy) * k, h: a.h + (b.h - a.h) * k };
-}
-function follow(g, from, draw) {
-  if (!from || !livePose) { draw(); return; }
-  const s = Math.max(0.85, Math.min(1.18, livePose.h / Math.max(1, from.h)));
-  let tx = livePose.cx - s * from.cx, ty = livePose.cy - s * from.cy;
-  const lim = W * 0.2; tx = Math.max(-lim, Math.min(lim, tx)); ty = Math.max(-lim, Math.min(lim, ty));
-  g.save(); g.setTransform(s, 0, 0, s, tx, ty); draw(); g.restore();
-}
-
-// ---------- server ----------
-async function connect() {
-  try {
-    const m = await (await fetch("/config", { cache: "no-store" })).json();
-    if (m.width !== W || m.height !== H) { W = m.width; H = m.height; sizeCanvases(); }
-    engine = m.engine; refsOk = m.references;
-    paintSlots();
-    online = true; pump();
-  } catch (e) { online = false; setTimeout(connect, 2000); }
-}
-const offline = () => { online = false; flying = 0; setTimeout(connect, 2000); };
-
-// the person: up to two frames in the pipeline, so the GPU never waits for the browser
-const MAX_FLYING = 2;
-let pumpTimer = 0;
-const schedule = (ms) => { clearTimeout(pumpTimer); pumpTimer = setTimeout(pump, ms); };   // only ever one waiting call
-async function pump() {
-  if (!fgPrompt || flying >= MAX_FLYING || !online) return;
-  if (!video.videoWidth) { schedule(100); return; }
-  // if you haven't moved, don't make a new frame: a still person stays perfectly still
-  const sig = signature();
-  if (lastSig && moved(sig, lastSig) < 1.5) { schedule(60); return; }
-  lastSig = sig;
-  flying++;
-  const mine = ++seq;
-  // you, cut out and placed on the background, so the light and colours blend
-  const s = send.getContext("2d");
-  drawBackground(s);
-  s.drawImage(cutout(grab, mask), 0, 0);
-  const myMask = mk(); myMask.getContext("2d").drawImage(mask, 0, 0);   // which pixels were you in this frame
-  const myPose = poseOf(mask);
-  // start the next one about halfway through this one
-  schedule(Math.max(40, stat.ms * 0.5));
-  try {
-    const jpeg = await new Promise(r => send.toBlob(r, "image/jpeg", 0.85));
-    const q = `strength=${$("strength").value}&steady=${$("steady").value}&style=${$("style").value}&prompt=` + encodeURIComponent(fgPrompt);
-    const res = await fetch("/frame?" + q, { method: "POST", body: jpeg, headers: { "Content-Type": "image/jpeg" } });
-    if (!res.ok) throw new Error("status " + res.status);
-    stat.ms = +res.headers.get("X-Gen-Ms") || 0;
-    const bmp = await createImageBitmap(await res.blob());
-    flying--;
-    if (mine < shownSeq || !fgPrompt) { bmp.close(); pump(); return; }   // an older frame arriving late: skip it
-    shownSeq = mine;
-    const now = performance.now();
-    if (person) {                                       // keep the current frame to fade out from
-      const pc = prevCut.getContext("2d"); pc.clearRect(0, 0, W, H); pc.drawImage(cutout(person, personMask), 0, 0);
-      prevPose = personPose;
-      person.close();
-      fade = Math.min(220, Math.max(60, (now - personAt) * 0.7));
-    }
-    person = bmp; personAt = now; personPose = myPose;
-    fitMask(bmp, myMask);
-    stat.times.push(now); while (stat.times.length && now - stat.times[0] > 2000) stat.times.shift();
-    pump();
-  } catch (e) { offline(); }
-}
-
-// a tiny greyscale thumbnail of the camera, to tell whether anything moved since the last frame
-function signature() {
-  const g = tiny.getContext("2d", { willReadFrequently: true });
-  g.drawImage(grab, 0, 0, 32, 20);
-  const d = g.getImageData(0, 0, 32, 20).data, s = new Float32Array(640);
-  for (let i = 0; i < 640; i++) s[i] = d[i * 4] * 0.3 + d[i * 4 + 1] * 0.59 + d[i * 4 + 2] * 0.11;
-  return s;
-}
-function moved(a, b) { let t = 0; for (let i = 0; i < a.length; i++) t += Math.abs(a[i] - b[i]); return t / a.length; }
-// changing a prompt, a slider or a reference always makes a fresh frame
-const refresh = () => { lastSig = null; };
-["strength", "steady", "style"].forEach(id => $(id).addEventListener("input", refresh));
-
-// the background: once per Enter, a fresh one every time
-async function makeBackground() {
-  if (!bgPrompt) { oldBg = null; bgImg = null; return; }
-  stat.note = "making background…";
-  try {
-    const res = await fetch(`/background?style=${$("style").value}&prompt=` + encodeURIComponent(bgPrompt), { cache: "no-store" });
-    if (!res.ok) throw new Error("status " + res.status);
-    stat.bgMs = +res.headers.get("X-Gen-Ms") || 0;
-    oldBg = bgImg; bgImg = await createImageBitmap(await res.blob()); bgAt = performance.now(); refresh();
-    stat.note = "";
-  } catch (e) { stat.note = ""; offline(); }
-}
+// ---------- prompts ----------
+let fgPrompt = "", bgPrompt = "";
+$("form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  fgPrompt = $("fgPrompt").value.trim();
+  bgPrompt = $("bgPrompt").value.trim();
+  live.setPerson(fgPrompt);
+  live.setBackground(bgPrompt);
+});
 
 // ---------- reference images ----------
 const slots = [...document.querySelectorAll(".slot")];
 // with SD-Turbo only the background IMAGE slot does anything; the others are dimmed
 function paintSlots() {
-  slots.forEach(sl => sl.classList.toggle("nope", !refsOk && !(sl.dataset.side === "background" && sl.dataset.kind === "image")));
+  slots.forEach(sl => sl.classList.toggle("nope", !live.stat.references && !(sl.dataset.side === "background" && sl.dataset.kind === "image")));
 }
 async function shrink(file) {                          // big photos are scaled down before sending
   const bmp = await createImageBitmap(file);
@@ -344,15 +123,15 @@ async function setRef(sl, file) {
   const old = sl.querySelector("img"); if (old) { URL.revokeObjectURL(old.src); old.remove(); }
   sl.classList.toggle("full", !!file);
   if (file) { const img = new Image(); img.src = URL.createObjectURL(file); img.alt = ""; sl.prepend(img); }
-  stat.note = file ? "sending reference…" : "";
+  live.stat.note = file ? "sending reference…" : "";
   try {
     const body = file ? await shrink(file) : new Blob([]);
     const res = await fetch(`/reference?side=${side}&kind=${kind}`, { method: "POST", body, headers: { "Content-Type": "image/jpeg" } });
     const r = await res.json();
-    stat.note = file && !r.works ? "this reference needs the sd15 engine" : "";
-    refresh();
-    if (side === "background" && bgPrompt) makeBackground();   // show the new background straight away
-  } catch (e) { stat.note = ""; offline(); }
+    live.stat.note = file && !r.works ? "this reference needs the sd15 engine" : "";
+    live.refresh();
+    if (side === "background" && bgPrompt) live.setBackground(bgPrompt);   // show the new background straight away
+  } catch (e) { live.stat.note = ""; live.reconnect(); }
 }
 slots.forEach(sl => {
   const input = sl.querySelector("input");
@@ -367,34 +146,23 @@ slots.forEach(sl => {
   });
 });
 
+// ---------- status line ----------
 function setStatus() {
-  statusEl.classList.toggle("off", !online);
-  if (!online) { statusEl.innerHTML = "<b>server offline · retrying</b>"; return; }
-  const t = stat.times, fps = t.length > 1 ? ((t.length - 1) / ((t[t.length - 1] - t[0]) / 1000)).toFixed(1) : "–";
-  const parts = [];
-  if (fgPrompt) parts.push(`<b>you</b> ${fps} fps · ${stat.ms} ms`);
-  if (bgPrompt && stat.bgMs) parts.push(`<b>background</b> ${(stat.bgMs / 1000).toFixed(2)} s`);
-  if (!parts.length) parts.push("<b>camera</b> · type a prompt, press Enter");
-  if (stat.note) parts.push(stat.note);
-  if (stat.seg) parts.push(stat.seg);
-  statusEl.innerHTML = parts.join(" &nbsp;·&nbsp; ");
+  const st = live.stat;
+  statusEl.classList.toggle("off", !st.online);
+  if (!st.online) statusEl.innerHTML = "<b>server offline · retrying</b>";
+  else {
+    const parts = [];
+    if (fgPrompt) parts.push(`<b>you</b> ${st.fps} fps · ${st.ms} ms`);
+    if (bgPrompt && st.bgMs) parts.push(`<b>background</b> ${(st.bgMs / 1000).toFixed(2)} s`);
+    if (!parts.length) parts.push("<b>camera</b> · type a prompt, press Enter");
+    if (st.note) parts.push(st.note);
+    if (st.seg) parts.push(st.seg);
+    statusEl.innerHTML = parts.join(" &nbsp;·&nbsp; ");
+  }
+  requestAnimationFrame(setStatus);
 }
-
-// ---------- prompts ----------
-$("form").addEventListener("submit", (e) => {
-  e.preventDefault();
-  fgPrompt = $("fgPrompt").value.trim();
-  bgPrompt = $("bgPrompt").value.trim();
-  stat.times.length = 0;
-  refresh();
-  if (!fgPrompt && person) { person.close(); person = null; }
-  makeBackground();
-  pump();
-});
-
-startSegmenter();
-startCamera();
-connect();
+setStatus();
 </script>
 </body>
 </html>

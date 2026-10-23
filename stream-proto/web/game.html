@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Playing Against Chance</title>
+<style>
+/* Layout: the same framed screen as the lab. The live picture fills it; a small card in its lower-left corner says what
+   chance is about to decide and what it decided. Underneath: the four stages, (in BIRTH) the six sperm, and one big button. White, minimal. */
+:root { --ink: #111; --dim: #8a8a8a; --line: #d6d6d6; --bg: #fff; --hit: #c0392b; color-scheme: light; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: ui-sans-serif, system-ui, -apple-system, "Helvetica Neue", sans-serif; }
+.frame { box-sizing: border-box; height: 100%; max-width: 1240px; margin: 0 auto; padding: 24px; display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: 18px; }
+.gen { position: relative; min-height: 0; border: 1.5px solid var(--ink); border-radius: 4px; overflow: hidden; display: grid; place-items: center; background: #f5f5f5; }
+.gen canvas { width: 100%; height: 100%; object-fit: contain; display: block; }
+.pip { position: absolute; top: 12px; right: 12px; width: clamp(110px, 16%, 200px); aspect-ratio: 16 / 9; object-fit: cover; transform: scaleX(-1); border: 1.5px solid var(--ink); border-radius: 3px; background: #ddd; }
+.status { position: absolute; top: 12px; left: 14px; font-size: 11px; letter-spacing: 0.04em; color: var(--dim); background: rgba(255,255,255,0.85); padding: 3px 7px; border-radius: 3px; }
+.status b { font-weight: 600; color: var(--ink); }
+
+.card { position: absolute; left: 16px; bottom: 16px; width: min(400px, calc(100% - 32px)); max-height: calc(100% - 60px); overflow: auto; box-sizing: border-box; padding: 18px 20px; background: rgba(255,255,255,0.94); border: 1.5px solid var(--ink); border-radius: 4px; display: flex; flex-direction: column; gap: 10px; }
+.card[hidden] { display: none; }
+.card .kicker { font-size: 10px; font-weight: 600; letter-spacing: 0.14em; color: var(--dim); }
+.card h2 { margin: 0; font-size: 22px; line-height: 1.15; font-weight: 650; letter-spacing: -0.01em; }
+.card p { margin: 0; font-size: 15px; line-height: 1.4; color: #333; }
+.rows { display: flex; flex-direction: column; gap: 5px; margin-top: 2px; }
+.row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: baseline; font-size: 13px; padding: 4px 0; border-bottom: 1px solid #eee; }
+.row .k { color: var(--dim); font-size: 10px; font-weight: 600; letter-spacing: 0.1em; display: block; }
+.row .v { font-weight: 600; }
+.row .o { font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.row.on { background: #111; color: #fff; padding-inline: 6px; border-radius: 2px; }
+.row.on .o, .row.on .k { color: #ccc; }
+.row.got .v { color: var(--ink); }
+.row.pending .v { color: #bbb; }
+.dice { font-size: 64px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; text-align: center; padding: 6px 0; }
+.dice.lost { color: var(--hit); }
+.small { font-size: 12px; color: var(--dim); }
+
+.bar { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 16px; align-items: center; }
+.steps { display: flex; gap: 6px; align-items: center; font-size: 11px; font-weight: 600; letter-spacing: 0.12em; color: #bbb; }
+.steps span.now { color: var(--ink); }
+.steps span.done { color: var(--dim); }
+.steps i { width: 18px; height: 1.5px; background: var(--line); }
+.picks { display: flex; gap: 8px; justify-content: center; }
+.picks[hidden] { display: flex; visibility: hidden; }   /* keeps its place so the button never jumps */
+.picks button { width: 52px; height: 52px; font: inherit; font-size: 18px; font-weight: 650; border: 1.5px solid var(--ink); border-radius: 50%; background: #fff; color: var(--ink); cursor: pointer; }
+.picks button.sel { background: var(--ink); color: #fff; }
+.go { font: inherit; font-size: 15px; font-weight: 600; letter-spacing: 0.08em; min-width: 180px; padding: 18px 28px; border: 1.5px solid var(--ink); border-radius: 4px; background: var(--ink); color: #fff; cursor: pointer; }
+.go:disabled { background: #fff; color: #bbb; border-color: #ccc; cursor: default; }
+.go:active:not(:disabled) { transform: translateY(1px); }
+button:focus-visible { outline: 3px solid #888; outline-offset: 2px; }
+@media (max-width: 760px) {
+  .frame { padding: 16px; }
+  .bar { grid-template-columns: 1fr; justify-items: center; }
+  .picks button { width: 44px; height: 44px; }
+  .go { width: 100%; }
+}
+</style>
+</head>
+<body>
+<div class="frame">
+  <div class="gen">
+    <canvas id="out" width="640" height="384" aria-label="The game screen"></canvas>
+    <video id="pip" class="pip" muted playsinline aria-label="Your camera"></video>
+    <div class="status" id="status">connecting…</div>
+    <div class="card" id="card" aria-live="polite"></div>
+  </div>
+  <div class="bar">
+    <div class="steps" id="steps"><span>BIRTH</span><i></i><span>BODY</span><i></i><span>HOME</span><i></i><span>WORLD</span></div>
+    <div class="picks" id="picks" hidden role="group" aria-label="Pick your sperm"></div>
+    <button class="go" id="go">START</button>
+  </div>
+</div>
+
+<script type="module">
+import { createLive } from "./live.js";
+import { BIRTH, BODY, HOME, WORLD, PROMPTS } from "./stages.js";
+
+const $ = (id) => document.getElementById(id);
+const card = $("card"), go = $("go"), picks = $("picks"), statusEl = $("status");
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+let stageStrength = 0.75;
+const live = createLive({ out: $("out"), video: $("pip"), params: () => ({ strength: stageStrength, steady: 0.4, style: 0.8 }) });
+
+// ---------- chance ----------
+let source = "";
+async function draw(n, lo, hi) {
+  try {
+    const r = await (await fetch(`/draw?n=${n}&lo=${lo}&hi=${hi}`, { cache: "no-store" })).json();
+    source = r.source; return r.values;
+  } catch (e) {                                            // server unreachable: the browser's own randomness
+    source = "LOCAL";
+    return Array.from({ length: n }, () => lo + Math.floor(Math.random() * (hi - lo + 1)));
+  }
+}
+const total = (opts) => opts.reduce((s, o) => s + o.w, 0);
+async function pick(opts) {                                // a weighted pick: draw 1..total, walk the list
+  const [v] = await draw(1, 1, total(opts));
+  let c = 0;
+  for (const o of opts) { c += o.w; if (v <= c) return o; }
+  return opts[opts.length - 1];
+}
+const odds = (o, opts) => { const p = o.w / total(opts); return p >= 0.5 ? Math.round(p * 100) + "%" : "1 in " + Math.round(1 / p); };
+
+// ---------- small helpers for the card ----------
+const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+function showCard(html) { card.hidden = false; card.innerHTML = html; }
+function setSteps(i) { [...$("steps").querySelectorAll("span")].forEach((s, k) => { s.className = k < i ? "done" : k === i ? "now" : ""; }); }
+let action = null;
+function button(label, fn, enabled = true) { go.textContent = label; go.disabled = !enabled; action = fn; }
+go.addEventListener("click", () => { if (!go.disabled && action) action(); });
+document.addEventListener("keydown", (e) => {
+  if (e.repeat) return;
+  if ((e.key === " " || e.key === "Enter") && !(e.target instanceof HTMLButtonElement)) { e.preventDefault(); go.click(); }
+  const n = parseInt(e.key, 10);
+  if (n >= 1 && n <= BIRTH.sperm && !picks.hidden) choose(n);
+});
+
+// ---------- the run ----------
+let r = {}, oddsAll = 1, attempts = 0;
+
+function intro() {
+  r = {}; oddsAll = 1; attempts = 0;
+  setSteps(-1);
+  live.setScene(null); live.setPerson(null); live.setBackground(null);
+  showCard(`<span class="kicker">PLAYING AGAINST CHANCE</span><h2>Before you are anyone, chance gets four rolls.</h2><p>Birth, body, home, world. Stand in front of the camera.</p>`);
+  button("START", birth);
+}
+
+// ---------- 1. BIRTH (drawn, no generation) ----------
+let mine = 0, winner = 0, raceAt = 0, phase = "pick";
+for (let i = 1; i <= BIRTH.sperm; i++) {
+  const b = document.createElement("button"); b.textContent = i; b.setAttribute("aria-label", "Sperm " + i);
+  b.addEventListener("click", () => choose(i)); picks.appendChild(b);
+}
+function choose(n) {
+  if (phase !== "pick") return;
+  mine = n;
+  [...picks.children].forEach((b, i) => b.classList.toggle("sel", i + 1 === n));
+  button("ROLL", rollBirth);
+}
+function birth() {
+  setSteps(0);
+  phase = "pick"; mine = 0; winner = 0;
+  live.setPerson(null); live.setBackground(null);
+  live.setScene(drawBirth);
+  picks.hidden = false; [...picks.children].forEach(b => b.classList.remove("sel"));
+  showCard(`<span class="kicker">1 · BIRTH</span><h2>${esc(BIRTH.intro)}</h2><p>Your odds: 1 in ${BIRTH.sperm}.${attempts ? ` Attempt ${attempts + 1}.` : ""}</p>`);
+  button("PICK A NUMBER", null, false);
+}
+async function rollBirth() {
+  phase = "race"; raceAt = performance.now(); attempts++;
+  button("…", null, false); picks.hidden = true;
+  showCard(`<span class="kicker">1 · BIRTH</span><div class="dice" id="dice">?</div><p class="small">You picked ${mine}.</p>`);
+  const res = draw(1, 1, BIRTH.sperm);
+  const t0 = performance.now();                              // the dice spins while random.org answers
+  while (performance.now() - t0 < 1400) { $("dice").textContent = 1 + Math.floor(Math.random() * BIRTH.sperm); await sleep(70); }
+  winner = (await res)[0];
+  $("dice").textContent = winner;
+  phase = "result"; raceAt = performance.now();
+  if (winner === mine) {
+    oddsAll *= 1 / BIRTH.sperm;
+    showCard(`<span class="kicker">1 · BIRTH</span><div class="dice">${winner}</div><h2>${esc(BIRTH.won)}</h2><p class="small">After ${attempts} ${attempts === 1 ? "try" : "tries"}. Chance: ${source}.</p>`);
+    button("NEXT: BODY", body);
+  } else {
+    $("dice").classList.add("lost");
+    card.insertAdjacentHTML("beforeend", `<h2>${esc(BIRTH.lost(winner))}</h2>`);
+    button("TRY AGAIN", birth);
+  }
+}
+// the drawn womb: an egg, the sperm, a race
+function drawBirth(g, W, H, now) {
+  const t = now / 1000;
+  const bg = g.createRadialGradient(W * 0.75, H * 0.5, 10, W * 0.6, H * 0.5, W * 0.8);
+  bg.addColorStop(0, "#f6c7c2"); bg.addColorStop(1, "#7a1f2b");
+  g.fillStyle = bg; g.fillRect(0, 0, W, H);
+  const ex = W * 0.78, ey = H * 0.5, er = H * 0.2;
+  const glow = phase === "result" && winner === mine ? 0.5 + 0.5 * Math.sin((now - raceAt) / 120) : 0;
+  g.fillStyle = `rgba(255,240,220,${0.25 + glow * 0.4})`; g.beginPath(); g.arc(ex, ey, er * 1.25, 0, 7); g.fill();
+  g.fillStyle = "#fff4e6"; g.beginPath(); g.arc(ex, ey, er, 0, 7); g.fill();
+  g.strokeStyle = "rgba(122,31,43,0.35)"; g.lineWidth = 2; g.stroke();
+  for (let i = 1; i <= BIRTH.sperm; i++) {
+    const lane = H * (0.18 + 0.64 * (i - 1) / (BIRTH.sperm - 1));
+    let x = W * 0.42, y = lane;                              // starts right of the card
+    if (phase === "race") x += Math.min(1, (now - raceAt) / 1400) * W * 0.1 + Math.sin(t * 3 + i) * 6;
+    if (phase === "result") {
+      const k = Math.min(1, (now - raceAt) / 1600);
+      x = W * 0.52;
+      if (i === winner) { x += (ex - er - W * 0.52) * k; y = lane + (ey - lane) * k; }
+      else g.globalAlpha = 1 - k * 0.8;
+    }
+    const sel = i === mine;
+    // tail
+    g.strokeStyle = sel ? "#111" : "rgba(255,255,255,0.9)"; g.lineWidth = sel ? 3 : 2;
+    g.beginPath();
+    for (let s = 0; s <= 24; s++) { const tx = x - 12 - s * 3, ty = y + Math.sin(t * 9 + s * 0.5 + i) * (s * 0.35); s ? g.lineTo(tx, ty) : g.moveTo(tx, ty); }
+    g.stroke();
+    // head
+    g.fillStyle = sel ? "#111" : "#fff"; g.beginPath(); g.ellipse(x, y, 13, 9, 0, 0, 7); g.fill();
+    g.fillStyle = sel ? "#fff" : "#7a1f2b"; g.font = "600 11px system-ui, sans-serif"; g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillText(i, x, y + 1);
+    g.globalAlpha = 1;
+  }
+}
+
+// ---------- 2. BODY ----------
+async function body() {
+  setSteps(1);
+  live.setScene(null); picks.hidden = true;
+  stageStrength = BODY.strength;
+  live.setPerson(null); live.setBackground(null);
+  const rows = BODY.traits.map(tr => `<div class="row pending" id="t-${tr.key}"><span><span class="k">${tr.name}</span><span class="v">?</span></span><span class="o">${tr.options.map(o => o.label.toLowerCase()).join(" / ")}</span></div>`).join("");
+  showCard(`<span class="kicker">2 · BODY</span><h2>${esc(BODY.intro)}</h2><div class="rows">${rows}</div>`);
+  button("ROLL", rollBody);
+}
+async function rollBody() {
+  button("…", null, false);
+  r.body = {};
+  for (const tr of BODY.traits) {                          // one draw per trait, revealed one by one
+    const o = await pick(tr.options);
+    r.body[tr.key] = o; oddsAll *= o.w / total(tr.options);
+    const row = $("t-" + tr.key);
+    row.classList.remove("pending"); row.classList.add("got");
+    row.querySelector(".v").textContent = o.label;
+    row.querySelector(".o").textContent = odds(o, tr.options);
+    await sleep(350);
+  }
+  card.insertAdjacentHTML("beforeend", `<p class="small">This is you, newborn. Chance: ${source}.</p>`);
+  const pr = PROMPTS.body(r);
+  live.setBackground(pr.background); live.setPerson(pr.person);
+  button("NEXT: HOME", home);
+}
+
+// ---------- 3. HOME ----------
+function home() {
+  setSteps(2);
+  stageStrength = HOME.strength;
+  const rows = HOME.options.map((o, i) => `<div class="row" id="h-${i}"><span class="v">${esc(o.label.toLowerCase())}</span><span class="o">${odds(o, HOME.options)}</span></div>`).join("");
+  showCard(`<span class="kicker">3 · HOME</span><h2>${esc(HOME.intro)}</h2><div class="rows">${rows}</div>`);
+  button("ROLL", rollHome);
+}
+// a light runs down the list and stops on chance's pick
+async function spin(prefix, opts, chosen) {
+  const n = opts.length, end = opts.indexOf(chosen), steps = n * 2 + end;
+  for (let s = 0; s <= steps; s++) {
+    opts.forEach((_, i) => $(prefix + i).classList.toggle("on", i === s % n));
+    await sleep(60 + Math.max(0, s - steps + 6) * 45);
+  }
+}
+async function rollHome() {
+  button("…", null, false);
+  const o = pick(HOME.options);
+  await spin("h-", HOME.options, await o);
+  r.home = await o; oddsAll *= r.home.w / total(HOME.options);
+  card.insertAdjacentHTML("beforeend", `<p><b>${esc(r.home.label.toLowerCase())}</b>: ${r.home.privileges.map(esc).join(" · ")}.</p>`);
+  const pr = PROMPTS.home(r);
+  live.setBackground(pr.background); live.setPerson(pr.person);
+  button("NEXT: WORLD", world);
+}
+
+// ---------- 4. WORLD ----------
+function world() {
+  setSteps(3);
+  stageStrength = WORLD.strength;
+  const rows = WORLD.where.map((o, i) => `<div class="row" id="w-${i}"><span class="v">${esc(o.label.toLowerCase())}</span><span class="o">${odds(o, WORLD.where)}</span></div>`).join("");
+  showCard(`<span class="kicker">4 · WORLD</span><h2>${esc(WORLD.intro)}</h2><div class="rows">${rows}</div><div class="rows" id="when"></div>`);
+  button("ROLL", rollWorld);
+}
+async function rollWorld() {
+  button("…", null, false);
+  const where = pick(WORLD.where);
+  await spin("w-", WORLD.where, await where);
+  const w = await where;
+  const [ci] = await draw(1, 1, w.cities.length);
+  const city = w.cities[ci - 1];
+  $("when").innerHTML = WORLD.when.map((o, i) => `<div class="row" id="e-${i}"><span class="v">${esc(o.label.toLowerCase())}</span><span class="o">${odds(o, WORLD.when)}</span></div>`).join("");
+  const when = pick(WORLD.when);
+  await spin("e-", WORLD.when, await when);
+  r.world = { where: w, city, when: await when };
+  oddsAll *= (w.w / total(WORLD.where)) * (1 / w.cities.length) * (r.world.when.w / total(WORLD.when));
+  card.insertAdjacentHTML("beforeend", `<p><b>${esc(city)}, ${esc(r.world.when.label.toLowerCase())}</b>.</p>`);
+  const pr = PROMPTS.world(r);
+  live.setBackground(pr.background); live.setPerson(pr.person);
+  button("WHO CHANCE MADE", summary);
+}
+
+// ---------- the baseline ----------
+function summary() {
+  setSteps(4);
+  const b = r.body;
+  showCard(`<span class="kicker">THE BASELINE</span><h2>This is the start chance gave you.</h2>
+    <div class="rows">
+      <div class="row"><span><span class="k">BIRTH</span><span class="v">born on try ${attempts}</span></span></div>
+      <div class="row"><span><span class="k">BODY</span><span class="v">${esc(`${b.sex.label.toLowerCase()} · ${b.hair.label.toLowerCase()} ${b.curl.label.toLowerCase()} hair · ${b.eyes.label.toLowerCase()} eyes · ${b.build.label.toLowerCase()}`)}</span></span></div>
+      <div class="row"><span><span class="k">HOME</span><span class="v">${esc(r.home.label.toLowerCase())}</span></span></div>
+      <div class="row"><span><span class="k">WORLD</span><span class="v">${esc(r.world.city)}, ${esc(r.world.when.label.toLowerCase())}</span></span></div>
+    </div>
+    <p>Odds of this exact start: <b>1 in ${Math.round(1 / oddsAll).toLocaleString("en-IN")}</b>. Nobody chose any of it.</p>`);
+  button("AGAIN", intro);
+}
+
+// ---------- status ----------
+function status() {
+  const st = live.stat;
+  statusEl.innerHTML = !st.online ? "<b>server offline</b>"
+    : [`<b>${st.fps}</b> fps`, source && `chance <b>${source}</b>`, st.note, st.seg].filter(Boolean).join(" · ");
+  requestAnimationFrame(status);
+}
+status();
+live.camera.catch(e => showCard(`<h2>No camera</h2><p>${esc(e.message || e.name)}</p>`));
+intro();
+</script>
+</body>
+</html>

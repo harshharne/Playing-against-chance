@@ -30,10 +30,14 @@ import io
 import os
 import random
 import time
+import json
+import secrets
+import urllib.request
 import zlib
 
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, Response
+from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageDraw, ImageFilter, ImageOps, ImageStat
 
 # ---------- settings you may want to tweak ----------
@@ -54,6 +58,9 @@ PERSON_STEPS = 1                  # 1 = faster and smoother, 2 = cleaner but abo
 BG_IMAGE_KEEP = 0.35              # background IMAGE reference: how much of the picture survives (0.2–0.6)
 # from the sliders on the page: CHANGE = how much the person is re-imagined,
 # STEADY = how much each frame leans on the previous one (less flicker, more lag/ghosting)
+
+# chance: random.org (true randomness). Falls back to the computer's own randomness if it can't be reached.
+RANDOM_ORG_KEY = os.environ.get("RANDOM_ORG_KEY", "")
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 app = FastAPI()
@@ -310,9 +317,39 @@ async def load():
     print(f"open http://localhost:{PORT}" + ("   (MOCK mode)" if MOCK else ""))
 
 
-@app.get("/")
-async def index():
-    return FileResponse(os.path.join(HERE, "web", "index.html"))
+@app.get("/game")
+async def game():
+    return FileResponse(os.path.join(HERE, "web", "game.html"))
+
+
+# ---------- chance ----------
+_rand_backoff = 0.0
+
+
+def draw_ints(n, lo, hi):
+    """n whole numbers from lo to hi (inclusive). random.org first, local randomness if that fails."""
+    global _rand_backoff
+    if RANDOM_ORG_KEY and time.time() > _rand_backoff:
+        try:
+            body = json.dumps({"jsonrpc": "2.0", "method": "generateIntegers", "id": 1,
+                               "params": {"apiKey": RANDOM_ORG_KEY, "n": n, "min": lo, "max": hi, "replacement": True}}).encode()
+            req = urllib.request.Request("https://api.random.org/json-rpc/4/invoke", body, {"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=5) as r:
+                data = json.loads(r.read())
+            if "error" in data:
+                raise RuntimeError(data["error"].get("message"))
+            return data["result"]["random"]["data"], "RANDOM.ORG"
+        except Exception as e:
+            print("[chance] random.org failed, using local randomness for 30 s:", e)
+            _rand_backoff = time.time() + 30
+    return [lo + secrets.randbelow(hi - lo + 1) for _ in range(n)], "LOCAL"
+
+
+@app.get("/draw")
+async def draw(n: int = 1, lo: int = 1, hi: int = 6):
+    n, lo, hi = max(1, min(50, n)), int(lo), int(hi)
+    values, source = await asyncio.to_thread(draw_ints, n, lo, max(lo, hi))
+    return {"values": values, "source": source}
 
 
 @app.get("/config")
@@ -352,6 +389,10 @@ async def background(prompt: str = "", style: float = 0.8):
     async with lock:
         out, ms = await asyncio.to_thread(run_background, prompt, random.randrange(1 << 30), max(0.0, min(1.5, style)))
     return Response(out, media_type="image/jpeg", headers={"X-Gen-Ms": str(round(ms)), "Cache-Control": "no-store"})
+
+
+# the pages (index.html = the lab, game.html = the game, live.js, stages.js); mounted last so the routes above win
+app.mount("/", StaticFiles(directory=os.path.join(HERE, "web"), html=True), name="web")
 
 
 if __name__ == "__main__":
