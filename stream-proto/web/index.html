@@ -36,8 +36,9 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: ui-sans
 .slot.nope { opacity: 0.45; }
 .slot .x { position: absolute; top: 2px; right: 2px; z-index: 1; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 50%; background: rgba(17,17,17,0.85); color: #fff; font-size: 12px; line-height: 18px; cursor: pointer; display: none; }
 .slot.full .x { display: block; }
-.change { display: flex; flex-direction: column; justify-content: center; gap: 6px; padding: 0 6px; font-size: 10px; font-weight: 600; letter-spacing: 0.1em; color: var(--dim); }
-.change input { width: 110px; accent-color: var(--ink); }
+.sliders { display: flex; flex-direction: column; justify-content: center; gap: 8px; padding: 0 6px; }
+.change { display: grid; grid-template-columns: 54px 110px; align-items: center; gap: 8px; font-size: 10px; font-weight: 600; letter-spacing: 0.1em; color: var(--dim); }
+.change input { width: 100%; margin: 0; accent-color: var(--ink); }
 .enter { font: inherit; font-size: 15px; font-weight: 600; letter-spacing: 0.08em; padding: 0 34px; border: 1.5px solid var(--ink); border-radius: 4px; background: var(--ink); color: #fff; cursor: pointer; }
 .enter:active { transform: translateY(1px); }
 .enter:focus-visible { outline: 3px solid #888; outline-offset: 2px; }
@@ -45,8 +46,8 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: ui-sans
 @media (max-width: 640px) {
   .frame { padding: 16px; }
   .bar { grid-template-columns: 1fr; }
-  .change { flex-direction: row; align-items: center; padding: 4px 0; }
-  .change input { flex: 1; width: auto; }
+  .sliders { padding: 4px 0; }
+  .change { grid-template-columns: 54px 1fr; }
   .enter { padding: 14px; }
   .slot { width: 52px; }
   .pip { top: auto; bottom: 12px; }
@@ -72,7 +73,10 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: ui-sans
       <label class="slot" data-side="background" data-kind="style" title="Style reference for the background"><input type="file" accept="image/*"><span class="lab">STYLE</span><button type="button" class="x" aria-label="Remove">×</button></label>
       <label class="slot" data-side="background" data-kind="image" title="Image reference for the background: it becomes the starting picture"><input type="file" accept="image/*"><span class="lab">IMAGE</span><button type="button" class="x" aria-label="Remove">×</button></label>
     </div>
-    <label class="change">CHANGE<input id="strength" type="range" min="0.3" max="0.9" step="0.05" value="0.6" aria-label="How much you change"></label>
+    <div class="sliders">
+      <label class="change" title="How much you get re-imagined">CHANGE<input id="strength" type="range" min="0.3" max="0.9" step="0.05" value="0.6"></label>
+      <label class="change" title="Less flicker (higher) vs. quicker to follow you (lower)">STEADY<input id="steady" type="range" min="0" max="0.8" step="0.05" value="0.4"></label>
+    </div>
     <button type="submit" class="enter">ENTER</button>
   </form>
 </div>
@@ -82,17 +86,18 @@ const $ = (id) => document.getElementById(id);
 const out = $("out"), octx = out.getContext("2d"), statusEl = $("status"), hint = $("hint");
 let W = 640, H = 384;
 const mk = () => { const c = document.createElement("canvas"); c.width = W; c.height = H; return c; };
-let grab, mask, sendMask, personMask, fg, send;     // working canvases, sized once the server tells us W x H
+let grab, mask, sendMask, personMask, fg, send, prevCut;   // working canvases, sized once the server tells us W x H
+const tiny = Object.assign(document.createElement("canvas"), { width: 32, height: 20 });   // for "has anything moved?"
 const video = $("pip");                              // the small camera window is also what we read frames from
 
 let online = false, fgPrompt = "", bgPrompt = "", inFlight = false, engine = "", refsOk = true;
-let bgImg = null, oldBg = null, bgAt = 0, person = null;
+let bgImg = null, oldBg = null, bgAt = 0, person = null, personAt = 0, fade = 150, lastSig = null;
 let segmenter = null, segOk = false;
 const stat = { ms: 0, bgMs: 0, times: [], note: "", seg: "" };
 
 function sizeCanvases() {
   out.width = W; out.height = H;
-  [grab, mask, sendMask, personMask, fg, send] = [mk(), mk(), mk(), mk(), mk(), mk()];
+  [grab, mask, sendMask, personMask, fg, send, prevCut] = [mk(), mk(), mk(), mk(), mk(), mk(), mk()];
 }
 sizeCanvases();
 
@@ -175,7 +180,11 @@ function render() {
     if (!fgPrompt && !bgPrompt) octx.drawImage(grab, 0, 0);            // nothing entered yet: just you
     else {
       drawBackground(octx);
-      if (fgPrompt && person) octx.drawImage(cutout(person, personMask), 0, 0);   // the re-imagined you
+      if (fgPrompt && person) {                                                    // the re-imagined you
+        octx.drawImage(cutout(person, personMask), 0, 0);
+        const k = Math.min(1, (performance.now() - personAt) / fade);
+        if (k < 1) { octx.globalAlpha = 1 - k; octx.drawImage(prevCut, 0, 0); octx.globalAlpha = 1; }   // the last frame melts into the new one
+      }
       else if (bgImg) octx.drawImage(cutout(grab, mask), 0, 0);                  // the real you, on the new background
     }
   }
@@ -199,6 +208,10 @@ const offline = () => { online = false; inFlight = false; setTimeout(connect, 20
 async function pump() {
   if (!fgPrompt || inFlight || !online) return;
   if (!video.videoWidth) { setTimeout(pump, 100); return; }
+  // if you haven't moved, don't make a new frame: a still person stays perfectly still
+  const sig = signature();
+  if (lastSig && moved(sig, lastSig) < 1.5) { setTimeout(pump, 60); return; }
+  lastSig = sig;
   inFlight = true;
   // you, cut out and placed on the background, so the light and colours blend
   const s = send.getContext("2d");
@@ -208,20 +221,37 @@ async function pump() {
   sm.clearRect(0, 0, W, H); sm.drawImage(mask, 0, 0);          // remember which pixels were you in this frame
   try {
     const jpeg = await new Promise(r => send.toBlob(r, "image/jpeg", 0.85));
-    const strength = $("strength").value;
-    const res = await fetch(`/frame?strength=${strength}&prompt=` + encodeURIComponent(fgPrompt), { method: "POST", body: jpeg, headers: { "Content-Type": "image/jpeg" } });
+    const q = `strength=${$("strength").value}&steady=${$("steady").value}&prompt=` + encodeURIComponent(fgPrompt);
+    const res = await fetch("/frame?" + q, { method: "POST", body: jpeg, headers: { "Content-Type": "image/jpeg" } });
     if (!res.ok) throw new Error("status " + res.status);
     stat.ms = +res.headers.get("X-Gen-Ms") || 0;
     const bmp = await createImageBitmap(await res.blob());
-    if (person) person.close();
-    person = bmp;
-    const pm = personMask.getContext("2d"); pm.clearRect(0, 0, W, H); pm.drawImage(sendMask, 0, 0);
     const now = performance.now();
+    if (person) {                                       // keep the current frame to fade out from
+      const pc = prevCut.getContext("2d"); pc.clearRect(0, 0, W, H); pc.drawImage(cutout(person, personMask), 0, 0);
+      person.close();
+      fade = Math.min(220, Math.max(60, (now - personAt) * 0.7));
+    }
+    person = bmp; personAt = now;
+    const pm = personMask.getContext("2d"); pm.clearRect(0, 0, W, H); pm.drawImage(sendMask, 0, 0);
     stat.times.push(now); while (stat.times.length && now - stat.times[0] > 2000) stat.times.shift();
     inFlight = false;
     pump();
   } catch (e) { offline(); }
 }
+
+// a tiny greyscale thumbnail of the camera, to tell whether anything moved since the last frame
+function signature() {
+  const g = tiny.getContext("2d", { willReadFrequently: true });
+  g.drawImage(grab, 0, 0, 32, 20);
+  const d = g.getImageData(0, 0, 32, 20).data, s = new Float32Array(640);
+  for (let i = 0; i < 640; i++) s[i] = d[i * 4] * 0.3 + d[i * 4 + 1] * 0.59 + d[i * 4 + 2] * 0.11;
+  return s;
+}
+function moved(a, b) { let t = 0; for (let i = 0; i < a.length; i++) t += Math.abs(a[i] - b[i]); return t / a.length; }
+// changing a prompt, a slider or a reference always makes a fresh frame
+const refresh = () => { lastSig = null; };
+["strength", "steady"].forEach(id => $(id).addEventListener("input", refresh));
 
 // the background: once per Enter, a fresh one every time
 async function makeBackground() {
@@ -231,7 +261,7 @@ async function makeBackground() {
     const res = await fetch("/background?prompt=" + encodeURIComponent(bgPrompt), { cache: "no-store" });
     if (!res.ok) throw new Error("status " + res.status);
     stat.bgMs = +res.headers.get("X-Gen-Ms") || 0;
-    oldBg = bgImg; bgImg = await createImageBitmap(await res.blob()); bgAt = performance.now();
+    oldBg = bgImg; bgImg = await createImageBitmap(await res.blob()); bgAt = performance.now(); refresh();
     stat.note = "";
   } catch (e) { stat.note = ""; offline(); }
 }
@@ -260,6 +290,7 @@ async function setRef(sl, file) {
     const res = await fetch(`/reference?side=${side}&kind=${kind}`, { method: "POST", body, headers: { "Content-Type": "image/jpeg" } });
     const r = await res.json();
     stat.note = file && !r.works ? "this reference needs the sd15 engine" : "";
+    refresh();
     if (side === "background" && bgPrompt) makeBackground();   // show the new background straight away
   } catch (e) { stat.note = ""; offline(); }
 }
@@ -295,6 +326,7 @@ $("form").addEventListener("submit", (e) => {
   fgPrompt = $("fgPrompt").value.trim();
   bgPrompt = $("bgPrompt").value.trim();
   stat.times.length = 0;
+  refresh();
   if (!fgPrompt && person) { person.close(); person = null; }
   makeBackground();
   pump();

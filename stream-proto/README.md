@@ -23,6 +23,8 @@ Open http://localhost:8766 in Chrome and allow the camera. The Mac needs to be o
   - IMAGE for you: what you should resemble (mixed with the style).
   - IMAGE for the background: becomes the starting picture, re-imagined by the prompt.
 - CHANGE: how much you get re-imagined (0.3 = still you, 0.9 = mostly invented).
+- STEADY: how much each frame leans on the last one. Higher = less flicker, but slower to follow you (ghosting). Lower = quicker, more flicker.
+- When you stand still, no new frames are made, so a still you stays perfectly still.
 - Every Enter makes a new background, even with the same prompt.
 - The small window in the corner is the plain camera.
 
@@ -32,8 +34,7 @@ Open http://localhost:8766 in Chrome and allow the camera. The Mac needs to be o
 - `MOCK=1 python stream_server.py`: no model, fake effect, to test the page.
 
 ## Knobs (top of stream_server.py)
-- PERSON_STEPS 2 — set to 1 for more fps, rougher image
+- PERSON_STEPS 1 — set to 2 for a cleaner image at about half the fps
 - REF_SCALE — how strongly references steer you / the background
 - BG_IMAGE_KEEP 0.35 — how much of the background IMAGE reference survives
-- SMOOTH 0.2 — blends with the previous frame; higher = calmer but ghostier
 - WIDTH × HEIGHT 640×384 — smaller (e.g. 512×320) = faster

@@ -18,7 +18,7 @@ Engines (set ENGINE=... when starting):
 
 Speed tricks (the same ideas StreamDiffusion uses): few-step distilled models, a tiny VAE for
 live frames, prompts and reference images encoded once, the same noise every frame, light
-blending with the previous frame, and only one frame in flight.
+feeding each result back into the next frame, and only one frame in flight.
 
 First time:     python download_models.py   (downloads everything once, ~5 GB)
 Run:            python stream_server.py      then open http://localhost:8766
@@ -39,7 +39,6 @@ from PIL import Image, ImageDraw, ImageFilter, ImageOps, ImageStat
 # ---------- settings you may want to tweak ----------
 PORT = 8766
 WIDTH, HEIGHT = 640, 384          # output size; both must be multiples of 64
-SMOOTH = 0.2                      # 0 = no blending with the previous frame, 0.6 = very calm but ghosty
 SEED = 7                          # noise used for the live person frames
 ENGINE = os.environ.get("ENGINE", "sd15")
 MOCK = os.environ.get("MOCK") == "1"
@@ -50,10 +49,11 @@ IP_ADAPTER = ("h94/IP-Adapter", "models", "ip-adapter_sd15.safetensors")
 TURBO_MODEL = "stabilityai/sd-turbo"
 TINY_VAE = "madebyollin/taesd"
 
-PERSON_STEPS = 2 if ENGINE == "sd15" else 1   # 1 = faster, 2 = cleaner (sd15 only)
+PERSON_STEPS = 1                  # 1 = faster and smoother, 2 = cleaner but about half the fps (sd15 only)
 REF_SCALE = {"person": 0.5, "background": 0.7}  # how strongly the reference images steer each side
 BG_IMAGE_KEEP = 0.35              # background IMAGE reference: how much of the picture survives (0.2–0.6)
-# the strength of the person change comes from the slider on the page
+# from the sliders on the page: CHANGE = how much the person is re-imagined,
+# STEADY = how much each frame leans on the previous one (less flicker, more lag/ghosting)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 app = FastAPI()
@@ -174,16 +174,20 @@ class Generator:
             x0 = sa * noisy - s1a * out if self.prediction == "v_prediction" else (noisy - s1a * out) / sa
         return x0
 
-    def person(self, img, prompt, strength):
+    def person(self, img, prompt, strength, steady):
         t1 = int(max(1, min(999, round(strength * 1000) - 1)))
         ts = [t1] if PERSON_STEPS == 1 else [t1, max(1, int(t1 * 0.4))]
         with self.torch.no_grad():
             lat = self.tiny_vae.encode(self.to_tensor(img)).latents
+            same = self.prev is not None and self.prev_key == prompt and self.prev.shape == lat.shape
+            if same and steady > 0:
+                # feedback: the new frame starts partly from the last result, so the look carries over
+                lat = (1 - steady) * lat + steady * self.prev
             x0 = self.denoise(lat, ts, prompt, "person")
-            key = (prompt, t1)
-            if self.prev is not None and self.prev_key == key and SMOOTH > 0:
-                x0 = SMOOTH * self.prev + (1 - SMOOTH) * x0
-            self.prev, self.prev_key = x0, key
+            if same and steady > 0:
+                # and the result is blended a little with the last one, so it doesn't jump
+                x0 = (steady * 0.5) * self.prev + (1 - steady * 0.5) * x0
+            self.prev, self.prev_key = x0, prompt
             y = self.tiny_vae.decode(x0).sample
         return self.to_image(y)
 
@@ -235,7 +239,7 @@ class MockGenerator:
             return fallback
         return tuple(int(v) for v in ImageStat.Stat(imgs[0].convert("RGB")).mean)
 
-    def person(self, img, prompt, strength):
+    def person(self, img, prompt, strength, steady):
         time.sleep(0.1)
         c = self.ref_colour("person", self.tint(prompt))
         g = ImageOps.colorize(ImageOps.grayscale(ImageOps.posterize(img, 3)), black=(20, 10, 40), white=c)
@@ -268,12 +272,12 @@ def jpeg_bytes(img):
     return buf.getvalue()
 
 
-def run_person(jpeg, prompt, strength):
+def run_person(jpeg, prompt, strength, steady=0.4):
     t0 = time.perf_counter()
     img = Image.open(io.BytesIO(jpeg)).convert("RGB")
     if img.size != (WIDTH, HEIGHT):
         img = ImageOps.fit(img, (WIDTH, HEIGHT))
-    out = gen.person(img, prompt, strength)
+    out = gen.person(img, prompt, strength, steady)
     return jpeg_bytes(out), (time.perf_counter() - t0) * 1000
 
 
@@ -318,13 +322,14 @@ async def reference(request: Request, side: str, kind: str):
 
 
 @app.post("/frame")
-async def frame(request: Request, prompt: str = "", strength: float = 0.6):
+async def frame(request: Request, prompt: str = "", strength: float = 0.6, steady: float = 0.4):
     """One camera frame in (JPEG), the person re-imagined out (JPEG)."""
     jpeg = await request.body()
     prompt = prompt.strip() or "a person"
     strength = max(0.1, min(0.95, strength))
+    steady = max(0.0, min(0.85, steady))
     async with lock:
-        out, ms = await asyncio.to_thread(run_person, jpeg, prompt, strength)
+        out, ms = await asyncio.to_thread(run_person, jpeg, prompt, strength, steady)
     return Response(out, media_type="image/jpeg", headers={"X-Gen-Ms": str(round(ms)), "Cache-Control": "no-store"})
 
 
