@@ -19,6 +19,7 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: ui-sans
 
 .card { position: absolute; left: 16px; bottom: 16px; width: min(400px, calc(100% - 32px)); max-height: calc(100% - 60px); overflow: auto; box-sizing: border-box; padding: 18px 20px; background: rgba(255,255,255,0.94); border: 1.5px solid var(--ink); border-radius: 4px; display: flex; flex-direction: column; gap: 10px; }
 .card[hidden] { display: none; }
+.card.narrow { width: min(300px, calc(100% - 32px)); }   /* in BIRTH, so the sperm on the left stay visible */
 .card .kicker { font-size: 10px; font-weight: 600; letter-spacing: 0.14em; color: var(--dim); }
 .card h2 { margin: 0; font-size: 22px; line-height: 1.15; font-weight: 650; letter-spacing: -0.01em; }
 .card p { margin: 0; font-size: 15px; line-height: 1.4; color: #333; }
@@ -120,6 +121,7 @@ let r = {}, oddsAll = 1, attempts = 0;
 
 function intro() {
   r = {}; oddsAll = 1; attempts = 0;
+  card.classList.remove("narrow");
   setSteps(-1);
   live.setScene(null); live.setPerson(null); live.setBackground(null);
   showCard(`<span class="kicker">PLAYING AGAINST CHANCE</span><h2>Before you are anyone, chance gets four rolls.</h2><p>Birth, body, home, world. Stand in front of the camera.</p>`);
@@ -143,6 +145,7 @@ function birth() {
   phase = "pick"; mine = 0; winner = 0;
   live.setPerson(null); live.setBackground(null);
   live.setScene(drawBirth);
+  card.classList.add("narrow");
   picks.hidden = false; [...picks.children].forEach(b => b.classList.remove("sel"));
   showCard(`<span class="kicker">1 · BIRTH</span><h2>${esc(BIRTH.intro)}</h2><p>Your odds: 1 in ${BIRTH.sperm}.${attempts ? ` Attempt ${attempts + 1}.` : ""}</p>`);
   button("PICK A NUMBER", null, false);
@@ -169,34 +172,48 @@ async function rollBirth() {
 }
 // the drawn womb: an egg, the sperm, a race
 function drawBirth(g, W, H, now) {
+  // H's sketch: the egg in the middle, the sperm around it, heads pointing in, tails trailing out
   const t = now / 1000;
-  const bg = g.createRadialGradient(W * 0.75, H * 0.5, 10, W * 0.6, H * 0.5, W * 0.8);
+  const cx = W * 0.63, cy = H * 0.5, er = H * 0.17;          // a little right of centre, clear of the card
+  const bg = g.createRadialGradient(cx, cy, 10, cx, cy, W * 0.75);
   bg.addColorStop(0, "#f6c7c2"); bg.addColorStop(1, "#7a1f2b");
   g.fillStyle = bg; g.fillRect(0, 0, W, H);
-  const ex = W * 0.78, ey = H * 0.5, er = H * 0.2;
-  const glow = phase === "result" && winner === mine ? 0.5 + 0.5 * Math.sin((now - raceAt) / 120) : 0;
-  g.fillStyle = `rgba(255,240,220,${0.25 + glow * 0.4})`; g.beginPath(); g.arc(ex, ey, er * 1.25, 0, 7); g.fill();
-  g.fillStyle = "#fff4e6"; g.beginPath(); g.arc(ex, ey, er, 0, 7); g.fill();
-  g.strokeStyle = "rgba(122,31,43,0.35)"; g.lineWidth = 2; g.stroke();
-  for (let i = 1; i <= BIRTH.sperm; i++) {
-    const lane = H * (0.18 + 0.64 * (i - 1) / (BIRTH.sperm - 1));
-    let x = W * 0.42, y = lane;                              // starts right of the card
-    if (phase === "race") x += Math.min(1, (now - raceAt) / 1400) * W * 0.1 + Math.sin(t * 3 + i) * 6;
+  // the egg, with its nucleus
+  const born = phase === "result" && winner === mine;
+  const glow = born ? 0.5 + 0.5 * Math.sin((now - raceAt) / 120) : 0;
+  g.fillStyle = `rgba(255,240,220,${0.22 + glow * 0.45})`; g.beginPath(); g.arc(cx, cy, er * 1.22, 0, 7); g.fill();
+  g.fillStyle = "#fff4e6"; g.beginPath(); g.arc(cx, cy, er, 0, 7); g.fill();
+  g.strokeStyle = "rgba(122,31,43,0.45)"; g.lineWidth = 2.5; g.stroke();
+  g.strokeStyle = "rgba(122,31,43,0.18)"; g.lineWidth = 1; g.beginPath(); g.arc(cx, cy, er * 0.9, 0, 7); g.stroke();
+  g.fillStyle = "#c98f8a"; g.beginPath(); g.arc(cx - er * 0.08, cy - er * 0.3, er * 0.16, 0, 7); g.fill();
+  // the sperm, spread evenly around it (none straight above or below)
+  const n = BIRTH.sperm, ring = er + H * 0.15, tail = H * 0.12;
+  const hx = Math.max(7, H * 0.034), hy = Math.max(5, H * 0.024);
+  for (let i = 1; i <= n; i++) {
+    const a = -Math.PI / 2 + (Math.PI * 2 / n) * (i - 0.5);
+    const ux = Math.cos(a), uy = Math.sin(a);                 // pointing out from the egg
+    let d = ring + Math.sin(t * 2 + i * 1.7) * 3;              // a gentle idle drift
+    if (phase === "race") d = ring - Math.min(1, (now - raceAt) / 1400) * H * 0.06 + Math.sin(t * 5 + i) * 3;
     if (phase === "result") {
       const k = Math.min(1, (now - raceAt) / 1600);
-      x = W * 0.52;
-      if (i === winner) { x += (ex - er - W * 0.52) * k; y = lane + (ey - lane) * k; }
-      else g.globalAlpha = 1 - k * 0.8;
+      if (i === winner) d = (ring - H * 0.06) + (er + hx * 0.6 - (ring - H * 0.06)) * k;   // the winner reaches the egg
+      else { d = ring - H * 0.06 + k * H * 0.05; g.globalAlpha = 1 - k * 0.8; }          // the rest fall back
     }
-    const sel = i === mine;
-    // tail
-    g.strokeStyle = sel ? "#111" : "rgba(255,255,255,0.9)"; g.lineWidth = sel ? 3 : 2;
+    const x = cx + ux * d, y = cy + uy * d, sel = i === mine;
+    // tail: trails outward, wriggling sideways
+    g.strokeStyle = sel ? "#111" : "rgba(255,255,255,0.92)"; g.lineWidth = sel ? 3 : 2; g.lineCap = "round";
     g.beginPath();
-    for (let s = 0; s <= 24; s++) { const tx = x - 12 - s * 3, ty = y + Math.sin(t * 9 + s * 0.5 + i) * (s * 0.35); s ? g.lineTo(tx, ty) : g.moveTo(tx, ty); }
+    for (let s = 0; s <= 24; s++) {
+      const along = hx + (s / 24) * tail, side = Math.sin(t * 9 + s * 0.5 + i) * (s * 0.3);
+      const px = x + ux * along - uy * side, py = y + uy * along + ux * side;
+      s ? g.lineTo(px, py) : g.moveTo(px, py);
+    }
     g.stroke();
-    // head
-    g.fillStyle = sel ? "#111" : "#fff"; g.beginPath(); g.ellipse(x, y, 13, 9, 0, 0, 7); g.fill();
-    g.fillStyle = sel ? "#fff" : "#7a1f2b"; g.font = "600 11px system-ui, sans-serif"; g.textAlign = "center"; g.textBaseline = "middle";
+    // head, pointing at the egg, with its number
+    g.save(); g.translate(x, y); g.rotate(a);
+    g.fillStyle = sel ? "#111" : "#fff"; g.beginPath(); g.ellipse(0, 0, hx, hy, 0, 0, 7); g.fill();
+    g.restore();
+    g.fillStyle = sel ? "#fff" : "#7a1f2b"; g.font = `600 ${Math.round(hy * 1.15)}px system-ui, sans-serif`; g.textAlign = "center"; g.textBaseline = "middle";
     g.fillText(i, x, y + 1);
     g.globalAlpha = 1;
   }
@@ -206,6 +223,7 @@ function drawBirth(g, W, H, now) {
 async function body() {
   setSteps(1);
   live.setScene(null); picks.hidden = true;
+  card.classList.remove("narrow");
   stageStrength = BODY.strength;
   live.setPerson(null); live.setBackground(null);
   const rows = BODY.traits.map(tr => `<div class="row pending" id="t-${tr.key}"><span><span class="k">${tr.name}</span><span class="v">?</span></span><span class="o">${tr.options.map(o => o.label.toLowerCase()).join(" / ")}</span></div>`).join("");
