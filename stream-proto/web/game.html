@@ -170,7 +170,7 @@ go.addEventListener("click", () => { if (!go.disabled && action) action(); });
 let waiting = false;                                        // between rounds: a throw of the die presses the big button
 const waitFor = (label) => new Promise(res => {
   waiting = true;
-  if (diceOn) diceEl.innerHTML = "DIE · <b>throw to go on</b>";
+  if (diceOn) chip("<b>throw to go on</b>");
   button(label, () => { waiting = false; button("…", null); res(); });
 });
 let choose = null, pickFace = null;                         // set while a round is waiting for your pick
@@ -245,19 +245,21 @@ function wishLine(res, opts) {
 let diceOn = false;
 const diceEl = $("dice");
 const diceStates = { waiting: "throw it", rolling: "rolling…", settling: "landing…", reading: "reading…", unclear: "can't read it, throw again", shown: "", off: "off" };
+let diceSrc = "";                                           // "python" or "browser": shown on the chip
+const chip = (html) => { diceEl.innerHTML = `DIE${diceSrc ? ` (${diceSrc})` : ""} · ${html}`; };
 const diceEvents = {
   onState: (s) => {
     if (!diceOn) return;
-    diceEl.innerHTML = s === "needs empty tray" ? 'DIE · <a href="/dice.html">set up the empty tray</a>' : `DIE · <b>${diceStates[s] ?? s}</b>`;
+    chip(s === "needs empty tray" ? '<a href="/dice.html">set up the empty tray</a>' : `<b>${diceStates[s] ?? s}</b>`);
   },
   onRoll: (n) => {
-    diceEl.innerHTML = `DIE · <b>${n}</b>`;
+    chip(`<b>${n}</b>`);
     if (pickFace) pickFace(n, true);                         // a round is open: your throw is your wish
     else if (waiting && action) go.click();                 // between rounds: go on
   },
 };
-function diceReady(name) {
-  diceOn = true; diceEl.innerHTML = "DIE · <b>throw it</b>"; diceEl.title = "read by " + name;
+function diceReady(src) {
+  diceOn = true; diceSrc = src; chip("<b>throw it</b>");
   if (choose && go.textContent === "PICK ONE") { subLine("Throw the die."); go.textContent = "THROW THE DIE"; }   // the first round was already up
 }
 function subLine(text) {                                    // set the small line under the message
@@ -265,15 +267,25 @@ function subLine(text) {                                    // set the small lin
   if (!sub) { sub = document.createElement("span"); sub.className = "sub"; msgEl.appendChild(sub); }
   sub.textContent = text;
 }
+// dice_reader.py always wins: the game keeps looking for it, and hands over to it the moment it appears.
+let browserDice = null;
+async function tryPython() {
+  try {
+    await createRemoteReader(diceEvents).start();
+    if (browserDice) { browserDice.stop(); browserDice = null; }   // the browser stops watching the die
+    diceReady("python");
+    return true;
+  } catch (e) { return false; }
+}
 (async () => {
-  try { await createRemoteReader(diceEvents).start(); diceReady("dice_reader.py"); return; }   // 1. the Python reader
-  catch (e) {}
-  let cam = "";                                             // 2. the browser reader
+  if (await tryPython()) return;
+  const look = setInterval(async () => { if (await tryPython()) clearInterval(look); }, 3000);
+  let cam = "";                                             // meanwhile: the browser reader, if one was set up on /dice.html
   try { cam = await findCamera("pac-dice-cam"); } catch (e) {}
-  if (!cam) { diceEl.innerHTML = 'DIE · <a href="/dice.html">set up</a>'; return; }
+  if (!cam) { diceEl.innerHTML = 'DIE · <a href="/dice.html">start dice_reader.py, or set up</a>'; return; }
   const dice = createDiceReader({ video: Object.assign(document.createElement("video"), { muted: true, playsInline: true }), ...diceEvents });
-  try { await dice.start(cam); diceReady("the browser"); }
-  catch (e) { console.warn("[dice]", e.name, e.message); diceEl.innerHTML = 'DIE · <a href="/dice.html">camera not found</a>'; }
+  try { await dice.start(cam); if (diceSrc !== "python") { browserDice = dice; diceReady("browser"); } else dice.stop(); }
+  catch (e) { console.warn("[dice]", e.name, e.message); if (!diceOn) diceEl.innerHTML = 'DIE · <a href="/dice.html">camera not found</a>'; }
 })();
 
 // ---------- the run ----------

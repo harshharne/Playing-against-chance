@@ -72,7 +72,7 @@ const dice = createDiceReader({
 async function listCameras() {
   cams = await camerasNow();
   const saved = { dice: await findCamera("pac-dice-cam"), avatar: await findCamera("pac-avatar-cam") };
-  for (const [id, key, none] of [["diceCam", "dice", "— no dice camera (use buttons) —"], ["avatarCam", "avatar", "default camera"]]) {
+  for (const [id, key, none] of [["diceCam", "dice", "— no dice camera (use buttons) —"], ["avatarCam", "avatar", "the Mac's own camera (default)"]]) {
     const sel = $(id);
     sel.innerHTML = `<option value="">${none}</option>` + cams.map((c, i) => `<option value="${c.deviceId}">${c.label || "Camera " + (i + 1)}</option>`).join("");
     sel.value = saved[key] && cams.some(c => c.deviceId === saved[key]) ? saved[key] : "";

@@ -28,3 +28,11 @@ export async function findCamera(key) {
   if (hit && hit.deviceId !== id) saveCamera(key, hit);   // the id changed: remember the new one
   return hit ? hit.deviceId : "";
 }
+
+// the Mac's own camera, if there is one: the avatar's default when none was chosen
+// (USB webcams are kept for the die)
+export async function builtInCamera() {
+  const cams = await listCameras();
+  const own = cams.find(c => /facetime|built-?in|macbook|integrated/i.test(c.label));
+  return own ? own.deviceId : "";
+}
