@@ -39,18 +39,22 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: ui-sans
 .looks button { font: inherit; font-size: 10px; font-weight: 600; letter-spacing: 0.1em; padding: 6px 11px; border: 0; background: #fff; color: var(--ink); cursor: pointer; }
 .looks button + button { border-left: 1.5px solid var(--ink); }
 .looks button[aria-pressed="true"] { background: var(--ink); color: #fff; }
+.dicestat { font-size: 10px; font-weight: 600; letter-spacing: 0.1em; color: var(--dim); }
+.dicestat b { color: var(--ink); }
+.dicestat a { color: var(--ink); }
 
 /* the choices for this round */
 .choices { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
 .ch { min-width: 64px; padding: 9px 14px; display: flex; flex-direction: column; align-items: center; gap: 3px; font: inherit; background: #fff; color: var(--ink); border: 1.5px solid var(--ink); border-radius: 4px; cursor: pointer; transition: background 0.08s, color 0.08s; }
 .ch b { font-size: 12px; font-weight: 650; letter-spacing: 0.05em; white-space: nowrap; }
-.ch small { font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.ch .faces { display: flex; gap: 3px; height: 15px; }
+.ch .faces svg { width: 15px; height: 15px; opacity: 0.7; }
 .ch:disabled { cursor: default; }
 .ch.round { width: 52px; height: 52px; min-width: 0; padding: 0; border-radius: 50%; justify-content: center; }
 .ch.round b { font-size: 17px; }
 .ch.wish { box-shadow: 0 0 0 3px #fff, 0 0 0 5px var(--ink); }          /* what you wished for */
 .ch.on, .ch.got { background: var(--ink); color: #fff; }                  /* chance's light / chance's pick */
-.ch.on small, .ch.got small { color: #ccc; }
+.ch.on .faces svg, .ch.got .faces svg { opacity: 0.8; }
 .ch.dim { opacity: 0.35; }
 
 .go { font: inherit; font-size: 15px; font-weight: 600; letter-spacing: 0.08em; min-width: 170px; padding: 18px 26px; border: 1.5px solid var(--ink); border-radius: 4px; background: var(--ink); color: #fff; cursor: pointer; }
@@ -76,6 +80,7 @@ button:focus-visible { outline: 3px solid #888; outline-offset: 2px; }
     <div class="left">
       <div class="steps" id="steps"><span>BIRTH</span><i></i><span>BODY</span><i></i><span>HOME</span><i></i><span>WORLD</span></div>
       <div class="looks" role="group" aria-label="Look"><button data-look="pixel">PIXEL</button><button data-look="line">LINE</button><button data-look="paint">PAINT</button></div>
+      <div class="dicestat" id="dice" aria-live="polite">DIE · …</div>
     </div>
     <div class="choices" id="choices" role="group" aria-label="Your choices"></div>
     <button class="go" id="go" disabled>…</button>
@@ -84,6 +89,8 @@ button:focus-visible { outline: 3px solid #888; outline-offset: 2px; }
 
 <script type="module">
 import { createLive } from "./live.js";
+import { createDiceReader } from "./dice.js";
+import { findCamera } from "./cameras.js";
 import { BIRTH, BODY, HOME, WORLD, PROMPTS, STYLE, LOOK, setLook } from "./stages.js";
 
 const $ = (id) => document.getElementById(id);
@@ -132,6 +139,21 @@ async function weighted(opts) {                            // draw 1..total, wal
 }
 const odds = (o, opts) => { const p = o.w / total(opts); return p >= 0.1 ? Math.round(p * 100) + "%" : "1 in " + Math.round(1 / p); };   // 49%, or 1 in 20 for the rare ones
 const name = (o) => (o.short || o.label);
+
+// which die faces pick which option: 6 options = one face each. Fewer options share the six faces;
+// the faces left over go to the most common options. An option's own "faces: [5, 6]" in stages.js overrides this.
+function faceMap(opts) {
+  const map = new Array(6).fill(-1);
+  if (opts.some(o => o.faces)) { opts.forEach((o, i) => (o.faces || []).forEach(f => { map[f - 1] = i; })); return map; }
+  const per = opts.map(() => Math.floor(6 / opts.length));
+  const extra = 6 - per.reduce((a, b) => a + b, 0);
+  [...opts.keys()].sort((a, b) => opts[b].w - opts[a].w || a - b).slice(0, extra).forEach(i => per[i]++);
+  let f = 0;
+  per.forEach((k, i) => { for (let j = 0; j < k && f < 6; j++) map[f++] = i; });
+  return map;
+}
+const PIPS = { 1: [[2, 2]], 2: [[1, 1], [3, 3]], 3: [[1, 1], [2, 2], [3, 3]], 4: [[1, 1], [3, 1], [1, 3], [3, 3]], 5: [[1, 1], [3, 1], [2, 2], [1, 3], [3, 3]], 6: [[1, 1], [3, 1], [1, 2], [3, 2], [1, 3], [3, 3]] };
+const dieFace = (n) => `<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="0.75" y="0.75" width="14.5" height="14.5" rx="3" fill="none" stroke="currentColor" stroke-width="1.5"/>${PIPS[n].map(([x, y]) => `<circle cx="${x * 4}" cy="${y * 4}" r="1.5" fill="currentColor"/>`).join("")}</svg>`;
 const low = (s) => String(s).toLowerCase();
 
 // ---------- the screen and the bar ----------
@@ -144,39 +166,52 @@ function setSteps(i) { [...$("steps").querySelectorAll("span")].forEach((s, k) =
 let action = null;
 function button(label, fn) { go.textContent = label; go.disabled = !fn; action = fn; }
 go.addEventListener("click", () => { if (!go.disabled && action) action(); });
-const waitFor = (label) => new Promise(res => button(label, () => { button("…", null); res(); }));
-let choose = null;                                          // set while a round is waiting for your pick
+let waiting = false;                                        // between rounds: a throw of the die presses the big button
+const waitFor = (label) => new Promise(res => {
+  waiting = true;
+  if (diceOn) diceEl.innerHTML = "DIE · <b>throw to go on</b>";
+  button(label, () => { waiting = false; button("…", null); res(); });
+});
+let choose = null, pickFace = null;                         // set while a round is waiting for your pick
 document.addEventListener("keydown", (e) => {
   if (e.repeat) return;
   if ((e.key === " " || e.key === "Enter") && !(e.target instanceof HTMLButtonElement)) { e.preventDefault(); go.click(); }
   const n = parseInt(e.key, 10);
-  if (n >= 1 && choose) choose(n - 1);
+  if (n >= 1 && n <= 6 && pickFace) pickFace(n);              // keys 1–6 = the die's faces
 });
 
 // ---------- one round: you pick what you wish for, then chance draws what you get ----------
-function round({ kicker, line, options, showOdds = true, roundButtons = false, onPick, onRoll, onLand }) {
+function round({ kicker, line, options, showFaces = true, roundButtons = false, onPick, onRoll, onLand }) {
   return new Promise(resolve => {
-    msg(kicker, line);
+    msg(kicker, line, diceOn ? "Throw the die." : "");
+    const faces = faceMap(options);
     choicesEl.innerHTML = "";
     const btns = options.map((o, i) => {
       const b = document.createElement("button");
       b.className = "ch" + (roundButtons ? " round" : "");
-      b.innerHTML = `<b>${esc(name(o))}</b>${showOdds ? `<small>${odds(o, options)}</small>` : ""}`;
+      const mine = [1, 2, 3, 4, 5, 6].filter(f => faces[f - 1] === i);
+      b.innerHTML = `<b>${esc(name(o))}</b>${showFaces ? `<span class="faces" title="die: ${mine.join(", ")}">${mine.map(dieFace).join("")}</span>` : ""}`;
       b.addEventListener("click", () => choose && choose(i));
       choicesEl.appendChild(b);
       return b;
     });
-    let wish = -1;
-    button("PICK ONE", null);
-    choose = (i) => {
+    let wish = -1, byDie = false, face = 0;
+    button(diceOn ? "THROW THE DIE" : "PICK ONE", null);
+    pickFace = (f, die) => { if (faces[f - 1] >= 0) choose(faces[f - 1], die, f); };
+    choose = (i, die, f) => {
       if (i >= options.length) return;
-      wish = i;
+      wish = i; byDie = !!die; face = f || [1, 2, 3, 4, 5, 6].find(k => faces[k - 1] === i);
       btns.forEach((b, k) => b.classList.toggle("wish", k === i));
       if (onPick) onPick(i);
       button("ROLL", roll);
+      if (byDie) {                                          // your roll is in: chance answers by itself
+        const what = name(options[i]);                       // birth's options are just numbers: no need to say "4 → 4"
+        msg(kicker, /^\d+$/.test(what) ? `You rolled <b>${face}</b>.` : `You rolled <b>${face}</b> → ${esc(low(what))}`, "Now chance rolls.");
+        setTimeout(() => { if (action === roll) go.click(); }, 900);
+      }
     };
     async function roll() {
-      choose = null; button("…", null);
+      choose = null; pickFace = null; button("…", null);
       btns.forEach(b => b.disabled = true);
       if (onRoll) onRoll();
       const result = weighted(options);
@@ -187,17 +222,50 @@ function round({ kicker, line, options, showOdds = true, roundButtons = false, o
         await sleep(55 + Math.max(0, s - steps + 6) * 50);
       }
       btns.forEach((b, k) => { b.classList.remove("on"); b.classList.toggle("got", k === got); b.classList.toggle("dim", k !== got && k !== wish); });
-      const res = { wish: options[wish], got: options[got], met: wish === got };
+      const res = { wish: options[wish], got: options[got], met: wish === got, byDie, face };
       if (onLand) onLand(res);
       resolve(res);
     }
   });
 }
 function wishLine(res, opts) {
+  if (res.byDie) return res.met
+    ? `You rolled <b>${res.face}</b> → <b>${esc(low(name(res.wish)))}</b>. Chance rolled the same. (${odds(res.got, opts)})`
+    : `You rolled <b>${res.face}</b> → <b>${esc(low(name(res.wish)))}</b>. <span class="miss">Chance rolled <b>${esc(low(name(res.got)))}</b></span> (${odds(res.got, opts)}).`;
   return res.met
     ? `You wished for <b>${esc(low(name(res.wish)))}</b>, and got it. (${odds(res.got, opts)})`
     : `You wished for <b>${esc(low(name(res.wish)))}</b>. <span class="miss">Chance gave you <b>${esc(low(name(res.got)))}</b></span> (${odds(res.got, opts)}).`;
 }
+
+// ---------- the physical die (set up on /dice.html) ----------
+// Your throw picks your option; random.org then rolls chance's. Buttons and number keys still work.
+let diceOn = false;
+const diceEl = $("dice");
+const diceStates = { waiting: "throw it", rolling: "rolling…", settling: "landing…", reading: "reading…", unclear: "can't read it, throw again", shown: "", off: "off" };
+const dice = createDiceReader({
+  video: Object.assign(document.createElement("video"), { muted: true, playsInline: true }),
+  onState: (s) => { if (diceOn) diceEl.innerHTML = `DIE · <b>${diceStates[s] ?? s}</b>`; },
+  onRoll: (n) => {
+    diceEl.innerHTML = `DIE · <b>${n}</b>`;
+    if (pickFace) pickFace(n, true);                         // a round is open: your throw is your wish
+    else if (waiting && action) go.click();                 // between rounds: go on
+  },
+});
+function subLine(text) {                                    // set the small line under the message
+  let sub = msgEl.querySelector(".sub");
+  if (!sub) { sub = document.createElement("span"); sub.className = "sub"; msgEl.appendChild(sub); }
+  sub.textContent = text;
+}
+(async () => {
+  let cam = "";
+  try { cam = await findCamera("pac-dice-cam"); } catch (e) {}
+  if (!cam) { diceEl.innerHTML = 'DIE · <a href="/dice.html">set up</a>'; return; }
+  try {
+    await dice.start(cam); diceOn = true; diceEl.innerHTML = "DIE · <b>throw it</b>";
+    if (choose && go.textContent === "PICK ONE") { subLine("Throw the die."); go.textContent = "THROW THE DIE"; }   // the first round was already up
+  }
+  catch (e) { console.warn("[dice]", e.name, e.message); diceEl.innerHTML = 'DIE · <a href="/dice.html">camera not found</a>'; }
+})();
 
 // ---------- the run ----------
 let r = {}, oddsAll = 1, attempts = 0, met = 0, asked = 0;
@@ -215,13 +283,13 @@ async function birth() {
     attempts++;
     const res = await round({
       kicker: "1 · BIRTH" + (attempts > 1 ? ` · TRY ${attempts}` : ""),
-      line: esc(BIRTH.intro), options: sperm, showOdds: false, roundButtons: true,
+      line: esc(BIRTH.intro), options: sperm, showFaces: false, roundButtons: true,
       onPick: (i) => { mine = i + 1; },
       onRoll: () => { phase = "race"; raceAt = performance.now(); },
       onLand: (res) => { winner = +res.got.label; phase = "result"; raceAt = performance.now(); },
     });
     if (res.met) break;
-    msg("1 · BIRTH", esc(BIRTH.lost(winner)), `Your odds were 1 in ${BIRTH.sperm}.`);
+    msg("1 · BIRTH", esc(BIRTH.lost(winner)), (res.byDie ? `You rolled ${res.face}. ` : "") + `Your odds were 1 in ${BIRTH.sperm}.`);
     await waitFor("TRY AGAIN");
   }
   oddsAll *= 1 / BIRTH.sperm;

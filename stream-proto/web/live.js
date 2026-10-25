@@ -7,6 +7,8 @@
 //   live.setScene(fn)                     // draw your own scene instead (fn(ctx, W, H, now)); null = back to live
 //   live.stat                             // fps, timings, notes for a status line
 
+import { findCamera } from "./cameras.js";
+
 export function createLive({ out, video, params }) {
   const octx = out.getContext("2d");
   let W = 640, H = 384;
@@ -29,7 +31,11 @@ export function createLive({ out, video, params }) {
 
   // ---------- camera ----------
   async function startCamera() {
-    video.srcObject = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 }, audio: false });
+    let cam = "";                                           // the avatar camera chosen on /dice.html, if any
+    try { cam = await findCamera("pac-avatar-cam"); } catch (e) {}
+    const want = { width: 1280, height: 720 };
+    try { video.srcObject = await navigator.mediaDevices.getUserMedia({ video: cam ? { ...want, deviceId: { exact: cam } } : want, audio: false }); }
+    catch (e) { video.srcObject = await navigator.mediaDevices.getUserMedia({ video: want, audio: false }); }   // that camera is gone: use the default
     await video.play();
     requestAnimationFrame(render);
   }

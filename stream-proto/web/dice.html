@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dice Setup</title>
+<style>
+/* Layout: the dice camera's view (with what the reader detects drawn on top) on the left, the settings on the right. White, minimal. */
+:root { --ink: #111; --dim: #8a8a8a; --line: #d6d6d6; color-scheme: light; }
+html, body { height: 100%; }
+body { margin: 0; background: #fff; color: var(--ink); font-family: ui-sans-serif, system-ui, -apple-system, "Helvetica Neue", sans-serif; }
+.frame { box-sizing: border-box; height: 100%; max-width: 1200px; margin: 0 auto; padding: 24px; display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 24px; }
+.view { position: relative; border: 1.5px solid var(--ink); border-radius: 4px; overflow: hidden; background: #222; display: grid; place-items: center; min-height: 0; }
+.view canvas { width: 100%; height: 100%; object-fit: contain; image-rendering: auto; }
+.big { position: absolute; right: 16px; bottom: 12px; font-size: 96px; font-weight: 700; color: #fff; text-shadow: 0 2px 12px rgba(0,0,0,0.6); font-variant-numeric: tabular-nums; }
+.state { position: absolute; left: 14px; top: 12px; font-size: 12px; letter-spacing: 0.08em; font-weight: 600; color: #fff; background: rgba(0,0,0,0.55); padding: 4px 8px; border-radius: 3px; }
+.panel { display: flex; flex-direction: column; gap: 18px; overflow: auto; }
+h1 { margin: 0; font-size: 20px; }
+p { margin: 0; font-size: 14px; line-height: 1.45; color: #444; }
+label { display: flex; flex-direction: column; gap: 6px; font-size: 11px; font-weight: 600; letter-spacing: 0.1em; color: var(--dim); }
+label.row { flex-direction: row; align-items: center; gap: 8px; color: var(--ink); letter-spacing: 0.04em; }
+select, input[type=range] { font: inherit; font-size: 14px; color: var(--ink); accent-color: var(--ink); }
+select { padding: 8px; border: 1.5px solid var(--ink); border-radius: 4px; background: #fff; }
+.val { font-weight: 400; color: var(--ink); letter-spacing: 0; }
+.log { font-size: 13px; color: #444; font-variant-numeric: tabular-nums; min-height: 1.4em; }
+button { font: inherit; font-size: 14px; font-weight: 600; letter-spacing: 0.06em; padding: 12px; border: 1.5px solid var(--ink); border-radius: 4px; background: var(--ink); color: #fff; cursor: pointer; }
+button.ghost { background: #fff; color: var(--ink); }
+a { color: var(--ink); }
+@media (max-width: 820px) { .frame { grid-template-columns: 1fr; grid-template-rows: 50vh auto; } }
+</style>
+</head>
+<body>
+<div class="frame">
+  <div class="view">
+    <canvas id="view" aria-label="What the dice camera sees"></canvas>
+    <div class="state" id="state">starting…</div>
+    <div class="big" id="big"></div>
+  </div>
+  <div class="panel">
+    <h1>Dice setup</h1>
+    <p>Point the dice camera straight down at a tray with a dark floor. Throw the die: when it stops, a green box and red dots should appear, and the number in the corner. Settings are saved for the game.</p>
+    <label>DICE CAMERA<select id="diceCam"></select></label>
+    <label>AVATAR CAMERA (the one facing the player)<select id="avatarCam"></select></label>
+    <label>BRIGHTNESS FOR "DIE" <span class="val" id="brightV"></span><input id="bright" type="range" min="60" max="240" step="5"></label>
+    <label>HOW STILL = SETTLED <span class="val" id="stillV"></span><input id="still" type="range" min="1" max="10" step="0.5"></label>
+    <label class="row"><input id="invert" type="checkbox"> dark die with light dots</label>
+    <div class="log" id="log">Throws read: none yet</div>
+    <button id="save">SAVE FOR THE GAME</button>
+    <button class="ghost" id="game">OPEN THE GAME</button>
+  </div>
+</div>
+
+<script type="module">
+import { createDiceReader, saveSettings } from "./dice.js";
+import { listCameras as camerasNow, findCamera, saveCamera } from "./cameras.js";
+const $ = (id) => document.getElementById(id);
+const video = document.createElement("video");
+const reads = [];
+let cams = [];
+const dice = createDiceReader({
+  video,
+  onRoll: (n) => { reads.unshift(n); $("log").textContent = "Throws read: " + reads.slice(0, 12).join(" · "); $("big").textContent = n; },
+  onState: (s) => { $("state").textContent = s.toUpperCase(); if (s === "rolling") $("big").textContent = ""; },
+});
+
+// camera lists (labels only appear after permission, so ask once first)
+async function listCameras() {
+  cams = await camerasNow();
+  const saved = { dice: await findCamera("pac-dice-cam"), avatar: await findCamera("pac-avatar-cam") };
+  for (const [id, key, none] of [["diceCam", "dice", "— no dice camera (use buttons) —"], ["avatarCam", "avatar", "default camera"]]) {
+    const sel = $(id);
+    sel.innerHTML = `<option value="">${none}</option>` + cams.map((c, i) => `<option value="${c.deviceId}">${c.label || "Camera " + (i + 1)}</option>`).join("");
+    sel.value = saved[key] && cams.some(c => c.deviceId === saved[key]) ? saved[key] : "";
+  }
+  if (!$("diceCam").value && cams.length > 1) $("diceCam").value = cams[cams.length - 1].deviceId;   // a guess: the newest camera
+  startDice();
+}
+async function startDice() {
+  const id = $("diceCam").value;
+  if (!id) { dice.stop(); $("state").textContent = "NO DICE CAMERA CHOSEN"; return; }
+  try { await dice.start(id); } catch (e) { $("state").textContent = "CAMERA ERROR: " + (e.message || e.name); }
+}
+$("diceCam").addEventListener("change", startDice);
+
+// settings
+const s = dice.settings;
+const bind = (id, key, fmt = (v) => v) => {
+  const el = $(id), out = $(id + "V");
+  el.value = s[key]; if (out) out.textContent = fmt(s[key]);
+  el.addEventListener("input", () => { s[key] = +el.value; if (out) out.textContent = fmt(s[key]); });
+};
+bind("bright", "bright"); bind("still", "still");
+$("invert").checked = s.invert; $("invert").addEventListener("change", () => { s.invert = $("invert").checked; });
+
+$("save").addEventListener("click", () => {
+  saveSettings(s);
+  saveCamera("pac-dice-cam", cams.find(c => c.deviceId === $("diceCam").value));
+  saveCamera("pac-avatar-cam", cams.find(c => c.deviceId === $("avatarCam").value));
+  $("save").textContent = "SAVED ✓"; setTimeout(() => $("save").textContent = "SAVE FOR THE GAME", 1500);
+});
+$("game").addEventListener("click", () => { location.href = "/game"; });
+
+(function draw() { dice.draw($("view")); requestAnimationFrame(draw); })();
+listCameras();
+</script>
+</body>
+</html>

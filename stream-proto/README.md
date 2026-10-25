@@ -11,7 +11,15 @@ If the download stops halfway, run `python download_models.py` again: it carries
 
 ## Two pages
 - http://localhost:8766/game — the game: BIRTH → BODY → HOME → WORLD → the baseline. Space / Enter = the big button, keys 1–6 pick a sperm.
+- http://localhost:8766/dice.html — set up the physical die (see below).
 - http://localhost:8766 — the lab: type prompts and add references by hand to tune the look. References set here carry over into the game.
+
+## The die (optional)
+Your throw is your wish, random.org rolls chance's answer.
+- A second webcam pointing straight down into a tray with a dark, matte floor. A white die with black dots. Even light, no glare.
+- Open http://localhost:8766/dice.html → pick the DICE CAMERA and the AVATAR CAMERA → throw a few times. A green box, red dots and the number should appear. If not: move BRIGHTNESS (lower in dim light). → SAVE FOR THE GAME.
+- In the game, the chip under PIXEL / LINE / PAINT shows the die: "throw it", "rolling…", the number. Every button shows the faces that pick it: with fewer than six choices the faces are shared out (leftovers go to the most common options; set your own with `faces` in stages.js). Between stages, a throw = the big button. Clicking, and keys 1–6 as faces, still work.
+- With no dice camera saved the game works as before.
 
 ## The look
 In the game, the PIXEL / LINE / PAINT switch under the stage names changes the look at any moment (it redraws what's on screen and is remembered). `LOOK` at the top of `web/stages.js` is the one it starts with. In the lab, the LOOK menu does the same.

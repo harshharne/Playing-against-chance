@@ -2,6 +2,8 @@
 //  THE TRAJECTORIES — edit this file to change what chance can hand out.
 //  Every option has a weight ("w"): its odds are w out of the total of its list.
 //  "short" (optional) is the text on its button; otherwise "label" is used.
+//  "faces" (optional) picks which die faces choose it, e.g. faces: [5, 6]. Without it the six faces are shared out
+//  evenly, and any left over go to the most common options (shown as small dice on each button).
 //  In every round the player picks what they WISH for, then chance draws what they GET.
 //  Prompt fragments ("p", "bg", "clothes", ...) are glued into the image prompts below.
 //  Nothing else needs to change when you add, remove or reword options.
