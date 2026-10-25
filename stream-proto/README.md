@@ -16,8 +16,8 @@ If the download stops halfway, run `python download_models.py` again: it carries
 
 ## The die (optional)
 Your throw is your wish, random.org rolls chance's answer.
-- A second webcam pointing straight down into a tray with a dark, matte floor. A white die with black dots. Even light, no glare.
-- Open http://localhost:8766/dice.html → pick the DICE CAMERA and the AVATAR CAMERA → throw a few times. A green box, red dots and the number should appear. If not: move BRIGHTNESS (lower in dim light). → SAVE FOR THE GAME.
+- A second webcam pointing straight down into a tray with a dark, matte floor (black chart paper or felt). A white or pale die with black dots. Even light, no glare. A pale die on light, shiny wood is too close to read reliably.
+- Open http://localhost:8766/dice.html → pick the DICE CAMERA and the AVATAR CAMERA → drag a box just inside the throwing square → with the green tint on, move BRIGHTNESS until only the die is green → throw a few times (green box, red dots, the number) → SAVE FOR THE GAME.
 - In the game, the chip under PIXEL / LINE / PAINT shows the die: "throw it", "rolling…", the number. Every button shows the faces that pick it: with fewer than six choices the faces are shared out (leftovers go to the most common options; set your own with `faces` in stages.js). Between stages, a throw = the big button. Clicking, and keys 1–6 as faces, still work.
 - With no dice camera saved the game works as before.
 

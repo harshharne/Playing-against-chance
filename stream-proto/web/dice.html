@@ -11,7 +11,7 @@ html, body { height: 100%; }
 body { margin: 0; background: #fff; color: var(--ink); font-family: ui-sans-serif, system-ui, -apple-system, "Helvetica Neue", sans-serif; }
 .frame { box-sizing: border-box; height: 100%; max-width: 1200px; margin: 0 auto; padding: 24px; display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 24px; }
 .view { position: relative; border: 1.5px solid var(--ink); border-radius: 4px; overflow: hidden; background: #222; display: grid; place-items: center; min-height: 0; }
-.view canvas { width: 100%; height: 100%; object-fit: contain; image-rendering: auto; }
+.view canvas { width: 100%; height: 100%; object-fit: contain; image-rendering: auto; cursor: crosshair; touch-action: none; }
 .big { position: absolute; right: 16px; bottom: 12px; font-size: 96px; font-weight: 700; color: #fff; text-shadow: 0 2px 12px rgba(0,0,0,0.6); font-variant-numeric: tabular-nums; }
 .state { position: absolute; left: 14px; top: 12px; font-size: 12px; letter-spacing: 0.08em; font-weight: 600; color: #fff; background: rgba(0,0,0,0.55); padding: 4px 8px; border-radius: 3px; }
 .panel { display: flex; flex-direction: column; gap: 18px; overflow: auto; }
@@ -38,12 +38,14 @@ a { color: var(--ink); }
   </div>
   <div class="panel">
     <h1>Dice setup</h1>
-    <p>Point the dice camera straight down at a tray with a dark floor. Throw the die: when it stops, a green box and red dots should appear, and the number in the corner. Settings are saved for the game.</p>
+    <p>1. Point the dice camera straight down at the throwing square.<br>2. <b>Drag a box on the picture just inside your tape</b>, so the tape and the table outside are ignored.<br>3. Turn on the green tint: only the die should be green. Move BRIGHTNESS until it is.<br>4. Throw. A green box, red dots and the number should appear. Then SAVE.</p>
     <label>DICE CAMERA<select id="diceCam"></select></label>
     <label>AVATAR CAMERA (the one facing the player)<select id="avatarCam"></select></label>
     <label>BRIGHTNESS FOR "DIE" <span class="val" id="brightV"></span><input id="bright" type="range" min="60" max="240" step="5"></label>
     <label>HOW STILL = SETTLED <span class="val" id="stillV"></span><input id="still" type="range" min="1" max="10" step="0.5"></label>
+    <label class="row"><input id="mask" type="checkbox" checked> green tint = what counts as "die"</label>
     <label class="row"><input id="invert" type="checkbox"> dark die with light dots</label>
+    <button class="ghost" id="resetArea">CLEAR THE AREA (use the whole picture)</button>
     <div class="log" id="log">Throws read: none yet</div>
     <button id="save">SAVE FOR THE GAME</button>
     <button class="ghost" id="game">OPEN THE GAME</button>
@@ -99,6 +101,27 @@ $("save").addEventListener("click", () => {
   $("save").textContent = "SAVED ✓"; setTimeout(() => $("save").textContent = "SAVE FOR THE GAME", 1500);
 });
 $("game").addEventListener("click", () => { location.href = "/game"; });
+
+// the green tint
+dice.showMask($("mask").checked);
+$("mask").addEventListener("change", () => dice.showMask($("mask").checked));
+
+// drag a box on the picture = the throwing area (saved with SAVE)
+const view = $("view");
+function toFrac(e) {                                   // mouse -> 0..1 of the camera picture (the canvas is letterboxed)
+  const r = view.getBoundingClientRect(), k = Math.min(r.width / view.width, r.height / view.height);
+  const w = view.width * k, h = view.height * k, ox = r.left + (r.width - w) / 2, oy = r.top + (r.height - h) / 2;
+  return { x: Math.min(1, Math.max(0, (e.clientX - ox) / w)), y: Math.min(1, Math.max(0, (e.clientY - oy) / h)) };
+}
+let dragFrom = null;
+view.addEventListener("pointerdown", (e) => { dragFrom = toFrac(e); view.setPointerCapture(e.pointerId); });
+view.addEventListener("pointermove", (e) => {
+  if (!dragFrom) return;
+  const p = toFrac(e), x = Math.min(p.x, dragFrom.x), y = Math.min(p.y, dragFrom.y), w = Math.abs(p.x - dragFrom.x), h = Math.abs(p.y - dragFrom.y);
+  if (w > 0.03 && h > 0.03) s.roi = { x, y, w, h };
+});
+view.addEventListener("pointerup", () => { dragFrom = null; });
+$("resetArea").addEventListener("click", () => { s.roi = null; });
 
 (function draw() { dice.draw($("view")); requestAnimationFrame(draw); })();
 listCameras();
