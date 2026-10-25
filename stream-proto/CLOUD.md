@@ -1,0 +1,44 @@
+# Running the generation on Google Cloud (L4 GPU, Mumbai)
+
+The game page, camera and filters stay on your Mac. Only stream_server.py runs on the cloud machine.
+A tunnel makes the cloud server show up as http://localhost:8766 on your Mac, so nothing in the code changes.
+
+## Once: on your Mac, install the Google Cloud command line
+    brew install --cask google-cloud-sdk        (or the installer from cloud.google.com/sdk)
+    gcloud auth login
+    gcloud config set project project-d93a8bb5-9b08-4526-b4c
+
+## Once: create the machine (Cloud Shell or Mac), after the GPU quota is approved
+    gcloud compute instances create chance-gpu \
+      --zone=asia-south1-b --machine-type=g2-standard-4 \
+      --network-interface=nic-type=GVNIC --maintenance-policy=TERMINATE \
+      --create-disk=auto-delete=yes,boot=yes,image-family=ubuntu-2204-lts,image-project=ubuntu-os-cloud,size=60GB,type=pd-balanced \
+      --metadata=startup-script='#!/bin/bash
+    if [ ! -f /opt/google/driver-installed ]; then
+      mkdir -p /opt/google && cd /opt/google
+      curl -fsSL -O https://storage.googleapis.com/compute-gpu-installation-us/installer/latest/cuda_installer.pyz
+      python3 cuda_installer.pyz install_driver --installation-mode=repo --installation-branch=prod
+      touch /opt/google/driver-installed
+    fi'
+(if asia-south1-b has no capacity, try asia-south1-a or asia-south1-c, and use that zone everywhere below)
+
+## Once: copy the project up and set it up (from your Mac, in ~/Downloads)
+    gcloud compute scp stream-proto.zip chance-gpu:~ --zone=asia-south1-b
+    gcloud compute ssh chance-gpu --zone=asia-south1-b
+        (now you're on the cloud machine)
+        sudo apt-get install -y unzip && unzip -o stream-proto.zip && cd stream-proto
+        bash setup_cloud.sh
+
+## Every session
+1. Start the machine:      gcloud compute instances start chance-gpu --zone=asia-south1-b
+2. Start the server:       gcloud compute ssh chance-gpu --zone=asia-south1-b
+                           cd ~/stream-proto && source .venv/bin/activate && python stream_server.py
+3. Open the tunnel (a NEW Mac Terminal window, leave it open):
+                           gcloud compute ssh chance-gpu --zone=asia-south1-b -- -N -L 8766:localhost:8766
+4. On your Mac, open:      http://localhost:8766/game     (make sure the Mac server is NOT running)
+5. When done, STOP it:     gcloud compute instances stop chance-gpu --zone=asia-south1-b
+   A stopped machine costs only its disk (cents a month). A running one ~US$0.74 an hour from your credit.
+
+## Updating the code later
+Edit on the Mac, then copy just what changed, e.g.:
+    gcloud compute scp --recurse web chance-gpu:~/stream-proto/ --zone=asia-south1-b
