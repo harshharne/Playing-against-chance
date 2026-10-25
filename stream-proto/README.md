@@ -15,10 +15,13 @@ If the download stops halfway, run `python download_models.py` again: it carries
 - http://localhost:8766 — the lab: type prompts and add references by hand to tune the look. References set here carry over into the game.
 
 ## The die (optional)
-Your throw is your wish, random.org rolls chance's answer.
-- A second webcam pointing straight down into a tray with a dark, matte floor (black chart paper or felt). A white or pale die with black dots. Even light, no glare. A pale die on light, shiny wood is too close to read reliably.
-- Open http://localhost:8766/dice.html → pick the DICE CAMERA and the AVATAR CAMERA → drag a box just inside the throwing square → with the green tint on, move BRIGHTNESS until only the die is green → throw a few times (green box, red dots, the number) → SAVE FOR THE GAME.
-- In the game, the chip under PIXEL / LINE / PAINT shows the die: "throw it", "rolling…", the number. Every button shows the faces that pick it: with fewer than six choices the faces are shared out (leftovers go to the most common options; set your own with `faces` in stages.js). Between stages, a throw = the big button. Clicking, and keys 1–6 as faces, still work.
+Your throw is your wish, random.org rolls chance's answer. The die is read with plain image processing in the browser (no AI, no GPU).
+How: a picture of the EMPTY throwing area is remembered; after a throw, whatever differs from it is the die (table, tape, stains and glare cancel out). The top face is the die's brightest part, the dots are the holes in it.
+- A webcam pointing straight down at the throwing square. Even light. A die with dark dots.
+- Open http://localhost:8766/dice.html → pick the DICE CAMERA and the AVATAR CAMERA → drag a box just inside the square → take the die out and press EMPTY TRAY → throw a few times (green = what changed, box = top face, red = dots) → SAVE FOR THE GAME.
+- Press EMPTY TRAY again whenever the camera moves or the light changes a lot.
+- Tuning: SENSITIVITY lower if parts of the die aren't green, higher if the table turns green. TOP FACE higher if side dots get counted, lower if dots are missed.
+- In the game, the chip under PIXEL / LINE / PAINT shows the die. Every button shows the faces that pick it (fewer than six choices share the faces; set your own with `faces` in stages.js). Between stages, a throw = the big button. Clicking, and keys 1–6 as faces, still work.
 - With no dice camera saved the game works as before.
 
 ## The look

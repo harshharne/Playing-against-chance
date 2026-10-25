@@ -244,7 +244,10 @@ const diceEl = $("dice");
 const diceStates = { waiting: "throw it", rolling: "rolling…", settling: "landing…", reading: "reading…", unclear: "can't read it, throw again", shown: "", off: "off" };
 const dice = createDiceReader({
   video: Object.assign(document.createElement("video"), { muted: true, playsInline: true }),
-  onState: (s) => { if (diceOn) diceEl.innerHTML = `DIE · <b>${diceStates[s] ?? s}</b>`; },
+  onState: (s) => {
+    if (!diceOn) return;
+    diceEl.innerHTML = s === "needs empty tray" ? 'DIE · <a href="/dice.html">set up the empty tray</a>' : `DIE · <b>${diceStates[s] ?? s}</b>`;
+  },
   onRoll: (n) => {
     diceEl.innerHTML = `DIE · <b>${n}</b>`;
     if (pickFace) pickFace(n, true);                         // a round is open: your throw is your wish

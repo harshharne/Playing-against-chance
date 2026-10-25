@@ -38,12 +38,14 @@ a { color: var(--ink); }
   </div>
   <div class="panel">
     <h1>Dice setup</h1>
-    <p>1. Point the dice camera straight down at the throwing square.<br>2. <b>Drag a box on the picture just inside your tape</b>, so the tape and the table outside are ignored.<br>3. Turn on the green tint: only the die should be green. Move BRIGHTNESS until it is.<br>4. Throw. A green box, red dots and the number should appear. Then SAVE.</p>
+    <p>1. Point the dice camera straight down at the throwing square.<br>2. <b>Drag a box on the picture</b> just inside your tape.<br>3. <b>Take the die out</b> and press EMPTY TRAY. Do this again if the light or the camera moves.<br>4. Throw. Green = what changed (should be just the die), the box = the top face, red = the dots it counts.<br>5. SAVE.</p>
+    <button id="empty">EMPTY TRAY (die out, then press)</button>
     <label>DICE CAMERA<select id="diceCam"></select></label>
     <label>AVATAR CAMERA (the one facing the player)<select id="avatarCam"></select></label>
-    <label>BRIGHTNESS FOR "DIE" <span class="val" id="brightV"></span><input id="bright" type="range" min="60" max="240" step="5"></label>
+    <label>SENSITIVITY (lower = picks up more) <span class="val" id="sensV"></span><input id="sens" type="range" min="10" max="80" step="1"></label>
+    <label>TOP FACE (raise if side dots are counted, lower if dots are missed) <span class="val" id="faceV"></span><input id="face" type="range" min="0.5" max="0.95" step="0.05"></label>
     <label>HOW STILL = SETTLED <span class="val" id="stillV"></span><input id="still" type="range" min="1" max="10" step="0.5"></label>
-    <label class="row"><input id="mask" type="checkbox" checked> green tint = what counts as "die"</label>
+    <label class="row"><input id="mask" type="checkbox" checked> show the green tint</label>
     <label class="row"><input id="invert" type="checkbox"> dark die with light dots</label>
     <button class="ghost" id="resetArea">CLEAR THE AREA (use the whole picture)</button>
     <div class="log" id="log">Throws read: none yet</div>
@@ -91,7 +93,8 @@ const bind = (id, key, fmt = (v) => v) => {
   el.value = s[key]; if (out) out.textContent = fmt(s[key]);
   el.addEventListener("input", () => { s[key] = +el.value; if (out) out.textContent = fmt(s[key]); });
 };
-bind("bright", "bright"); bind("still", "still");
+bind("sens", "sens"); bind("face", "face", (v) => (+v).toFixed(2)); bind("still", "still");
+$("empty").addEventListener("click", () => { dice.captureEmpty(); $("empty").textContent = "LEARNING…"; setTimeout(() => $("empty").textContent = "EMPTY TRAY ✓ (die out, then press)", 1200); });
 $("invert").checked = s.invert; $("invert").addEventListener("change", () => { s.invert = $("invert").checked; });
 
 $("save").addEventListener("click", () => {
