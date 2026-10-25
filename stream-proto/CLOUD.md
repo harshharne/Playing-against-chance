@@ -14,12 +14,14 @@ A tunnel makes the cloud server show up as http://localhost:8766 on your Mac, so
       --network-interface=nic-type=GVNIC --maintenance-policy=TERMINATE \
       --create-disk=auto-delete=yes,boot=yes,image-family=ubuntu-2204-lts,image-project=ubuntu-os-cloud,size=60GB,type=pd-balanced \
       --metadata=startup-script='#!/bin/bash
-    if [ ! -f /opt/google/driver-installed ]; then
+    # runs on every boot until the driver works (the installer restarts the machine between its rounds)
+    if ! nvidia-smi >/dev/null 2>&1; then
       mkdir -p /opt/google && cd /opt/google
-      curl -fsSL -O https://storage.googleapis.com/compute-gpu-installation-us/installer/latest/cuda_installer.pyz
+      [ -f cuda_installer.pyz ] || curl -fsSL -O https://storage.googleapis.com/compute-gpu-installation-us/installer/latest/cuda_installer.pyz
       python3 cuda_installer.pyz install_driver --installation-mode=repo --installation-branch=prod
-      touch /opt/google/driver-installed
     fi'
+Wait ~10 minutes (the machine restarts itself once or twice), then `nvidia-smi` on the machine should show an NVIDIA L4.
+If it still doesn't after 15 minutes, run the installer line by hand with sudo, and `sudo reboot` once it finishes.
 (if asia-south1-b has no capacity, try asia-south1-a or asia-south1-c, and use that zone everywhere below)
 
 ## Once: copy the project up and set it up (from your Mac, in ~/Downloads)
@@ -40,5 +42,7 @@ A tunnel makes the cloud server show up as http://localhost:8766 on your Mac, so
    A stopped machine costs only its disk (cents a month). A running one ~US$0.74 an hour from your credit.
 
 ## Updating the code later
-Edit on the Mac, then copy just what changed, e.g.:
-    gcloud compute scp --recurse web chance-gpu:~/stream-proto/ --zone=asia-south1-b
+Edit on the Mac as usual, then from the stream-proto folder on the Mac:
+    ./push.sh
+It sends everything up and says whether the server needs a restart (Python changed) or just a page reload (web files changed).
+The first time, macOS may need:  chmod +x push.sh
