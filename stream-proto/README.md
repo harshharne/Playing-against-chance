@@ -15,6 +15,12 @@ If the download stops halfway, run `python download_models.py` again: it carries
 - http://localhost:8766 — the lab: type prompts and add references by hand to tune the look. References set here carry over into the game.
 
 ## The die (optional)
+**Two ways to read it.** The game uses whichever is there when the page opens:
+1. `dice_reader.py`: OpenCV on the Mac, round tray, angled camera, its own window. It runs on the Mac, never on the cloud machine:
+   `pip install opencv-python numpy`, then `python dice_reader.py --list-cameras`, then `python dice_reader.py --camera N`.
+   Set it up in its window (c = mark the tray, l = lock, e = empty tray), THEN open the game. It tells the game on http://localhost:8767/events (`web/dice-remote.js`). Hover the DIE chip in the game to see which reader it's using.
+2. The browser reader below, if dice_reader.py isn't running.
+
 Your throw is your wish, random.org rolls chance's answer. The die is read with plain image processing in the browser (no AI, no GPU).
 How: a picture of the EMPTY throwing area is remembered; after a throw, whatever differs from it is the die (table, tape, stains and glare cancel out). The top face is the die's brightest part, the dots are the holes in it.
 - A webcam pointing straight down at the throwing square. Even light. A die with dark dots.

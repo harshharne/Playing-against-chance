@@ -90,6 +90,7 @@ button:focus-visible { outline: 3px solid #888; outline-offset: 2px; }
 <script type="module">
 import { createLive } from "./live.js";
 import { createDiceReader } from "./dice.js";
+import { createDiceReader as createRemoteReader } from "./dice-remote.js";
 import { findCamera } from "./cameras.js";
 import { BIRTH, BODY, HOME, WORLD, PROMPTS, STYLE, LOOK, setLook } from "./stages.js";
 
@@ -237,13 +238,14 @@ function wishLine(res, opts) {
     : `You wished for <b>${esc(low(name(res.wish)))}</b>. <span class="miss">Chance gave you <b>${esc(low(name(res.got)))}</b></span> (${odds(res.got, opts)}).`;
 }
 
-// ---------- the physical die (set up on /dice.html) ----------
+// ---------- the physical die ----------
 // Your throw picks your option; random.org then rolls chance's. Buttons and number keys still work.
+// Two readers, same events: dice_reader.py (OpenCV, its own window and camera) if it's running when the page
+// opens, otherwise the in-browser reader set up on /dice.html.
 let diceOn = false;
 const diceEl = $("dice");
 const diceStates = { waiting: "throw it", rolling: "rolling…", settling: "landing…", reading: "reading…", unclear: "can't read it, throw again", shown: "", off: "off" };
-const dice = createDiceReader({
-  video: Object.assign(document.createElement("video"), { muted: true, playsInline: true }),
+const diceEvents = {
   onState: (s) => {
     if (!diceOn) return;
     diceEl.innerHTML = s === "needs empty tray" ? 'DIE · <a href="/dice.html">set up the empty tray</a>' : `DIE · <b>${diceStates[s] ?? s}</b>`;
@@ -253,20 +255,24 @@ const dice = createDiceReader({
     if (pickFace) pickFace(n, true);                         // a round is open: your throw is your wish
     else if (waiting && action) go.click();                 // between rounds: go on
   },
-});
+};
+function diceReady(name) {
+  diceOn = true; diceEl.innerHTML = "DIE · <b>throw it</b>"; diceEl.title = "read by " + name;
+  if (choose && go.textContent === "PICK ONE") { subLine("Throw the die."); go.textContent = "THROW THE DIE"; }   // the first round was already up
+}
 function subLine(text) {                                    // set the small line under the message
   let sub = msgEl.querySelector(".sub");
   if (!sub) { sub = document.createElement("span"); sub.className = "sub"; msgEl.appendChild(sub); }
   sub.textContent = text;
 }
 (async () => {
-  let cam = "";
+  try { await createRemoteReader(diceEvents).start(); diceReady("dice_reader.py"); return; }   // 1. the Python reader
+  catch (e) {}
+  let cam = "";                                             // 2. the browser reader
   try { cam = await findCamera("pac-dice-cam"); } catch (e) {}
   if (!cam) { diceEl.innerHTML = 'DIE · <a href="/dice.html">set up</a>'; return; }
-  try {
-    await dice.start(cam); diceOn = true; diceEl.innerHTML = "DIE · <b>throw it</b>";
-    if (choose && go.textContent === "PICK ONE") { subLine("Throw the die."); go.textContent = "THROW THE DIE"; }   // the first round was already up
-  }
+  const dice = createDiceReader({ video: Object.assign(document.createElement("video"), { muted: true, playsInline: true }), ...diceEvents });
+  try { await dice.start(cam); diceReady("the browser"); }
   catch (e) { console.warn("[dice]", e.name, e.message); diceEl.innerHTML = 'DIE · <a href="/dice.html">camera not found</a>'; }
 })();
 

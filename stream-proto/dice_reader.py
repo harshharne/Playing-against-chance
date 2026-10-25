@@ -32,14 +32,21 @@ Sliders (window "controls"):
   motion        what counts as movement;  still_frames / confirm_frames  timing
 
 Output: throws/<time>_<value>.mp4 per throw, and throws/log.csv
+
+The game: while this runs, it also tells the game what it reads (http://localhost:8767/events).
+Start it BEFORE opening the game; the game's DIE chip then follows it. --port changes the port
+(change PORT in web/dice-remote.js to match).
 Test on stills:  python dice_reader.py --image die.jpg [--empty empty.jpg]
 """
 import argparse
 import csv
 import json
+import queue
+import threading
 import time
 from collections import deque
 from datetime import datetime
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import cv2
@@ -63,6 +70,77 @@ P = {
     "still_frames": 8,     # still frames before reading
     "confirm_frames": 6,   # identical reads needed
 }
+
+
+# ------------------------------------------------------------------ talking to the game
+# A tiny event stream (Server-Sent Events) on localhost. The game page (web/dice-remote.js) listens to it.
+#   event "state": {"state": "waiting" | "rolling" | "reading" | "shown" | "unclear"}
+#   event "roll":  {"value": 1..6}
+
+class Bridge:
+    def __init__(self):
+        self.clients = []
+        self.lock = threading.Lock()
+        self.state = "waiting"
+
+    def send(self, event, data):
+        if event == "state":
+            if data["state"] == self.state:
+                return
+            self.state = data["state"]
+        msg = f"event: {event}\ndata: {json.dumps(data)}\n\n".encode()
+        with self.lock:
+            for q in self.clients:
+                q.put(msg)
+
+    def serve(self, port):
+        bridge = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def do_GET(self):
+                if self.path.split("?")[0] != "/events":
+                    self.send_response(404)
+                    self.end_headers()
+                    return
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.send_header("Cache-Control", "no-cache")
+                self.send_header("Access-Control-Allow-Origin", "*")   # the game is on another port
+                self.end_headers()
+                q = queue.Queue()
+                with bridge.lock:
+                    bridge.clients.append(q)
+                try:
+                    self.wfile.write(f"event: state\ndata: {json.dumps({'state': bridge.state})}\n\n".encode())
+                    self.wfile.flush()
+                    while True:
+                        try:
+                            msg = q.get(timeout=15)
+                        except queue.Empty:
+                            msg = b": ping\n\n"                       # keeps the connection open
+                        self.wfile.write(msg)
+                        self.wfile.flush()
+                except (BrokenPipeError, ConnectionResetError, OSError):
+                    pass
+                finally:
+                    with bridge.lock:
+                        bridge.clients.remove(q)
+
+        try:
+            srv = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+        except OSError as e:
+            print(f"[game] port {port} is busy ({e}); the game won't hear the die. Is another reader running?")
+            return
+        srv.daemon_threads = True
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        print(f"[game] telling the game on http://localhost:{port}/events")
+
+
+BRIDGE = Bridge()
+PUBLIC = {"IDLE": "waiting", "ROLLING": "rolling", "READING": "reading", "RESULT": "shown"}
 
 
 # ------------------------------------------------------------------ detection area
@@ -295,7 +373,7 @@ def capture_empty(cap, M, n=12):
     return empty
 
 
-def run_live(cam):
+def run_live(cam, port=8767):
     cap = cv2.VideoCapture(cam, cv2.CAP_AVFOUNDATION)
     if not cap.isOpened():
         cap = cv2.VideoCapture(cam)
@@ -312,8 +390,10 @@ def run_live(cam):
           "press l to lock the area" if not area.get("locked") else
           "take the die out and press e" if empty is None else "ready, throw")
     setup_controls()
+    BRIDGE.serve(port)
 
     state, prev, still, value = "IDLE", None, 0, None
+    unclear = False                               # the last throw couldn't be read: say so until the next one
     reads, preroll, clip, debug = deque(), deque(maxlen=15), [], False
     t_last, fps = time.time(), 30.0
     while True:
@@ -355,13 +435,19 @@ def run_live(cam):
                         value = vals.pop()
                         save_throw(clip, value, "ok", fps)
                         state = "RESULT"
+                        BRIDGE.send("state", {"state": "shown"})
+                        BRIDGE.send("roll", {"value": int(value)})
                     elif all(s == "no die" for s in stats):
                         state = "IDLE"            # die taken out: not a throw
                     elif all(s != "ok" for s in stats):
                         save_throw(clip, None, "unreadable", fps)
                         print("        rethrow (or tune dot_dark / sensitivity)")
                         state = "IDLE"
+                        unclear = True
         clip = clip[-450:]                        # ~15 s max
+        if state == "ROLLING":
+            unclear = False
+        BRIDGE.send("state", {"state": "unclear" if unclear and state == "IDLE" else PUBLIC[state]})
 
         locked = bool(area and area.get("locked"))
         view = tray.copy()
@@ -420,6 +506,7 @@ def list_cameras():
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--camera", type=int, default=0)
+    ap.add_argument("--port", type=int, default=8767, help="where the game listens (web/dice-remote.js PORT)")
     ap.add_argument("--list-cameras", action="store_true")
     ap.add_argument("--image", help="raw camera photo with the die in it (uses the saved area)")
     ap.add_argument("--empty", help="raw camera photo of the empty tray, same camera position")
@@ -436,7 +523,7 @@ def main():
         r = read_die(flatten(img, M), flatten(emp, M) if emp is not None else None, area_mask())
         print(f"value: {r['value']}   status: {r['status']}")
         return
-    run_live(a.camera)
+    run_live(a.camera, a.port)
 
 
 if __name__ == "__main__":
