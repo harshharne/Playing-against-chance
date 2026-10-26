@@ -25,12 +25,12 @@ How: a picture of the EMPTY throwing area is remembered; after a throw, whatever
 - Open http://localhost:8766/dice.html → pick the DICE CAMERA and the AVATAR CAMERA → drag a box just inside the square → take the die out and press EMPTY TRAY → throw a few times (green = what changed, box = top face, red = dots) → SAVE FOR THE GAME.
 - Press EMPTY TRAY again whenever the camera moves or the light changes a lot.
 - Tuning: SENSITIVITY lower if parts of the die aren't green, higher if the table turns green. TOP FACE higher if side dots get counted, lower if dots are missed.
-- In the game, the chip under PIXEL / LINE / PAINT shows the die. Every button shows the faces that pick it (fewer than six choices share the faces; set your own with `faces` in stages.js). Between stages, a throw = the big button. Clicking, and keys 1–6 as faces, still work.
+- In the game, the DIE chip under the stage names shows the die. Every button shows the faces that pick it (fewer than six choices share the faces; set your own with `faces` in stages.js). Between stages, a throw = the big button. Clicking, and keys 1–6 as faces, still work.
 - With no dice camera saved the game works as before.
 
-## The look
-In the game, the PIXEL / LINE / PAINT switch under the stage names changes the look at any moment (it redraws what's on screen and is remembered). `LOOK` at the top of `web/stages.js` is the one it starts with. In the lab, the LOOK menu does the same.
-Filter details (block size, colour levels, dither) are at the top of the look section in `web/live.js`.
+## The game screen
+- The look is picked on the panel (/panel → STYLE), not in the game.
+- FULL SCREEN (button under the stage names, or the F key): the picture covers the whole screen edge to edge, the choices float over its bottom. Esc leaves it.
 
 ## Changing the trajectories
 Everything chance can hand out (options, odds, prompt fragments, wording) is in `web/stages.js`. Edit it and reload the page; no restart needed.
@@ -51,8 +51,14 @@ Then on the Mac, through the tunnel: http://localhost:8766/game (the game), http
 
 ## The tuning panel (http://localhost:8766/panel)
 All painting settings live on the server, so the panel tunes the game and the lab live, while they run. Nothing needs a restart.
-- STRUCTURE: ControlNet (depth / pose) arrives in stage 2.
-- STYLE: two LoRA slots with weights, reference style strength (IP-Adapter), style prompt (added to every prompt), negative prompt, prompt guidance.
+- STRUCTURE: what holds your body while it's repainted, through ControlNet, with a live preview of what the painter follows.
+  - DEPTH (default): Depth Anything V2 small reads a depth map of each frame on the GPU (~10 ms) -> depth ControlNet.
+  - POSE: the browser finds your joints with MediaPipe Pose (like the cut-out) and sends them with each frame; the server
+    draws them in OpenPose's format -> OpenPose ControlNet. (The original OpenPose detector is ~100 ms+ a frame and drags in
+    many libraries, so it isn't used.) The first switch to pose loads its ControlNet: a few seconds.
+  - CONTROLNET STRENGTH: too high = stiff, photo-like edges; too low = melting. With a shape on, try CHANGE 0.8–1.0.
+- STYLE: the LOOK (cartoon, caricature, comic, pop art, pixel art, line drawing, pencil, watercolour, oil, impressionist, woodblock, vintage poster, paper cut-out, claymation, 3D animated, low poly, stained glass, mosaic, graffiti, film noir, cyberpunk, blueprint, Matrix green code). Each look = words added to every prompt + a browser filter (pixel / line / matrix) + optionally a LoRA put in slot A. The list is styles.json: edit it (on the Mac, then ./push.sh); the panel picks up changes in a few seconds, no restart.
+- STYLE, continued: two LoRA slots with weights, reference style strength (IP-Adapter), style prompt (added to every prompt), negative prompt, prompt guidance.
   Guidance 1.0 = off (fastest). The negative prompt only does something above 1.0, and then each frame costs about twice as long.
 - CHANGE: how much of you is repainted; world steps (1–4).
 - STABILITY: STEADY, how much each frame leans on the last one.

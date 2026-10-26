@@ -14,7 +14,7 @@ OLD=$(cat "$LAST" 2>/dev/null || true)
 
 echo "sending code to $VM ..."
 gcloud compute scp --zone="$ZONE" --recurse \
-  web stream_server.py download_models.py setup_cloud.sh CLOUD.md README.md \
+  web stream_server.py download_models.py styles.json setup_cloud.sh CLOUD.md README.md \
   "$VM":~/stream-proto/ --quiet
 
 if [ "$1" = "loras" ]; then

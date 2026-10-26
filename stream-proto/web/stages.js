@@ -9,16 +9,9 @@
 //  Nothing else needs to change when you add, remove or reword options.
 // ============================================================================
 
-// added to every prompt, so all stages share one look (a STYLE reference in the lab also carries over)
-// THE LOOK of the whole world: "pixel" (8-bit) or "line" (ink drawing). "paint" = no filter, as generated.
-export const LOOK = "pixel";                 // the look it starts with (the PIXEL / LINE / PAINT switch changes it live)
-export const STYLES = {
-  pixel: "8-bit pixel art, retro video game sprite, flat colours, simple shapes",
-  line: "black ink line drawing, clean bold outlines, white paper, minimal, no shading",
-  paint: "storybook illustration, soft painterly colours, gentle light",
-};
-export let STYLE = STYLES[LOOK] || STYLES.paint;
-export function setLook(look) { STYLE = STYLES[look] || STYLES.paint; }   // the prompts below pick up the new words
+// THE LOOK (cartoon, caricature, pixel art, ...) is chosen on /panel and added to every prompt by the server
+// (the list is styles.json). The prompts below only say WHAT is in the picture.
+export const STYLE = "";
 
 // ---------- 1. BIRTH ----------  (drawn, no generation)
 // You pick one of the sperm, the dice decides which one reaches the egg.
@@ -113,15 +106,15 @@ export const WORLD = {
 // r = the results so far: r.body.sex, r.body.hair ... , r.home, r.world.where, r.world.city, r.world.when
 export const PROMPTS = {
   body: (r) => ({
-    person: `a newborn ${r.body.sex.baby}, ${r.body.hair.p} ${r.body.curl.p} hair, ${r.body.eyes.p} eyes, wrapped in a soft blanket, ${STYLE}`,
-    background: `${BODY.bg}, ${STYLE}`,
+    person: `a newborn ${r.body.sex.baby}, ${r.body.hair.p} ${r.body.curl.p} hair, ${r.body.eyes.p} eyes, wrapped in a soft blanket`,
+    background: `${BODY.bg}`,
   }),
   home: (r) => ({
-    person: `a seven-year-old ${r.body.sex.child}, ${r.body.hair.p} ${r.body.curl.p} hair, ${r.body.eyes.p} eyes, wearing ${r.home.clothes}, ${STYLE}`,
-    background: `${r.home.bg}, wide shot, ${STYLE}`,
+    person: `a seven-year-old ${r.body.sex.child}, ${r.body.hair.p} ${r.body.curl.p} hair, ${r.body.eyes.p} eyes, wearing ${r.home.clothes}`,
+    background: `${r.home.bg}, wide shot`,
   }),
   world: (r) => ({
-    person: `a ${r.body.build.p} ${r.body.sex.adult}, ${r.body.hair.p} ${r.body.curl.p} hair, ${r.body.eyes.p} eyes, wearing ${r.world.when.clothes}, ${STYLE}`,
-    background: `a street in ${r.world.city}, ${r.world.when.look}, wide shot, ${STYLE}`,
+    person: `a ${r.body.build.p} ${r.body.sex.adult}, ${r.body.hair.p} ${r.body.curl.p} hair, ${r.body.eyes.p} eyes, wearing ${r.world.when.clothes}`,
+    background: `a street in ${r.world.city}, ${r.world.when.look}, wide shot`,
   }),
 };

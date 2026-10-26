@@ -1,7 +1,8 @@
 // The live engine shared by the lab page (index.html) and the game (game.html):
 // camera -> person cut-out -> generated person over a generated background, drawn into one canvas.
 //
-//   const live = createLive({ out, video, params });   params() -> { look }   look: "pixel" | "line" | ""  (a browser filter)
+//   const live = createLive({ out, video, params });   params() -> { look? }   look: "pixel" | "line" | "matrix" | ""
+//   (a browser filter; leave it out to use the look picked on /panel)
 //   Everything about the painting itself (change, style, LoRAs, steadiness) is tuned on /panel and lives on the server.
 //   live.setPerson("a baby girl ...")     // null = show the real you (or nothing)
 //   await live.setBackground("a village") // null = your real room
@@ -63,6 +64,7 @@ export function createLive({ out, video, params }) {
         baseOptions: { modelAssetPath: "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite", delegate: "GPU" },
         runningMode: mode, outputConfidenceMasks: true, outputCategoryMask: false,
       });
+      vision = { mod: await import(`https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${v}/vision_bundle.mjs`), files };
       segmenter = await ImageSegmenter.createFromOptions(files, opts("VIDEO"));   // you, in the camera
       segImage = await ImageSegmenter.createFromOptions(files, opts("IMAGE"));    // the person the model drew
       segOk = true;
@@ -71,6 +73,32 @@ export function createLive({ out, video, params }) {
       stat.seg = "no person cut-out (segmenter didn't load: check internet)";
     }
   }
+  // ---------- your joints, for the pose ControlNet (only while SHAPE = pose on /panel) ----------
+  let vision = null, poser = null, poserLoading = false, shapeMode = "depth";
+  async function startPoser() {
+    if (poser || poserLoading || !vision) return;
+    poserLoading = true;
+    try {
+      poser = await vision.mod.PoseLandmarker.createFromOptions(vision.files, {
+        baseOptions: { modelAssetPath: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task", delegate: "GPU" },
+        runningMode: "VIDEO", numPoses: 1,
+      });
+    } catch (e) { console.warn("pose unavailable:", e); stat.seg = "no pose reader (didn't load: check internet)"; }
+    poserLoading = false;
+  }
+  let poseT = 0;
+  function joints() {                                     // MediaPipe's 33 points as [x, y, visibility], or null
+    if (shapeMode !== "pose") return null;
+    if (!poser) { startPoser(); return null; }
+    try {
+      poseT = Math.max(poseT + 1, performance.now());
+      const res = poser.detectForVideo(grab, poseT);
+      const lm = res.landmarks && res.landmarks[0];
+      if (!lm) return [];
+      return lm.map(p => [+p.x.toFixed(4), +p.y.toFixed(4), +(p.visibility ?? 1).toFixed(2)]);
+    } catch (e) { return null; }
+  }
+
   // MediaPipe's "how sure is this pixel a person" -> a mask canvas; returns how much of the frame is person
   function writeMask(res, canvas) {
     const conf = res.confidenceMasks && res.confidenceMasks[0];
@@ -133,7 +161,7 @@ export function createLive({ out, video, params }) {
           if (k < 1) { octx.globalAlpha = 1 - k; follow(octx, prevPose, () => octx.drawImage(prevCut, 0, 0)); octx.globalAlpha = 1; }
         } else if (bgImg) octx.drawImage(cutout(grab, mask), 0, 0);          // the real you, on the new background
       }
-      applyLook(params().look);                                              // 8-bit / line drawing, on everything
+      applyLook(params().look ?? stat.filter, now);                          // the look's filter (from /panel), on everything
     }
     const t = stat.times;
     stat.fps = t.length > 1 ? ((t.length - 1) / ((t[t.length - 1] - t[0]) / 1000)).toFixed(1) : "–";
@@ -143,17 +171,45 @@ export function createLive({ out, video, params }) {
 
   // ---------- the look: a filter over the finished frame, so the world always looks the same ----------
   // "pixel": big blocks, each colour channel cut to a few levels, with a checkerboard dither (the classic 8-bit trick).
-  // "line": ink outlines on paper. Anything else: as generated.
+  // "line": ink outlines on paper. "matrix": the picture rebuilt from glowing green glyphs, with code rain.
+  // Anything else: as generated. Which one comes from the look picked on /panel (styles.json "filter").
   const PIXEL = 4;                                            // size of one 8-bit pixel, in picture pixels
   const LEVELS = 6;                                           // per colour channel: 6 x 6 x 6 = 216 colours
   const DITHER = 0.3;                                         // 0 = flat bands, 1 = heavy checkerboard
   const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map(v => (v / 16 - 0.47) * DITHER);
   const lookCanvas = document.createElement("canvas");
   let lastLook = null;
-  function applyLook(look) {
+  function applyLook(look, now) {
     if (look !== lastLook) { out.style.imageRendering = look === "pixel" ? "pixelated" : "auto"; lastLook = look; }
     if (look === "pixel") pixelate(PIXEL);
     else if (look === "line") lineDrawing();
+    else if (look === "matrix") matrix(now);
+  }
+  const GLYPHS = "ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜ0123456789Z:.=*+-<>";
+  const CELL = 10;                                            // one glyph, in picture pixels
+  let rainSeed = null;
+  function matrix(now) {
+    const cw = Math.round(W / CELL), ch = Math.round(H / CELL);
+    if (!rainSeed || rainSeed.length !== cw) rainSeed = Array.from({ length: cw }, () => [Math.random() * ch * 3, 0.6 + Math.random() * 0.9]);
+    lookCanvas.width = cw; lookCanvas.height = ch;
+    const g = lookCanvas.getContext("2d", { willReadFrequently: true });
+    g.drawImage(out, 0, 0, cw, ch);
+    const d = g.getImageData(0, 0, cw, ch).data;
+    octx.fillStyle = "#020a04"; octx.fillRect(0, 0, W, H);
+    octx.font = `${CELL + 1}px ui-monospace, Menlo, monospace`; octx.textAlign = "center"; octx.textBaseline = "middle";
+    const t = now / 1000;
+    for (let x = 0; x < cw; x++) {
+      const [seed, speed] = rainSeed[x], head = (seed + t * speed * 14) % (ch * 3);   // where this column's drop is
+      for (let y = 0; y < ch; y++) {
+        const o = (y * cw + x) * 4, lum = (d[o] * 0.3 + d[o + 1] * 0.59 + d[o + 2] * 0.11) / 255;
+        const dist = head - y, rain = dist >= 0 && dist < 10 ? 1 - dist / 10 : 0;
+        const a = Math.min(1, lum * 1.15 + rain * 0.55);
+        if (a < 0.07) continue;
+        octx.fillStyle = dist >= 0 && dist < 1 ? `rgba(220,255,225,${a})` : `rgba(70,255,110,${a})`;
+        const gi = (x * 7 + y * 13 + Math.floor(t * 2 + seed)) % GLYPHS.length;
+        octx.fillText(GLYPHS[gi], x * CELL + CELL / 2, y * CELL + CELL / 2);
+      }
+    }
   }
   function pixelate(block) {
     const pw = Math.round(W / block), ph = Math.round(H / block);
@@ -226,22 +282,26 @@ export function createLive({ out, video, params }) {
       const m = await (await fetch("/config", { cache: "no-store" })).json();
       if (m.width !== W || m.height !== H) { W = m.width; H = m.height; sizeCanvases(); }
       stat.engine = m.engine; stat.references = m.references;
-      if (lookSeen === null) lookSeen = m.look;
+      if (lookSeen === null) { lookSeen = m.look; tuneSeen = m.tune; }
+      stat.filter = m.filter || "";
+      shapeMode = m.shape || "depth";
       online = true; ready.splice(0).forEach(f => f(m)); pump();
     } catch (e) { online = false; setTimeout(connect, 2000); }
   }
   const offline = () => { online = false; flying = 0; setTimeout(connect, 2000); };
 
   // the look is tuned live on /panel: when it changes, repaint the world and the avatar straight away
-  let lookSeen = null;
+  let lookSeen = null, tuneSeen = null;
   setInterval(async () => {
     if (!online) return;
     try {
       const m = await (await fetch("/config", { cache: "no-store" })).json();
-      if (lookSeen !== null && m.look !== lookSeen) { refresh(); if (bgPrompt) setBackground(bgPrompt); }
-      lookSeen = m.look;
+      if (tuneSeen !== null && m.tune !== tuneSeen) refresh();                       // any setting: a fresh avatar frame
+      if (lookSeen !== null && m.look !== lookSeen && bgPrompt) setBackground(bgPrompt);   // the look: a fresh world too
+      lookSeen = m.look; tuneSeen = m.tune; shapeMode = m.shape || "depth"; stat.filter = m.filter || "";
+      if (shapeMode === "pose") startPoser();
     } catch (e) {}
-  }, 1500);
+  }, 1000);
 
   // the person: up to two frames in the pipeline, so the GPU never waits for the browser
   const MAX_FLYING = 2;
@@ -262,11 +322,14 @@ export function createLive({ out, video, params }) {
     s.drawImage(cutout(grab, mask), 0, 0);
     const myMask = mk(); myMask.getContext("2d").drawImage(mask, 0, 0);
     const myPose = poseOf(mask);
+    const pts = joints();
     schedule(Math.max(40, stat.ms * 0.5));               // start the next one about halfway through this one
     try {
       const jpeg = await new Promise(r => send.toBlob(r, "image/jpeg", 0.85));
       const q = "prompt=" + encodeURIComponent(prompt);     // all tuning is on the server (/panel)
-      const res = await fetch("/frame?" + q, { method: "POST", body: jpeg, headers: { "Content-Type": "image/jpeg" } });
+      const headers = { "Content-Type": "image/jpeg" };
+      if (pts) headers["X-Pose"] = JSON.stringify(pts);
+      const res = await fetch("/frame?" + q, { method: "POST", body: jpeg, headers });
       if (!res.ok) throw new Error("status " + res.status);
       stat.ms = +res.headers.get("X-Gen-Ms") || 0;
       const bmp = await createImageBitmap(await res.blob());

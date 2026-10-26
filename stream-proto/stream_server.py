@@ -12,6 +12,12 @@ THE PAINTER (set PAINTER=... when starting)
         It paints from pure noise in one step and has guidance baked in (no CFG needed).
   lcm   the previous painter: DreamShaper 8 + LCM-LoRA. Kept to compare against.
 
+STRUCTURE (stage 2): ControlNet holds the body while the painter repaints everything else.
+  depth   Depth Anything V2 small reads a depth map of each frame here, on the GPU -> depth ControlNet.
+  pose    the browser finds the joints (MediaPipe Pose) and sends them with the frame; they're drawn here in
+          OpenPose's format (colours, limbs) -> OpenPose ControlNet.
+  The shape the painter follows can be seen on /panel (GET /shape).
+
 STYLE
   loras/        any SD 1.5 LoRA (.safetensors) dropped in here shows up on /panel. Two slots, each with a weight.
                 A .txt file with the same name holds its trigger words, added to the prompt while it's on.
@@ -57,11 +63,14 @@ DMD_UNET = "aaronb/dreamshaper-8-dmd-1kstep"                # the one-step paint
 LCM_LORA = "latent-consistency/lcm-lora-sdv1-5"
 IP_ADAPTER = ("h94/IP-Adapter", "models", "ip-adapter-plus_sd15.safetensors")
 TINY_VAE = "madebyollin/taesd"
+CONTROLNETS = {"depth": "lllyasviel/control_v11f1p_sd15_depth", "pose": "lllyasviel/control_v11p_sd15_openpose"}
+DEPTH_MODEL = "depth-anything/Depth-Anything-V2-Small-hf"
 BG_IMAGE_KEEP = 0.35              # background IMAGE reference: how much of the picture survives (0.2–0.6)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 LORA_DIR = os.path.join(HERE, "loras")
 PRESET_DIR = os.path.join(HERE, "presets")
+STYLES_FILE = os.path.join(HERE, "styles.json")      # the looks on /panel (cartoon, caricature, pixel art, ...): edit freely
 
 # style LoRAs fetched on first start (all SD 1.5, none anime). file in loras/ <- (repo, file in repo or None = find it), trigger words
 DEFAULT_LORAS = {
@@ -76,10 +85,14 @@ RANDOM_ORG_KEY = os.environ.get("RANDOM_ORG_KEY", "")
 
 # ---------- the tuning (changed live from /panel) ----------
 TUNE_DEFAULTS = {
+    # structure
+    "shape": "depth",         # what holds the body: "depth", "pose" or "off"
+    "cn_strength": 0.8,       # how strongly ControlNet holds it
     # change
     "change": 0.6,            # how much the avatar is repainted (1.0 = from pure noise: the painter's home ground)
     "world_steps": 2,         # world: painting steps (1 = what DMD is trained for; more = more detail, maybe worse)
     # style
+    "style": "cartoon",       # a look from styles.json: words added to every prompt + a browser filter
     "lora_a": "", "lora_a_w": 0.8,
     "lora_b": "", "lora_b_w": 0.5,
     "ip_style": 0.6,          # how strongly STYLE / IMAGE references steer the look
@@ -90,10 +103,33 @@ TUNE_DEFAULTS = {
     "steady": 0.4,            # how much each frame leans on the last one
 }
 TUNE = dict(TUNE_DEFAULTS)
-LOOK_KEYS = {"world_steps", "lora_a", "lora_a_w", "lora_b", "lora_b_w", "ip_style", "style_prompt", "negative", "guidance"}
+LOOK_KEYS = {"style", "world_steps", "lora_a", "lora_a_w", "lora_b", "lora_b_w", "ip_style", "style_prompt", "negative", "guidance"}
 look_version = 0              # goes up when the look changes, so the pages redraw the world
+tune_version = 0              # goes up on any change, so the pages send a fresh avatar frame
 
 app = FastAPI()
+
+
+# ---------- looks (styles.json) ----------
+_styles = {"mtime": None, "data": {}}
+
+
+def load_styles():
+    """styles.json, re-read whenever it changes on disk (so edits show up without a restart)."""
+    try:
+        m = os.path.getmtime(STYLES_FILE)
+        if m != _styles["mtime"]:
+            with open(STYLES_FILE) as fh:
+                data = json.load(fh)
+            _styles["data"] = {k: v for k, v in data.items() if not k.startswith("_") and isinstance(v, dict)}
+            _styles["mtime"] = m
+    except (OSError, ValueError) as e:
+        print("[style] couldn't read styles.json:", e)
+    return _styles["data"]
+
+
+def current_style():
+    return load_styles().get(TUNE["style"], {})
 
 
 # ---------- LoRA files ----------
@@ -133,6 +169,56 @@ def download_loras():
             print(f"[lora] downloaded {file}  ({repo})")
         except Exception as e:
             print(f"[lora] couldn't download {file} from {repo}: {e}")
+
+
+# ---------- OpenPose-format skeleton, from MediaPipe Pose's 33 points ----------
+# OpenPose's 18 joints: nose, neck, r-shoulder, r-elbow, r-wrist, l-shoulder, l-elbow, l-wrist, r-hip, r-knee, r-ankle,
+# l-hip, l-knee, l-ankle, r-eye, l-eye, r-ear, l-ear. "neck" is the middle of the shoulders.
+OP_FROM_MP = [0, None, 12, 14, 16, 11, 13, 15, 24, 26, 28, 23, 25, 27, 5, 2, 8, 7]
+OP_LIMBS = [(1, 2), (1, 5), (2, 3), (3, 4), (5, 6), (6, 7), (1, 8), (8, 9), (9, 10), (1, 11), (11, 12), (12, 13),
+            (1, 0), (0, 14), (14, 16), (0, 15), (15, 17)]
+OP_COLOURS = [(255, 0, 0), (255, 85, 0), (255, 170, 0), (255, 255, 0), (170, 255, 0), (85, 255, 0), (0, 255, 0),
+              (0, 255, 85), (0, 255, 170), (0, 255, 255), (0, 170, 255), (0, 85, 255), (0, 0, 255), (85, 0, 255),
+              (170, 0, 255), (255, 0, 255), (255, 0, 170), (255, 0, 85)]
+
+
+def draw_openpose(points, w=WIDTH, h=HEIGHT):
+    """points: MediaPipe's 33 [x, y, visibility] (x, y from 0 to 1). Returns the skeleton on black, as OpenPose draws it."""
+    def mp(i):
+        if i >= len(points):
+            return None
+        x, y, v = points[i]
+        return (x * w, y * h) if v > 0.5 and -0.05 < x < 1.05 and -0.05 < y < 1.05 else None
+    kp = [mp(i) if i is not None else None for i in OP_FROM_MP]
+    if kp[2] and kp[5]:
+        kp[1] = ((kp[2][0] + kp[5][0]) / 2, (kp[2][1] + kp[5][1]) / 2)
+    img = Image.new("RGB", (w, h), (0, 0, 0))
+    d = ImageDraw.Draw(img)
+    stick, r = max(4, round(h * 8 / 512)), max(3, round(h * 4 / 512))
+    for i, (a, b) in enumerate(OP_LIMBS):                       # limbs at 60 %, like OpenPose's blend
+        if kp[a] and kp[b]:
+            d.line([kp[a], kp[b]], fill=tuple(int(c * 0.6) for c in OP_COLOURS[i]), width=stick)
+    for i, p in enumerate(kp):
+        if p:
+            d.ellipse((p[0] - r, p[1] - r, p[0] + r, p[1] + r), fill=OP_COLOURS[i])
+    return img
+
+
+def fetch_structure(dtype=None):
+    """Download the ControlNets and the depth reader (for download_models.py)."""
+    from diffusers import ControlNetModel
+    from transformers import AutoModelForDepthEstimation
+    for kind in CONTROLNETS:
+        load_controlnet(kind, dtype)
+    AutoModelForDepthEstimation.from_pretrained(DEPTH_MODEL)
+
+
+def load_controlnet(kind, dtype=None):
+    from diffusers import ControlNetModel
+    try:
+        return ControlNetModel.from_pretrained(CONTROLNETS[kind], torch_dtype=dtype, variant="fp16")
+    except Exception:
+        return ControlNetModel.from_pretrained(CONTROLNETS[kind], torch_dtype=dtype)
 
 
 def load_pipe(device="cpu", dtype=None):
@@ -208,6 +294,8 @@ class Generator:
         self.ip = {"person": None, "background": None}
         self.ip_scale = None
         self.lora_key, self.lora_loaded, self.lora_errors = None, set(), {}
+        self.cn, self.depth_model, self.depth_range = {}, None, None      # structure, loaded when first used
+        self.shape_img, self.shape_ms, self.prev_shape = None, None, None
         self.ip_zero = self.encode_images([Image.new("RGB", (224, 224), (128, 128, 128))]) * 0
         print(f"[gen] ready · prediction={self.prediction}")
 
@@ -243,6 +331,55 @@ class Generator:
         self.lora_key = key
         self.embeds.clear()                                      # LoRAs can change the text encoder too
         self.prev = None
+
+    # --- structure: what holds the body ---
+    def controlnet(self, kind):
+        if kind not in self.cn:
+            t0 = time.perf_counter()
+            self.cn[kind] = load_controlnet(kind, self.dtype).to(self.device).eval()
+            print(f"[shape] {kind} ControlNet loaded in {time.perf_counter() - t0:.1f} s")
+        return self.cn[kind]
+
+    def depth_map(self, x):
+        """Camera frame (-1..1) -> depth map (0..1, near = white, 3 channels), the way the depth ControlNet wants it."""
+        torch, F = self.torch, self.torch.nn.functional
+        if self.depth_model is None:
+            from transformers import AutoModelForDepthEstimation
+            self.depth_model = AutoModelForDepthEstimation.from_pretrained(DEPTH_MODEL, torch_dtype=self.dtype).to(self.device).eval()
+            self.depth_mean = torch.tensor([0.485, 0.456, 0.406], device=self.device, dtype=self.dtype).view(1, 3, 1, 1)
+            self.depth_std = torch.tensor([0.229, 0.224, 0.225], device=self.device, dtype=self.dtype).view(1, 3, 1, 1)
+            print("[shape] depth reader loaded")
+        h, w = round(HEIGHT / 14) * 14, round(WIDTH / 14) * 14   # the model works in 14-pixel patches
+        inp = F.interpolate((x + 1) / 2, (h, w), mode="bilinear", align_corners=False)
+        d = self.depth_model(pixel_values=(inp - self.depth_mean) / self.depth_std).predicted_depth
+        d = F.interpolate(d[:, None].float(), (HEIGHT, WIDTH), mode="bilinear", align_corners=False)
+        lo, hi = float(d.amin()), float(d.amax())
+        if self.depth_range:                                     # smooth the range, so the map doesn't pump
+            lo, hi = 0.8 * self.depth_range[0] + 0.2 * lo, 0.8 * self.depth_range[1] + 0.2 * hi
+        self.depth_range = (lo, hi)
+        d = ((d - lo) / max(1e-6, hi - lo)).clamp(0, 1)
+        return d.repeat(1, 3, 1, 1).to(self.dtype)
+
+    def shape_for(self, x, pose):
+        kind = TUNE["shape"]
+        if kind == "off" or float(TUNE["cn_strength"]) <= 0:
+            self.shape_img = None
+            return None
+        t0 = time.perf_counter()
+        if kind == "depth":
+            cond = self.depth_map(x)
+        else:
+            sk = draw_openpose(pose or [])
+            cond = (self.torch.from_numpy(self.np.asarray(sk, dtype="float32") / 255).permute(2, 0, 1)[None]).to(self.device, self.dtype)
+        self.shape_img = cond
+        self.shape_ms = (time.perf_counter() - t0) * 1000
+        return self.controlnet(kind), cond
+
+    def shape_jpeg(self):
+        if self.shape_img is None:
+            return None
+        y = (self.shape_img[0].permute(1, 2, 0).float().clamp(0, 1) * 255).round().byte().cpu().numpy()
+        return jpeg_bytes(Image.fromarray(y))
 
     # --- prompts and references ---
     def embed(self, prompt):
@@ -287,7 +424,7 @@ class Generator:
             self.noises[key] = torch.randn(shape, generator=g).to(self.device, self.dtype)
         return self.noises[key]
 
-    def denoise(self, lat, timesteps, prompt, side, seed=None):
+    def denoise(self, lat, timesteps, prompt, side, seed=None, control=None):
         """Noise up to t, predict the clean picture, repeat at a lower t. One timestep = one-step painting."""
         torch = self.torch
         x0 = lat if lat is not None else torch.zeros((1, 4, HEIGHT // 8, WIDTH // 8), device=self.device, dtype=self.dtype)
@@ -295,31 +432,43 @@ class Generator:
         cfg = g > 1.01
         text = self.embed(prompt)
         if cfg:
-            text = torch.cat([self.embed(TUNE["negative"]), text])
+            neg = ", ".join(p for p in (TUNE["negative"], current_style().get("negative", "")) if p)
+            text = torch.cat([self.embed(neg), text])
         kw = {"added_cond_kwargs": {"image_embeds": self.image_embeds(side, cfg)}}
         for i, t in enumerate(timesteps):
             a = self.alphas[t]
             sa, s1a = a.sqrt().to(self.dtype), (1 - a).sqrt().to(self.dtype)
             noisy = sa * x0 + s1a * self.noise(i, x0.shape, seed)
             inp = torch.cat([noisy, noisy]) if cfg else noisy
-            out = self.unet(inp, torch.tensor([t] * inp.shape[0], device=self.device), encoder_hidden_states=text, **kw).sample
+            tt = torch.tensor([t] * inp.shape[0], device=self.device)
+            extra = {}
+            if control is not None:                              # ControlNet: the shape, added inside the painter
+                cn, cond = control
+                down, mid = cn(inp, tt, encoder_hidden_states=text, controlnet_cond=torch.cat([cond, cond]) if cfg else cond,
+                               conditioning_scale=float(TUNE["cn_strength"]), return_dict=False)
+                extra = {"down_block_additional_residuals": down, "mid_block_additional_residual": mid}
+            out = self.unet(inp, tt, encoder_hidden_states=text, **kw, **extra).sample
             if cfg:
                 u, c = out.chunk(2)
                 out = u + g * (c - u)
             x0 = sa * noisy - s1a * out if self.prediction == "v_prediction" else (noisy - s1a * out) / sa
         return x0
 
-    def person(self, img, prompt):
+    def person(self, img, prompt, pose=None):
         change, steady = float(TUNE["change"]), float(TUNE["steady"])
         t1 = int(max(1, min(999, round(change * 1000) - 1)))
         ts = [t1]                                                # one step, live
         with self.torch.no_grad():
-            lat = self.tiny_vae.encode(self.to_tensor(img)).latents
+            x = self.to_tensor(img)
+            control = self.shape_for(x, pose)
+            lat = self.tiny_vae.encode(x).latents
+            if self.prev_shape != TUNE["shape"]:
+                self.prev, self.prev_shape = None, TUNE["shape"]
             same = self.prev is not None and self.prev_key == prompt and self.prev.shape == lat.shape
             if same and steady > 0:
                 # feedback: the new frame starts partly from the last result, so the look carries over
                 lat = (1 - steady) * lat + steady * self.prev
-            x0 = self.denoise(lat, ts, prompt, "person")
+            x0 = self.denoise(lat, ts, prompt, "person", control=control)
             if same and steady > 0:
                 # and the result is blended a little with the last one, so it doesn't jump
                 x0 = (steady * 0.5) * self.prev + (1 - steady * 0.5) * x0
@@ -372,6 +521,11 @@ class MockGenerator:
     def apply_loras(self, t):
         self.lora_key = (t["lora_a"], t["lora_a_w"], t["lora_b"], t["lora_b_w"])
 
+    shape_img, shape_ms = None, None
+
+    def shape_jpeg(self):
+        return jpeg_bytes(self.shape_img) if self.shape_img is not None else None
+
     def gpu_mb(self):
         return None
 
@@ -389,8 +543,11 @@ class MockGenerator:
             return fallback
         return tuple(int(v) for v in ImageStat.Stat(imgs[0].convert("RGB")).mean)
 
-    def person(self, img, prompt):
+    def person(self, img, prompt, pose=None):
         time.sleep(0.05)
+        kind = TUNE["shape"]
+        self.shape_img = None if kind == "off" else (draw_openpose(pose or []) if kind == "pose" else
+                                                     ImageOps.autocontrast(ImageOps.grayscale(img).filter(ImageFilter.GaussianBlur(4))).convert("RGB"))
         c = self.ref_colour("person", self.tint(prompt))
         g = ImageOps.colorize(ImageOps.grayscale(ImageOps.posterize(img, 3)), black=(20, 10, 40), white=c)
         return Image.blend(img, g, min(1.0, float(TUNE["change"])))
@@ -425,8 +582,8 @@ def jpeg_bytes(img):
 
 
 def full_prompt(prompt):
-    """The stage / lab prompt + the trigger words of the LoRAs that are on + the style prompt."""
-    parts = [prompt]
+    """The stage / lab prompt + the look's words + the trigger words of the LoRAs that are on + the style prompt."""
+    parts = [prompt, current_style().get("prompt", "")]
     for f, w in ((TUNE["lora_a"], TUNE["lora_a_w"]), (TUNE["lora_b"], TUNE["lora_b_w"])):
         if f and w > 0:
             parts.append(trigger_words(f))
@@ -434,13 +591,13 @@ def full_prompt(prompt):
     return ", ".join(p.strip() for p in parts if p and p.strip())
 
 
-def run_person(jpeg, prompt):
+def run_person(jpeg, prompt, pose=None):
     t0 = time.perf_counter()
     gen.apply_loras(TUNE)
     img = Image.open(io.BytesIO(jpeg)).convert("RGB")
     if img.size != (WIDTH, HEIGHT):
         img = ImageOps.fit(img, (WIDTH, HEIGHT))
-    out = gen.person(img, full_prompt(prompt))
+    out = gen.person(img, full_prompt(prompt), pose)
     ms = (time.perf_counter() - t0) * 1000
     frame_log.append((time.time(), ms))
     return jpeg_bytes(out), ms
@@ -512,7 +669,8 @@ async def draw(n: int = 1, lo: int = 1, hi: int = 6):
 @app.get("/config")
 async def config():
     return {"width": WIDTH, "height": HEIGHT, "mock": MOCK, "engine": "mock" if MOCK else PAINTER,
-            "references": True, "look": look_version}
+            "references": True, "look": look_version, "tune": tune_version, "shape": TUNE["shape"],
+            "filter": current_style().get("filter", "")}
 
 
 # ---------- tuning ----------
@@ -520,7 +678,7 @@ def clean_tune(d):
     """Only known keys, with sane types and ranges."""
     out = {}
     rng = {"change": (0.1, 1.0), "world_steps": (1, 4), "lora_a_w": (0, 2), "lora_b_w": (0, 2),
-           "ip_style": (0, 1.5), "guidance": (1, 4), "steady": (0, 0.85)}
+           "ip_style": (0, 1.5), "guidance": (1, 4), "steady": (0, 0.85), "cn_strength": (0, 1.5)}
     for k, v in d.items():
         if k not in TUNE_DEFAULTS:
             continue
@@ -535,6 +693,10 @@ def clean_tune(d):
             v = str(v)[:400]
             if k in ("lora_a", "lora_b") and v and v not in list_loras():
                 v = ""
+            if k == "shape" and v not in ("depth", "pose", "off"):
+                continue
+            if k == "style" and v not in load_styles():
+                continue
         out[k] = v
     return out
 
@@ -546,6 +708,8 @@ def settings_view():
     mem = gen.gpu_mb() if gen else None
     return {
         "tune": TUNE, "defaults": TUNE_DEFAULTS, "look": look_version,
+        "styles": [{"id": k, "name": v.get("name", k), "prompt": v.get("prompt", ""), "filter": v.get("filter", ""),
+                    "lora": v.get("lora")} for k, v in load_styles().items()],
         "loras": [{"file": f, "trigger": trigger_words(f), "error": (gen.lora_errors.get(f) if gen else None)} for f in list_loras()],
         "readout": {
             "painter": "mock" if MOCK else PAINTER,
@@ -553,6 +717,7 @@ def settings_view():
             "ms": round(sum(ms for _, ms in recent) / len(recent)) if recent else None,
             "world_ms": round(world_ms) if world_ms else None,
             "gpu_mb": mem[0] if mem else None, "gpu_total_mb": mem[1] if mem else None,
+            "shape_ms": round(gen.shape_ms, 1) if gen and gen.shape_ms else None,
             "ready": gen is not None,
         },
     }
@@ -565,12 +730,23 @@ async def get_settings():
 
 @app.post("/settings")
 async def post_settings(request: Request):
-    global look_version
+    global look_version, tune_version
     new = clean_tune(await request.json())
     if any(TUNE.get(k) != v for k, v in new.items() if k in LOOK_KEYS):
         look_version += 1
+    if any(TUNE.get(k) != v for k, v in new.items()):
+        tune_version += 1
     TUNE.update(new)
     return settings_view()
+
+
+@app.get("/shape")
+async def shape():
+    """The depth map or skeleton the painter followed in the last avatar frame (for /panel)."""
+    data = await asyncio.to_thread(gen.shape_jpeg) if gen else None
+    if not data:
+        return Response(status_code=204)
+    return Response(data, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 
 @app.post("/redraw")
@@ -605,13 +781,14 @@ async def save_preset(name: str):
 
 @app.get("/presets/{name}")
 async def load_preset(name: str):
-    global look_version
+    global look_version, tune_version
     p = preset_path(name)
     if not p or not os.path.exists(p):
         return JSONResponse({"error": "no such preset"}, status_code=404)
     with open(p) as fh:
         TUNE.update(clean_tune(json.load(fh)))
     look_version += 1
+    tune_version += 1
     return settings_view()
 
 
@@ -634,8 +811,14 @@ async def frame(request: Request, prompt: str = ""):
     (Older pages still send strength / steady / style in the address: they're ignored now.)"""
     jpeg = await request.body()
     prompt = prompt.strip() or "a person"
+    pose = None
+    try:                                                         # pose mode: the browser sends the joints along
+        raw = request.headers.get("X-Pose")
+        pose = [[float(v) for v in p[:3]] for p in json.loads(raw)][:33] if raw else None
+    except (ValueError, TypeError):
+        pose = None
     async with lock:
-        out, ms = await asyncio.to_thread(run_person, jpeg, prompt)
+        out, ms = await asyncio.to_thread(run_person, jpeg, prompt, pose)
     return Response(out, media_type="image/jpeg", headers={"X-Gen-Ms": str(round(ms)), "X-Look": str(look_version), "Cache-Control": "no-store"})
 
 

@@ -10,7 +10,7 @@
 :root { --ink: #111; --dim: #8a8a8a; --line: #d6d6d6; --bg: #fff; --miss: #c0392b; color-scheme: light; }
 html, body { height: 100%; }
 body { margin: 0; background: var(--bg); color: var(--ink); font-family: ui-sans-serif, system-ui, -apple-system, "Helvetica Neue", sans-serif; }
-.frame { box-sizing: border-box; height: 100%; max-width: 1240px; margin: 0 auto; padding: 24px; display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: 16px; }
+.frame { box-sizing: border-box; height: 100%; margin: 0 auto; padding: 14px 16px; display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: 12px; }
 .gen { position: relative; min-height: 0; border: 1.5px solid var(--ink); border-radius: 4px; overflow: hidden; display: grid; place-items: center; background: #f5f5f5; }
 .gen canvas { width: 100%; height: 100%; object-fit: contain; display: block; }
 .pip { position: absolute; top: 12px; right: 12px; width: clamp(110px, 16%, 200px); aspect-ratio: 16 / 9; object-fit: cover; transform: scaleX(-1); border: 1.5px solid var(--ink); border-radius: 3px; background: #ddd; }
@@ -35,10 +35,14 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: ui-sans
 .steps span.done { color: var(--dim); }
 .steps i { width: 16px; height: 1.5px; background: var(--line); }
 .left { display: flex; flex-direction: column; gap: 10px; }
-.looks { display: inline-flex; align-self: flex-start; border: 1.5px solid var(--ink); border-radius: 4px; overflow: hidden; }
-.looks button { font: inherit; font-size: 10px; font-weight: 600; letter-spacing: 0.1em; padding: 6px 11px; border: 0; background: #fff; color: var(--ink); cursor: pointer; }
-.looks button + button { border-left: 1.5px solid var(--ink); }
-.looks button[aria-pressed="true"] { background: var(--ink); color: #fff; }
+.fs { align-self: flex-start; font: inherit; font-size: 10px; font-weight: 600; letter-spacing: 0.1em; padding: 6px 11px; border: 1.5px solid var(--ink); border-radius: 4px; background: #fff; color: var(--ink); cursor: pointer; }
+
+/* FULL SCREEN: the picture covers the whole screen edge to edge; the bar floats over its bottom */
+body.full .frame { padding: 0; gap: 0; grid-template-rows: minmax(0, 1fr); }
+body.full .gen { border: 0; border-radius: 0; background: #000; }
+body.full .gen canvas { object-fit: cover; }
+body.full .bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; padding: 12px 20px; background: rgba(255,255,255,0.86); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+body.full .msg { bottom: 112px; }
 .dicestat { font-size: 10px; font-weight: 600; letter-spacing: 0.1em; color: var(--dim); }
 .dicestat b { color: var(--ink); }
 .dicestat a { color: var(--ink); }
@@ -79,7 +83,7 @@ button:focus-visible { outline: 3px solid #888; outline-offset: 2px; }
   <div class="bar">
     <div class="left">
       <div class="steps" id="steps"><span>BIRTH</span><i></i><span>BODY</span><i></i><span>HOME</span><i></i><span>WORLD</span></div>
-      <div class="looks" role="group" aria-label="Look"><button data-look="pixel">PIXEL</button><button data-look="line">LINE</button><button data-look="paint">PAINT</button></div>
+      <button class="fs" id="fs" title="Full screen (F). Esc leaves it.">FULL SCREEN</button>
       <div class="dicestat" id="dice" aria-live="polite">DIE · …</div>
     </div>
     <div class="choices" id="choices" role="group" aria-label="Your choices"></div>
@@ -92,16 +96,14 @@ import { createLive } from "./live.js";
 import { createDiceReader } from "./dice.js";
 import { createDiceReader as createRemoteReader } from "./dice-remote.js";
 import { findCamera } from "./cameras.js";
-import { BIRTH, BODY, HOME, WORLD, PROMPTS, STYLE, LOOK, setLook } from "./stages.js";
+import { BIRTH, BODY, HOME, WORLD, PROMPTS } from "./stages.js";
 
 const $ = (id) => document.getElementById(id);
 const msgEl = $("msg"), go = $("go"), choicesEl = $("choices"), statusEl = $("status");
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 let stageStrength = 0.75;
-// ---------- the look switch: PIXEL / LINE / PAINT ----------
-let look = LOOK;
-try { look = localStorage.getItem("pac-look") || LOOK; } catch (e) {}
-const live = createLive({ out: $("out"), video: $("pip"), params: () => ({ look: look === "paint" ? "" : look })   /* how it's painted: tuned on /panel */ });
+// the look (cartoon, caricature, pixel art, ...) and everything about the painting is chosen on /panel
+const live = createLive({ out: $("out"), video: $("pip"), params: () => ({}) });
 // what's on screen, so it can be redrawn in a new look: a function giving { person, background } prompts
 let current = null, lastBg = null;
 function show(fn) {
@@ -111,14 +113,16 @@ function show(fn) {
   live.setPerson(p.person);
 }
 function clearShow() { current = null; lastBg = null; live.setPerson(null); live.setBackground(null); }
-function setLookTo(v) {
-  look = v; setLook(v);
-  try { localStorage.setItem("pac-look", v); } catch (e) {}
-  document.querySelectorAll(".looks button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.look === v)));
-  if (current) { lastBg = null; show(current); }      // redraw what's on screen in the new look
+// ---------- full screen: the picture edge to edge (button or F; Esc leaves) ----------
+function setFull(on) {
+  if (on && !document.fullscreenElement) document.documentElement.requestFullscreen?.().catch(() => {});
+  if (!on && document.fullscreenElement) document.exitFullscreen?.();
+  document.body.classList.toggle("full", on);
+  $("fs").textContent = on ? "EXIT FULL SCREEN" : "FULL SCREEN";
 }
-document.querySelectorAll(".looks button").forEach(b => b.addEventListener("click", () => setLookTo(b.dataset.look)));
-setLookTo(look);
+$("fs").addEventListener("click", () => setFull(!document.body.classList.contains("full")));
+document.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement) setFull(false); });
+document.addEventListener("keydown", (e) => { if ((e.key === "f" || e.key === "F") && !e.repeat && !(e.target instanceof HTMLInputElement)) setFull(!document.body.classList.contains("full")); });
 
 // ---------- chance ----------
 let source = "";
@@ -335,7 +339,8 @@ function drawBirth(g, W, H, now) {
   g.fillStyle = "#c98f8a"; g.beginPath(); g.arc(cx - er * 0.08, cy - er * 0.3, er * 0.16, 0, 7); g.fill();
   // the sperm, spread evenly around it (none straight above or below)
   const n = BIRTH.sperm, ring = er + H * 0.15, tail = H * 0.12;
-  const big = look === "pixel" ? 1.5 : 1, hx = Math.max(7, H * 0.034) * big, hy = Math.max(5, H * 0.024) * big;
+  const pix = live.stat.filter === "pixel";
+  const big = pix ? 1.5 : 1, hx = Math.max(7, H * 0.034) * big, hy = Math.max(5, H * 0.024) * big;
   for (let i = 1; i <= n; i++) {
     const a = -Math.PI / 2 + (Math.PI * 2 / n) * (i - 0.5);
     const ux = Math.cos(a), uy = Math.sin(a);                 // pointing out from the egg
@@ -348,7 +353,7 @@ function drawBirth(g, W, H, now) {
     }
     const x = cx + ux * d, y = cy + uy * d, sel = i === mine;
     // tail: trails outward, wriggling sideways
-    g.strokeStyle = sel ? "#111" : "rgba(255,255,255,0.95)"; g.lineWidth = look === "pixel" ? (sel ? 6 : 5) : (sel ? 3 : 2); g.lineCap = "round";   // thicker so it survives the pixel filter
+    g.strokeStyle = sel ? "#111" : "rgba(255,255,255,0.95)"; g.lineWidth = pix ? (sel ? 6 : 5) : (sel ? 3 : 2); g.lineCap = "round";   // thicker so it survives the pixel filter
     g.beginPath();
     for (let s = 0; s <= 24; s++) {
       const along = hx + (s / 24) * tail, side = Math.sin(t * 9 + s * 0.5 + i) * (s * 0.3);
@@ -372,7 +377,7 @@ function drawBirth(g, W, H, now) {
 function bodyPrompt() {
   // while traits are still landing (the full prompt, once all are in, comes from stages.js)
   const b = r.body, hair = [b.hair && b.hair.p, b.curl && b.curl.p].filter(Boolean).join(" ");
-  return [`a newborn ${b.sex ? b.sex.baby : "baby"}`, hair && `${hair} hair`, b.eyes && `${b.eyes.p} eyes`, "wrapped in a soft blanket", STYLE].filter(Boolean).join(", ");
+  return [`a newborn ${b.sex ? b.sex.baby : "baby"}`, hair && `${hair} hair`, b.eyes && `${b.eyes.p} eyes`, "wrapped in a soft blanket"].filter(Boolean).join(", ");
 }
 async function body() {
   setSteps(1);

@@ -37,6 +37,12 @@ button.ghost { background: #fff; color: var(--ink); }
 .read { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 13px; font-variant-numeric: tabular-nums; }
 .read dt { color: var(--dim); font-size: 11px; font-weight: 600; letter-spacing: 0.08em; align-self: center; }
 .read dd { margin: 0; }
+.shapebox { position: relative; aspect-ratio: 5 / 3; background: #111; border-radius: 3px; overflow: hidden; display: grid; place-items: center; }
+.shapebox img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.shapebox span { color: #888; font-size: 12px; padding: 12px; text-align: center; }
+.looks { display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 6px; }
+.looks button { background: #fff; color: var(--ink); font-size: 11px; letter-spacing: 0.04em; padding: 8px 6px; text-align: center; }
+.looks button[aria-pressed="true"] { background: var(--ink); color: #fff; }
 .status { font-size: 12px; color: var(--dim); min-height: 1.3em; }
 .status.bad { color: var(--bad); }
 </style>
@@ -51,11 +57,20 @@ button.ghost { background: #fff; color: var(--ink); }
   <div class="grid">
     <section>
       <h2>STRUCTURE</h2>
-      <p class="note">What holds your body in place: depth or pose read from the camera, through ControlNet. Coming in stage 2. Until then, low CHANGE is the only thing keeping your shape.</p>
+      <label class="txt">SHAPE (what holds your body)<select id="shape">
+        <option value="depth">DEPTH (Depth Anything V2 → depth ControlNet)</option>
+        <option value="pose">POSE (your joints → OpenPose ControlNet)</option>
+        <option value="off">OFF (only CHANGE keeps your shape)</option>
+      </select></label>
+      <label class="ctl">CONTROLNET STRENGTH <span class="v" id="cn_strengthV"></span><input id="cn_strength" type="range" min="0" max="1.5" step="0.05"><small>How hard the shape is held. Too high = stiff and photo-like edges; too low = melting. With a shape on, try CHANGE 0.8–1.0.</small></label>
+      <div class="shapebox"><img id="shapeImg" alt="The shape the painter is following" hidden><span id="shapeNone">no shape yet (open the game or the lab, stand in front of the camera)</span></div>
+      <p class="note">Depth: near = white. Pose: OpenPose's coloured skeleton; the first switch to pose loads its ControlNet (a few seconds).</p>
     </section>
 
     <section class="wide">
       <h2>STYLE</h2>
+      <div class="looks" id="looks" role="group" aria-label="Look"></div>
+      <p class="note" id="lookNote">Picking a look adds its words to every prompt, sets its browser filter, and puts its LoRA (if it has one) in slot A. The list is <b>styles.json</b>: edit it to add or change looks.</p>
       <div class="row" style="align-items:stretch">
         <div class="lora" data-slot="a">
           <label class="txt">LORA A<select id="lora_a"></select></label>
@@ -79,7 +94,7 @@ button.ghost { background: #fff; color: var(--ink); }
 
     <section>
       <h2>CHANGE</h2>
-      <label class="ctl">CHANGE (avatar) <span class="v" id="changeV"></span><input id="change" type="range" min="0.1" max="1" step="0.05"><small>How much of you is repainted. 1.0 = from pure noise, where the one-step painter is at its best, but without ControlNet (stage 2) your shape is lost there.</small></label>
+      <label class="ctl">CHANGE (avatar) <span class="v" id="changeV"></span><input id="change" type="range" min="0.1" max="1" step="0.05"><small>How much of you is repainted. 1.0 = from pure noise, where the one-step painter is at its best; with a SHAPE on, the shape keeps your body. With SHAPE off, high CHANGE melts you.</small></label>
       <label class="ctl">WORLD STEPS <span class="v" id="world_stepsV"></span><input id="world_steps" type="range" min="1" max="4" step="1"><small>The background. 1 = what the one-step painter is trained for. More = a second look at the details; may help or hurt, compare.</small></label>
       <button class="ghost" id="redraw">REDRAW THE WORLD</button>
     </section>
@@ -95,6 +110,7 @@ button.ghost { background: #fff; color: var(--ink); }
         <dt>PAINTER</dt><dd id="r_painter">–</dd>
         <dt>AVATAR</dt><dd id="r_fps">–</dd>
         <dt>PER FRAME</dt><dd id="r_ms">–</dd>
+        <dt>SHAPE READER</dt><dd id="r_shape">–</dd>
         <dt>WORLD</dt><dd id="r_world">–</dd>
         <dt>GPU MEMORY</dt><dd id="r_gpu">–</dd>
       </dl>
@@ -113,7 +129,7 @@ button.ghost { background: #fff; color: var(--ink); }
 
 <script>
 const $ = (id) => document.getElementById(id);
-const SLIDERS = ["lora_a_w", "lora_b_w", "ip_style", "guidance", "change", "world_steps", "steady"];
+const SLIDERS = ["cn_strength", "lora_a_w", "lora_b_w", "ip_style", "guidance", "change", "world_steps", "steady"];
 const TEXTS = ["style_prompt", "negative"];
 const fmt = (k, v) => k === "world_steps" ? String(Math.round(v)) : (+v).toFixed(2);
 let state = null, defaults = null;
@@ -133,7 +149,7 @@ function send(k, v, wait = 120) {
 }
 SLIDERS.forEach(k => $(k).addEventListener("input", () => { $(k + "V").textContent = fmt(k, $(k).value); send(k, +$(k).value); }));
 TEXTS.forEach(k => $(k).addEventListener("input", () => send(k, $(k).value, 600)));
-["lora_a", "lora_b"].forEach(k => $(k).addEventListener("change", () => send(k, $(k).value, 0)));
+["lora_a", "lora_b", "shape"].forEach(k => $(k).addEventListener("change", () => send(k, $(k).value, 0)));
 $("redraw").addEventListener("click", () => fetch("/redraw", { method: "POST" }));
 
 // ---------- showing ----------
@@ -148,17 +164,39 @@ function fillLoras(loras) {
     m.textContent = !l ? "" : l.error ? "couldn't load: " + l.error : l.trigger ? "trigger words: " + l.trigger : "no trigger words";
   }
 }
+function fillLooks(s) {
+  const box = $("looks"), key = JSON.stringify(s.styles.map(x => [x.id, x.name]));
+  if (box.dataset.key !== key) {
+    box.dataset.key = key;
+    box.innerHTML = s.styles.map(x => `<button type="button" data-id="${x.id}" title="${(x.prompt || "as the painter paints it").replace(/"/g, "&quot;")}${x.filter ? " · filter: " + x.filter : ""}">${x.name}</button>`).join("");
+    box.querySelectorAll("button").forEach(b => b.addEventListener("click", () => pickLook(b.dataset.id)));
+  }
+  box.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.id === s.tune.style)));
+}
+async function pickLook(id) {
+  const st = state.styles.find(x => x.id === id), have = new Set(state.loras.map(l => l.file));
+  const body = { style: id, lora_a: "" };
+  if (st && st.lora && have.has(st.lora[0])) { body.lora_a = st.lora[0]; body.lora_a_w = st.lora[1]; }
+  try {
+    const r = await fetch("/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    show(await r.json(), true);
+  } catch (e) {}
+}
 function show(s, controls) {
   state = s; defaults = s.defaults;
+  fillLooks(s);
   if (controls) {
     SLIDERS.forEach(k => { if (document.activeElement !== $(k)) { $(k).value = s.tune[k]; $(k + "V").textContent = fmt(k, s.tune[k]); } });
     TEXTS.forEach(k => { if (document.activeElement !== $(k)) $(k).value = s.tune[k]; });
+    $("shape").value = s.tune.shape;
+    ["lora_a", "lora_b"].forEach(k => { $(k).value = s.tune[k]; });
   }
   fillLoras(s.loras);
   const r = s.readout;
   $("r_painter").textContent = r.ready ? r.painter.toUpperCase() : r.painter + " (loading…)";
   $("r_fps").textContent = r.fps ? `${r.fps} frames/s served` : "idle (no frames in the last 3 s)";
   $("r_ms").textContent = r.ms ? `${r.ms} ms on the server` : "–";
+  $("r_shape").textContent = s.tune.shape === "off" ? "off" : r.shape_ms ? `${r.shape_ms} ms (${s.tune.shape})` : "–";
   $("r_world").textContent = r.world_ms ? `${(r.world_ms / 1000).toFixed(2)} s last draw` : "–";
   $("r_gpu").textContent = r.gpu_mb ? `${(r.gpu_mb / 1000).toFixed(1)} of ${(r.gpu_total_mb / 1000).toFixed(1)} GB` : "– (no GPU)";
 }
@@ -168,6 +206,19 @@ async function poll(controls = false) {
 }
 poll(true);
 setInterval(() => poll(false), 1000);
+
+// the shape the painter followed in the last frame
+const shapeImg = $("shapeImg");
+shapeImg.onload = () => { $("shapeNone").hidden = true; shapeImg.hidden = false; };
+setInterval(async () => {
+  if (state && state.tune.shape === "off") { shapeImg.hidden = true; $("shapeNone").hidden = false; $("shapeNone").textContent = "shape off"; return; }
+  try {
+    const res = await fetch("/shape", { cache: "no-store" });
+    if (res.status !== 200) return;
+    const url = URL.createObjectURL(await res.blob());
+    const old = shapeImg.src; shapeImg.src = url; if (old.startsWith("blob:")) URL.revokeObjectURL(old);
+  } catch (e) {}
+}, 700);
 
 // ---------- presets ----------
 async function listPresets() {

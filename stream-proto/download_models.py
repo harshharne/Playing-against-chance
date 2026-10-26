@@ -9,6 +9,7 @@ For the default painter (PAINTER=dmd):
   - IP-Adapter + its image encoder (reference images)    ~2.5 GB
   - TAESD (tiny, fast VAE for live frames)               ~10 MB
   - 3 style LoRAs into loras/ (pixel art, sketch, watercolor)
+  - depth + OpenPose ControlNets (~0.7 GB each) and Depth Anything V2 small (~100 MB)
 If a download stops halfway, just run this again: it carries on where it stopped.
 """
 import time
@@ -21,5 +22,7 @@ t0 = time.time()
 print(f"downloading models for painter '{stream_server.PAINTER}' — this can take a while on the first run ...")
 stream_server.download_loras()
 stream_server.load_pipe("cpu", torch.float32)     # loading once = downloading once
+print("structure: ControlNets + depth reader ...")
+stream_server.fetch_structure(torch.float32)
 print(f"done in {time.time() - t0:.0f} s. LoRAs in loras/: {', '.join(stream_server.list_loras()) or 'none'}")
 print("Now run:  python stream_server.py")

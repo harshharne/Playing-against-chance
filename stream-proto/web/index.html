@@ -76,7 +76,6 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: ui-sans
       <label class="slot" data-side="background" data-kind="image" title="Image reference for the background: it becomes the starting picture"><input type="file" accept="image/*"><span class="lab">IMAGE</span><button type="button" class="x" aria-label="Remove">×</button></label>
     </div>
     <div class="sliders">
-      <label class="change" title="A filter over the whole picture">LOOK<select id="look"><option value="">AS GENERATED</option><option value="pixel">8-BIT</option><option value="line">LINE DRAWING</option></select></label>
       <a class="change tune" href="/panel" target="_blank" rel="noopener">TUNING → PANEL</a>
     </div>
     <button type="submit" class="enter">ENTER</button>
@@ -90,7 +89,7 @@ const $ = (id) => document.getElementById(id);
 const statusEl = $("status"), hint = $("hint");
 const live = createLive({
   out: $("out"), video: $("pip"),
-  params: () => ({ look: $("look").value }),       // change, style, LoRAs, steadiness: on /panel
+  params: () => ({}),       // the look, change, LoRAs, steadiness: all on /panel
 });
 live.camera.then(() => { hint.hidden = true; }).catch(e => { hint.textContent = "No camera: " + (e.message || e.name); });
 live.whenReady().then(paintSlots);
