@@ -1,15 +1,13 @@
 # Live generation — webcam → fast diffusion, you and the background separately
 
-## First time only: download the models (~5 GB, saved in ~/.cache/huggingface)
+## First time only: download the models (on chance-gpu, ~6 GB, saved in ~/.cache/huggingface)
 ```
-cd ~/Downloads/stream-proto
-source ~/Downloads/chance-proto/.venv/bin/activate
-python -m pip install -U diffusers transformers peft accelerate
-python download_models.py
+cd ~/stream-proto && source .venv/bin/activate && python download_models.py
 ```
-If the download stops halfway, run `python download_models.py` again: it carries on.
+If the download stops halfway, run it again: it carries on.
 
-## Two pages
+## Pages
+- http://localhost:8766/panel — the tuning panel (see below).
 - http://localhost:8766/game — the game: BIRTH → BODY → HOME → WORLD → the baseline. Space / Enter = the big button, keys 1–6 pick a sperm.
 - http://localhost:8766/dice.html — set up the physical die (see below).
 - http://localhost:8766 — the lab: type prompts and add references by hand to tune the look. References set here carry over into the game.
@@ -38,34 +36,46 @@ Filter details (block size, colour levels, dither) are at the top of the look se
 Everything chance can hand out (options, odds, prompt fragments, wording) is in `web/stages.js`. Edit it and reload the page; no restart needed.
 
 ## Run
+On the cloud machine (chance-gpu), see CLOUD.md for the full routine:
 ```
-cd ~/Downloads/stream-proto
-source ~/Downloads/chance-proto/.venv/bin/activate
-python stream_server.py
+cd ~/stream-proto && source .venv/bin/activate && python stream_server.py
 ```
-Open http://localhost:8766 in Chrome and allow the camera. The Mac needs to be online (the person cut-out loads from the internet).
+Then on the Mac, through the tunnel: http://localhost:8766/game (the game), http://localhost:8766 (the lab), http://localhost:8766/panel (tuning).
 
+## The lab (http://localhost:8766)
 - YOU / BACKGROUND: a prompt for each, press Enter. Either can be left empty.
-- STYLE / IMAGE slots next to each prompt: click or drag an image in; × removes it.
-  - STYLE steers the look.
-  - IMAGE for you: what you should resemble (mixed with the style).
-  - IMAGE for the background: becomes the starting picture, re-imagined by the prompt.
-- CHANGE: how much you get re-imagined (0.3 = still you, 0.9 = mostly invented).
-- STYLE: how strongly the STYLE / IMAGE references steer the look (0 = ignore them, 1+ = push hard).
-- STEADY: how much each frame leans on the last one. Higher = less flicker, but slower to follow you (ghosting). Lower = quicker, more flicker.
-- When you stand still, no new frames are made, so a still you stays perfectly still.
-- Every Enter makes a new background, even with the same prompt.
-- The small window in the corner is the plain camera.
+- STYLE / IMAGE slots next to each prompt: click or drag an image in; × removes it. They feed IP-Adapter (strength on the panel).
+  The background IMAGE becomes the starting picture, re-imagined by the prompt.
+- LOOK: a browser filter over everything (8-bit, line drawing, or as generated).
+- When you stand still, no new frames are made, so a still you stays perfectly still. Every Enter makes a new background.
 
-## Models
-- A different SD 1.5 base model: `MODEL=stablediffusionapi/anything-v5 python stream_server.py` (anime). Any SD 1.5 model in diffusers format works; it downloads on first start.
+## The tuning panel (http://localhost:8766/panel)
+All painting settings live on the server, so the panel tunes the game and the lab live, while they run. Nothing needs a restart.
+- STRUCTURE: ControlNet (depth / pose) arrives in stage 2.
+- STYLE: two LoRA slots with weights, reference style strength (IP-Adapter), style prompt (added to every prompt), negative prompt, prompt guidance.
+  Guidance 1.0 = off (fastest). The negative prompt only does something above 1.0, and then each frame costs about twice as long.
+- CHANGE: how much of you is repainted; world steps (1–4).
+- STABILITY: STEADY, how much each frame leans on the last one.
+- READOUT: painter, avatar frames per second, ms per frame, world time, GPU memory.
+- PRESETS: save / load all of the above by name (files in presets/ on the server).
+Note: the game's per-stage CHANGE values in stages.js aren't used any more; CHANGE comes from the panel.
 
-## Engines
-- default `sd15`: DreamShaper 8 + LCM-LoRA + IP-Adapter. All reference slots work.
-- `ENGINE=turbo python stream_server.py`: the earlier SD-Turbo version. Faster, but only the background IMAGE slot works.
-- `MOCK=1 python stream_server.py`: no model, fake effect, to test the page.
+## The painter
+- default `dmd`: DreamShaper 8, distilled to ONE step with DMD (`aaronb/dreamshaper-8-dmd-1kstep`, from the OpenDMD project).
+  It is at its best painting from pure noise (CHANGE 1.0), with ControlNet holding the body (stage 2).
+- `PAINTER=lcm python stream_server.py`: the previous painter (DreamShaper 8 + LCM-LoRA), to compare.
+- `MOCK=1 python stream_server.py`: no model, fake effect, to test the pages.
+No anime models are used anywhere.
+
+## Style LoRAs (loras/ folder, on the machine that runs the server)
+Any SD 1.5 LoRA (.safetensors) in loras/ shows up on the panel within a few seconds. A .txt with the same name holds trigger words.
+Downloaded on first start:
+- pixel-art.safetensors: PixelArtRedmond 1.5 (artificialguybr), trigger "Pixel Art, PixArFK"
+- sketch.safetensors: a small sketch LoRA trained on scene sketches (jordanhilado/sd-1-5-sketch-lora). The weakest of the three; a placeholder.
+- watercolor.safetensors: fladdict/watercolor, trigger "watercolor painting"
+Your own LoRAs: put them in loras/ on the Mac, then `./push.sh loras` sends them.
 
 ## Knobs (top of stream_server.py)
-- PERSON_STEPS 1 — set to 2 for a cleaner image at about half the fps
-- BG_IMAGE_KEEP 0.35 — how much of the background IMAGE reference survives
-- WIDTH × HEIGHT 640×384 — smaller (e.g. 512×320) = faster
+- TUNE_DEFAULTS: the panel's starting values
+- BG_IMAGE_KEEP 0.35: how much of the background IMAGE reference survives
+- WIDTH × HEIGHT 640×384: smaller (e.g. 512×320) = faster

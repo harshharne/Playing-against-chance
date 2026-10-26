@@ -1,7 +1,8 @@
 // The live engine shared by the lab page (index.html) and the game (game.html):
 // camera -> person cut-out -> generated person over a generated background, drawn into one canvas.
 //
-//   const live = createLive({ out, video, params });   params() -> { strength, steady, style, look }   look: "pixel" | "line" | ""
+//   const live = createLive({ out, video, params });   params() -> { look }   look: "pixel" | "line" | ""  (a browser filter)
+//   Everything about the painting itself (change, style, LoRAs, steadiness) is tuned on /panel and lives on the server.
 //   live.setPerson("a baby girl ...")     // null = show the real you (or nothing)
 //   await live.setBackground("a village") // null = your real room
 //   live.setScene(fn)                     // draw your own scene instead (fn(ctx, W, H, now)); null = back to live
@@ -225,10 +226,22 @@ export function createLive({ out, video, params }) {
       const m = await (await fetch("/config", { cache: "no-store" })).json();
       if (m.width !== W || m.height !== H) { W = m.width; H = m.height; sizeCanvases(); }
       stat.engine = m.engine; stat.references = m.references;
+      if (lookSeen === null) lookSeen = m.look;
       online = true; ready.splice(0).forEach(f => f(m)); pump();
     } catch (e) { online = false; setTimeout(connect, 2000); }
   }
   const offline = () => { online = false; flying = 0; setTimeout(connect, 2000); };
+
+  // the look is tuned live on /panel: when it changes, repaint the world and the avatar straight away
+  let lookSeen = null;
+  setInterval(async () => {
+    if (!online) return;
+    try {
+      const m = await (await fetch("/config", { cache: "no-store" })).json();
+      if (lookSeen !== null && m.look !== lookSeen) { refresh(); if (bgPrompt) setBackground(bgPrompt); }
+      lookSeen = m.look;
+    } catch (e) {}
+  }, 1500);
 
   // the person: up to two frames in the pipeline, so the GPU never waits for the browser
   const MAX_FLYING = 2;
@@ -252,8 +265,7 @@ export function createLive({ out, video, params }) {
     schedule(Math.max(40, stat.ms * 0.5));               // start the next one about halfway through this one
     try {
       const jpeg = await new Promise(r => send.toBlob(r, "image/jpeg", 0.85));
-      const p = params();
-      const q = `strength=${p.strength}&steady=${p.steady}&style=${p.style}&prompt=` + encodeURIComponent(prompt);
+      const q = "prompt=" + encodeURIComponent(prompt);     // all tuning is on the server (/panel)
       const res = await fetch("/frame?" + q, { method: "POST", body: jpeg, headers: { "Content-Type": "image/jpeg" } });
       if (!res.ok) throw new Error("status " + res.status);
       stat.ms = +res.headers.get("X-Gen-Ms") || 0;
@@ -291,7 +303,7 @@ export function createLive({ out, video, params }) {
     if (!bgPrompt) { oldBg = null; bgImg = null; refresh(); return; }
     stat.note = "making background…";
     try {
-      const res = await fetch(`/background?style=${params().style}&prompt=` + encodeURIComponent(bgPrompt), { cache: "no-store" });
+      const res = await fetch("/background?prompt=" + encodeURIComponent(bgPrompt), { cache: "no-store" });
       if (!res.ok) throw new Error("status " + res.status);
       stat.bgMs = +res.headers.get("X-Gen-Ms") || 0;
       const img = await createImageBitmap(await res.blob());

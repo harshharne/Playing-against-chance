@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tuning Panel</title>
+<style>
+/* The tuning panel: every control changes the painting live, for the game and the lab at once.
+   Groups: Structure / Style / Change / Stability / Readout, plus presets. White, minimal, like the other pages. */
+:root { --ink: #111; --dim: #8a8a8a; --line: #d6d6d6; --bad: #c0392b; color-scheme: light; }
+body { margin: 0; background: #fff; color: var(--ink); font-family: ui-sans-serif, system-ui, -apple-system, "Helvetica Neue", sans-serif; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 24px; }
+header { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
+h1 { margin: 0; font-size: 20px; }
+header .links { font-size: 13px; color: var(--dim); }
+header a { color: var(--ink); }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; align-items: start; }
+section { border: 1.5px solid var(--ink); border-radius: 4px; padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 12px; }
+section.wide { grid-column: span 2; }
+@media (max-width: 720px) { section.wide { grid-column: auto; } }
+h2 { margin: 0; font-size: 11px; font-weight: 700; letter-spacing: 0.14em; }
+.note { margin: 0; font-size: 12px; line-height: 1.45; color: #555; }
+label.ctl { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; align-items: center; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; color: var(--dim); }
+label.ctl input[type=range] { grid-column: 1 / -1; width: 100%; margin: 0; accent-color: var(--ink); }
+label.ctl .v { font-weight: 500; letter-spacing: 0; color: var(--ink); font-variant-numeric: tabular-nums; }
+label.ctl small { grid-column: 1 / -1; font-size: 11px; font-weight: 400; letter-spacing: 0; color: var(--dim); }
+label.txt { display: flex; flex-direction: column; gap: 6px; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; color: var(--dim); }
+textarea, select, input[type=text] { font: inherit; font-size: 14px; color: var(--ink); border: 1.5px solid var(--ink); border-radius: 4px; padding: 8px; background: #fff; letter-spacing: 0; }
+textarea { resize: vertical; min-height: 54px; }
+.lora { display: grid; grid-template-columns: 1fr; gap: 6px; padding: 10px; border: 1px solid var(--line); border-radius: 4px; }
+.lora .meta { font-size: 11px; color: var(--dim); min-height: 1em; }
+.lora .meta.bad { color: var(--bad); }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.row > * { flex: 1; min-width: 0; }
+button { font: inherit; font-size: 12px; font-weight: 600; letter-spacing: 0.08em; padding: 9px 12px; border: 1.5px solid var(--ink); border-radius: 4px; background: var(--ink); color: #fff; cursor: pointer; flex: none; }
+button.ghost { background: #fff; color: var(--ink); }
+.read { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 13px; font-variant-numeric: tabular-nums; }
+.read dt { color: var(--dim); font-size: 11px; font-weight: 600; letter-spacing: 0.08em; align-self: center; }
+.read dd { margin: 0; }
+.status { font-size: 12px; color: var(--dim); min-height: 1.3em; }
+.status.bad { color: var(--bad); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Tuning panel</h1>
+    <span class="links">Changes apply live to <a href="/game" target="_blank" rel="noopener">the game</a> and <a href="/" target="_blank" rel="noopener">the lab</a>. Keep one of them open next to this.</span>
+  </header>
+
+  <div class="grid">
+    <section>
+      <h2>STRUCTURE</h2>
+      <p class="note">What holds your body in place: depth or pose read from the camera, through ControlNet. Coming in stage 2. Until then, low CHANGE is the only thing keeping your shape.</p>
+    </section>
+
+    <section class="wide">
+      <h2>STYLE</h2>
+      <div class="row" style="align-items:stretch">
+        <div class="lora" data-slot="a">
+          <label class="txt">LORA A<select id="lora_a"></select></label>
+          <label class="ctl">WEIGHT <span class="v" id="lora_a_wV"></span><input id="lora_a_w" type="range" min="0" max="1.5" step="0.05"></label>
+          <div class="meta" id="lora_aM"></div>
+        </div>
+        <div class="lora" data-slot="b">
+          <label class="txt">LORA B<select id="lora_b"></select></label>
+          <label class="ctl">WEIGHT <span class="v" id="lora_b_wV"></span><input id="lora_b_w" type="range" min="0" max="1.5" step="0.05"></label>
+          <div class="meta" id="lora_bM"></div>
+        </div>
+      </div>
+      <p class="note">LoRAs live in the <b>loras/</b> folder on the machine running the server. A new file shows up here within a few seconds. Trigger words (a .txt with the same name) are added to the prompt while a LoRA is on.</p>
+      <label class="ctl">REFERENCE STYLE (IP-Adapter, the STYLE / IMAGE slots in the lab) <span class="v" id="ip_styleV"></span><input id="ip_style" type="range" min="0" max="1.5" step="0.05"><small>Style-only mode (references give the look, not their content) comes in stage 3.</small></label>
+      <div class="row" style="align-items:stretch">
+        <label class="txt">STYLE PROMPT (added to every prompt)<textarea id="style_prompt" placeholder="e.g. flat colours, bold shapes"></textarea></label>
+        <label class="txt">NEGATIVE PROMPT<textarea id="negative"></textarea></label>
+      </div>
+      <label class="ctl">PROMPT GUIDANCE <span class="v" id="guidanceV"></span><input id="guidance" type="range" min="1" max="3" step="0.1"><small>1.0 = off, the painter's own guidance (fastest). The negative prompt only works above 1.0, and each frame then costs about twice as long. DMD wasn't trained for it, so keep it low (1.2–1.8).</small></label>
+    </section>
+
+    <section>
+      <h2>CHANGE</h2>
+      <label class="ctl">CHANGE (avatar) <span class="v" id="changeV"></span><input id="change" type="range" min="0.1" max="1" step="0.05"><small>How much of you is repainted. 1.0 = from pure noise, where the one-step painter is at its best, but without ControlNet (stage 2) your shape is lost there.</small></label>
+      <label class="ctl">WORLD STEPS <span class="v" id="world_stepsV"></span><input id="world_steps" type="range" min="1" max="4" step="1"><small>The background. 1 = what the one-step painter is trained for. More = a second look at the details; may help or hurt, compare.</small></label>
+      <button class="ghost" id="redraw">REDRAW THE WORLD</button>
+    </section>
+
+    <section>
+      <h2>STABILITY</h2>
+      <label class="ctl">STEADY <span class="v" id="steadyV"></span><input id="steady" type="range" min="0" max="0.85" step="0.05"><small>How much each frame leans on the last one. Higher = less flicker, more ghosting. Frames are skipped while you stand still.</small></label>
+    </section>
+
+    <section>
+      <h2>READOUT</h2>
+      <dl class="read">
+        <dt>PAINTER</dt><dd id="r_painter">–</dd>
+        <dt>AVATAR</dt><dd id="r_fps">–</dd>
+        <dt>PER FRAME</dt><dd id="r_ms">–</dd>
+        <dt>WORLD</dt><dd id="r_world">–</dd>
+        <dt>GPU MEMORY</dt><dd id="r_gpu">–</dd>
+      </dl>
+    </section>
+
+    <section>
+      <h2>PRESETS</h2>
+      <div class="row"><input type="text" id="pname" placeholder="name, e.g. watercolor-soft"><button id="psave">SAVE</button></div>
+      <div class="row"><select id="plist"></select><button class="ghost" id="pload">LOAD</button></div>
+      <button class="ghost" id="reset">BACK TO DEFAULTS</button>
+      <div class="status" id="pstat"></div>
+      <p class="note">Presets are saved as files in <b>presets/</b> next to the server.</p>
+    </section>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const SLIDERS = ["lora_a_w", "lora_b_w", "ip_style", "guidance", "change", "world_steps", "steady"];
+const TEXTS = ["style_prompt", "negative"];
+const fmt = (k, v) => k === "world_steps" ? String(Math.round(v)) : (+v).toFixed(2);
+let state = null, defaults = null;
+
+// ---------- sending ----------
+let pending = {}, sendTimer = 0;
+function send(k, v, wait = 120) {
+  pending[k] = v;
+  clearTimeout(sendTimer);
+  sendTimer = setTimeout(async () => {
+    const body = pending; pending = {};
+    try {
+      const r = await fetch("/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      show(await r.json(), false);
+    } catch (e) { $("pstat").textContent = "server offline"; $("pstat").className = "status bad"; }
+  }, wait);
+}
+SLIDERS.forEach(k => $(k).addEventListener("input", () => { $(k + "V").textContent = fmt(k, $(k).value); send(k, +$(k).value); }));
+TEXTS.forEach(k => $(k).addEventListener("input", () => send(k, $(k).value, 600)));
+["lora_a", "lora_b"].forEach(k => $(k).addEventListener("change", () => send(k, $(k).value, 0)));
+$("redraw").addEventListener("click", () => fetch("/redraw", { method: "POST" }));
+
+// ---------- showing ----------
+function fillLoras(loras) {
+  for (const k of ["lora_a", "lora_b"]) {
+    const sel = $(k), keep = state ? state.tune[k] : sel.value;
+    const html = `<option value="">— none —</option>` + loras.map(l => `<option value="${l.file}">${l.file}</option>`).join("");
+    if (sel.dataset.html !== html) { sel.innerHTML = html; sel.dataset.html = html; }
+    sel.value = keep;
+    const l = loras.find(l => l.file === keep), m = $(k + "M");
+    m.className = "meta" + (l && l.error ? " bad" : "");
+    m.textContent = !l ? "" : l.error ? "couldn't load: " + l.error : l.trigger ? "trigger words: " + l.trigger : "no trigger words";
+  }
+}
+function show(s, controls) {
+  state = s; defaults = s.defaults;
+  if (controls) {
+    SLIDERS.forEach(k => { if (document.activeElement !== $(k)) { $(k).value = s.tune[k]; $(k + "V").textContent = fmt(k, s.tune[k]); } });
+    TEXTS.forEach(k => { if (document.activeElement !== $(k)) $(k).value = s.tune[k]; });
+  }
+  fillLoras(s.loras);
+  const r = s.readout;
+  $("r_painter").textContent = r.ready ? r.painter.toUpperCase() : r.painter + " (loading…)";
+  $("r_fps").textContent = r.fps ? `${r.fps} frames/s served` : "idle (no frames in the last 3 s)";
+  $("r_ms").textContent = r.ms ? `${r.ms} ms on the server` : "–";
+  $("r_world").textContent = r.world_ms ? `${(r.world_ms / 1000).toFixed(2)} s last draw` : "–";
+  $("r_gpu").textContent = r.gpu_mb ? `${(r.gpu_mb / 1000).toFixed(1)} of ${(r.gpu_total_mb / 1000).toFixed(1)} GB` : "– (no GPU)";
+}
+async function poll(controls = false) {
+  try { show(await (await fetch("/settings", { cache: "no-store" })).json(), controls); }
+  catch (e) { $("r_painter").textContent = "server offline"; }
+}
+poll(true);
+setInterval(() => poll(false), 1000);
+
+// ---------- presets ----------
+async function listPresets() {
+  try {
+    const names = await (await fetch("/presets", { cache: "no-store" })).json();
+    $("plist").innerHTML = names.length ? names.map(n => `<option>${n}</option>`).join("") : `<option value="">— none saved —</option>`;
+  } catch (e) {}
+}
+const say = (t, bad) => { $("pstat").textContent = t; $("pstat").className = "status" + (bad ? " bad" : ""); };
+$("psave").addEventListener("click", async () => {
+  const n = $("pname").value.trim();
+  if (!n) { say("give it a name first", true); return; }
+  const r = await (await fetch("/presets?name=" + encodeURIComponent(n), { method: "POST" })).json();
+  if (r.error) say(r.error, true); else { say("saved " + r.saved); listPresets(); }
+});
+$("pload").addEventListener("click", async () => {
+  const n = $("plist").value; if (!n) return;
+  const res = await fetch("/presets/" + encodeURIComponent(n));
+  if (!res.ok) { say("couldn't load " + n, true); return; }
+  show(await res.json(), true); say("loaded " + n); $("pname").value = n;
+});
+$("reset").addEventListener("click", async () => {
+  if (!defaults) return;
+  const r = await fetch("/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(defaults) });
+  show(await r.json(), true); say("back to defaults");
+});
+listPresets();
+</script>
+</body>
+</html>

@@ -101,7 +101,7 @@ let stageStrength = 0.75;
 // ---------- the look switch: PIXEL / LINE / PAINT ----------
 let look = LOOK;
 try { look = localStorage.getItem("pac-look") || LOOK; } catch (e) {}
-const live = createLive({ out: $("out"), video: $("pip"), params: () => ({ strength: stageStrength, steady: 0.4, style: 0.8, look: look === "paint" ? "" : look }) });
+const live = createLive({ out: $("out"), video: $("pip"), params: () => ({ look: look === "paint" ? "" : look })   /* how it's painted: tuned on /panel */ });
 // what's on screen, so it can be redrawn in a new look: a function giving { person, background } prompts
 let current = null, lastBg = null;
 function show(fn) {

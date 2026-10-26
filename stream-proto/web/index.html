@@ -40,6 +40,7 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: ui-sans
 .change { display: grid; grid-template-columns: 54px 110px; align-items: center; gap: 8px; font-size: 10px; font-weight: 600; letter-spacing: 0.1em; color: var(--dim); }
 .change input { width: 100%; margin: 0; accent-color: var(--ink); }
 .change select { width: 100%; font: inherit; font-size: 10px; letter-spacing: 0.06em; padding: 2px; border: 1px solid #bbb; border-radius: 3px; background: #fff; }
+.tune { display: block; color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
 .enter { font: inherit; font-size: 15px; font-weight: 600; letter-spacing: 0.08em; padding: 0 34px; border: 1.5px solid var(--ink); border-radius: 4px; background: var(--ink); color: #fff; cursor: pointer; }
 .enter:active { transform: translateY(1px); }
 .enter:focus-visible { outline: 3px solid #888; outline-offset: 2px; }
@@ -75,10 +76,8 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: ui-sans
       <label class="slot" data-side="background" data-kind="image" title="Image reference for the background: it becomes the starting picture"><input type="file" accept="image/*"><span class="lab">IMAGE</span><button type="button" class="x" aria-label="Remove">×</button></label>
     </div>
     <div class="sliders">
-      <label class="change" title="How much you get re-imagined">CHANGE<input id="strength" type="range" min="0.3" max="0.9" step="0.05" value="0.6"></label>
-      <label class="change" title="How strongly the STYLE / IMAGE references steer the look">STYLE<input id="style" type="range" min="0" max="1.2" step="0.05" value="0.8"></label>
       <label class="change" title="A filter over the whole picture">LOOK<select id="look"><option value="">AS GENERATED</option><option value="pixel">8-BIT</option><option value="line">LINE DRAWING</option></select></label>
-      <label class="change" title="Less flicker (higher) vs. quicker to follow you (lower)">STEADY<input id="steady" type="range" min="0" max="0.8" step="0.05" value="0.4"></label>
+      <a class="change tune" href="/panel" target="_blank" rel="noopener">TUNING → PANEL</a>
     </div>
     <button type="submit" class="enter">ENTER</button>
   </form>
@@ -91,11 +90,10 @@ const $ = (id) => document.getElementById(id);
 const statusEl = $("status"), hint = $("hint");
 const live = createLive({
   out: $("out"), video: $("pip"),
-  params: () => ({ strength: $("strength").value, steady: $("steady").value, style: $("style").value, look: $("look").value }),
+  params: () => ({ look: $("look").value }),       // change, style, LoRAs, steadiness: on /panel
 });
 live.camera.then(() => { hint.hidden = true; }).catch(e => { hint.textContent = "No camera: " + (e.message || e.name); });
 live.whenReady().then(paintSlots);
-["strength", "steady", "style"].forEach(id => $(id).addEventListener("input", live.refresh));
 
 // ---------- prompts ----------
 let fgPrompt = "", bgPrompt = "";
@@ -109,7 +107,6 @@ $("form").addEventListener("submit", (e) => {
 
 // ---------- reference images ----------
 const slots = [...document.querySelectorAll(".slot")];
-// with SD-Turbo only the background IMAGE slot does anything; the others are dimmed
 function paintSlots() {
   slots.forEach(sl => sl.classList.toggle("nope", !live.stat.references && !(sl.dataset.side === "background" && sl.dataset.kind === "image")));
 }
@@ -130,7 +127,7 @@ async function setRef(sl, file) {
     const body = file ? await shrink(file) : new Blob([]);
     const res = await fetch(`/reference?side=${side}&kind=${kind}`, { method: "POST", body, headers: { "Content-Type": "image/jpeg" } });
     const r = await res.json();
-    live.stat.note = file && !r.works ? "this reference needs the sd15 engine" : "";
+    live.stat.note = "";
     live.refresh();
     if (side === "background" && bgPrompt) live.setBackground(bgPrompt);   // show the new background straight away
   } catch (e) { live.stat.note = ""; live.reconnect(); }

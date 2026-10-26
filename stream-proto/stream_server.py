@@ -1,42 +1,47 @@
 """
-Live webcam -> diffusion, StreamDiffusion-style, for Apple Silicon (MPS).
+Live webcam -> diffusion. Runs on the cloud GPU (chance-gpu, NVIDIA L4); also works on a Mac (MPS), slowly.
 
 Two separate generations:
-  BACKGROUND  made once per Enter from its own prompt (a few fast steps, full-quality VAE).
-  PERSON      the browser cuts the person out of the camera, places them on the generated
-              background and sends that frame here; it gets one or two fast steps guided by
-              the person prompt and goes straight back. The browser keeps only the person.
+  WORLD (background)  made once per draw from its own prompt (a few steps, full-quality VAE).
+  AVATAR (person)     the browser cuts the person out of the camera and sends the frame here; it is
+                      encoded with the tiny VAE, noised by CHANGE, repainted in ONE step and sent back.
+Both use the same painter and the same style LoRAs, so they share one look.
 
-Reference images (each side has its own):
-  STYLE  steers the look, through IP-Adapter (an "image prompt")
-  IMAGE  person: also through IP-Adapter, mixed with the style
-         background: becomes the starting picture, re-imagined by the prompt
+THE PAINTER (set PAINTER=... when starting)
+  dmd   (default) DreamShaper 8 distilled to ONE step with DMD (aaronb/dreamshaper-8-dmd-1kstep, from OpenDMD).
+        It paints from pure noise in one step and has guidance baked in (no CFG needed).
+  lcm   the previous painter: DreamShaper 8 + LCM-LoRA. Kept to compare against.
 
-Engines (set ENGINE=... when starting):
-  sd15   (default) DreamShaper 8 + LCM-LoRA + IP-Adapter. References work.
-  turbo  SD-Turbo, the earlier version. Faster, but only the background IMAGE reference works.
+STYLE
+  loras/        any SD 1.5 LoRA (.safetensors) dropped in here shows up on /panel. Two slots, each with a weight.
+                A .txt file with the same name holds its trigger words, added to the prompt while it's on.
+                Three are downloaded on first start (pixel art, sketch, watercolor).
+  IP-Adapter    STYLE / IMAGE reference images from the lab page (style-only mode comes in stage 3).
+  style prompt, negative prompt, guidance   on /panel.
 
-Speed tricks (the same ideas StreamDiffusion uses): few-step distilled models, a tiny VAE for
-live frames, prompts and reference images encoded once, the same noise every frame, light
-feeding each result back into the next frame, and only one frame in flight.
+All tuning lives HERE (one set of values for the game and the lab), changed live from /panel, saved as
+presets in presets/.   GET/POST /settings,  GET /presets,  POST /presets?name=,  GET /presets/<name>
 
-First time:     python download_models.py   (downloads everything once, ~5 GB)
-Run:            python stream_server.py      then open http://localhost:8766
-Without model:  MOCK=1 python stream_server.py  (fake effect, to test the page)
+First time:     python download_models.py   (downloads everything once)
+Run:            python stream_server.py      then open http://localhost:8766  (/game, /panel)
+Without model:  MOCK=1 python stream_server.py  (fake effect, to test the pages)
 """
 
 import asyncio
+import collections
 import io
+import json
 import os
 import random
-import time
-import json
+import re
 import secrets
+import shutil
+import time
 import urllib.request
 import zlib
 
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageDraw, ImageFilter, ImageOps, ImageStat
 
@@ -44,56 +49,141 @@ from PIL import Image, ImageDraw, ImageFilter, ImageOps, ImageStat
 PORT = 8766
 WIDTH, HEIGHT = 640, 384          # output size; both must be multiples of 64
 SEED = 7                          # noise used for the live person frames
-ENGINE = os.environ.get("ENGINE", "sd15")
+PAINTER = os.environ.get("PAINTER", "dmd")
 MOCK = os.environ.get("MOCK") == "1"
 
-SD15_MODEL = os.environ.get("MODEL", "Lykon/dreamshaper-8")   # any SD 1.5 model on Hugging Face
+BASE_MODEL = "Lykon/dreamshaper-8"                          # text encoder, VAE, image encoder come from here
+DMD_UNET = "aaronb/dreamshaper-8-dmd-1kstep"                # the one-step painter (only the UNet changes)
 LCM_LORA = "latent-consistency/lcm-lora-sdv1-5"
-IP_ADAPTER = ("h94/IP-Adapter", "models", "ip-adapter-plus_sd15.safetensors")   # "plus" copies drawing style much better than the basic one
-TURBO_MODEL = "stabilityai/sd-turbo"
+IP_ADAPTER = ("h94/IP-Adapter", "models", "ip-adapter-plus_sd15.safetensors")
 TINY_VAE = "madebyollin/taesd"
-
-PERSON_STEPS = 1                  # 1 = faster and smoother, 2 = cleaner but about half the fps (sd15 only)
-# how strongly the reference images steer each side comes from the STYLE slider on the page
 BG_IMAGE_KEEP = 0.35              # background IMAGE reference: how much of the picture survives (0.2–0.6)
-# from the sliders on the page: CHANGE = how much the person is re-imagined,
-# STEADY = how much each frame leans on the previous one (less flicker, more lag/ghosting)
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+LORA_DIR = os.path.join(HERE, "loras")
+PRESET_DIR = os.path.join(HERE, "presets")
+
+# style LoRAs fetched on first start (all SD 1.5, none anime). file in loras/ <- (repo, file in repo or None = find it), trigger words
+DEFAULT_LORAS = {
+    "pixel-art.safetensors": ("artificialguybr/pixelartredmond-1-5v-pixel-art-loras-for-sd-1-5",
+                              "PixelArtRedmond15V-PixelArt-PIXARFK.safetensors", "Pixel Art, PixArFK"),
+    "sketch.safetensors": ("jordanhilado/sd-1-5-sketch-lora", None, ""),
+    "watercolor.safetensors": ("fladdict/watercolor", "fladdict-watercolor-sd-1-5.safetensors", "watercolor painting"),
+}
 
 # chance: random.org (true randomness). Falls back to the computer's own randomness if it can't be reached.
 RANDOM_ORG_KEY = os.environ.get("RANDOM_ORG_KEY", "")
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+# ---------- the tuning (changed live from /panel) ----------
+TUNE_DEFAULTS = {
+    # change
+    "change": 0.6,            # how much the avatar is repainted (1.0 = from pure noise: the painter's home ground)
+    "world_steps": 2,         # world: painting steps (1 = what DMD is trained for; more = more detail, maybe worse)
+    # style
+    "lora_a": "", "lora_a_w": 0.8,
+    "lora_b": "", "lora_b_w": 0.5,
+    "ip_style": 0.6,          # how strongly STYLE / IMAGE references steer the look
+    "style_prompt": "",       # added to every prompt (avatar and world)
+    "negative": "photo, realistic, blurry, deformed, extra limbs",
+    "guidance": 1.0,          # 1.0 = off (DMD's own). Above 1: the negative prompt works, each frame costs ~2x
+    # stability
+    "steady": 0.4,            # how much each frame leans on the last one
+}
+TUNE = dict(TUNE_DEFAULTS)
+LOOK_KEYS = {"world_steps", "lora_a", "lora_a_w", "lora_b", "lora_b_w", "ip_style", "style_prompt", "negative", "guidance"}
+look_version = 0              # goes up when the look changes, so the pages redraw the world
+
 app = FastAPI()
 
 
+# ---------- LoRA files ----------
+def list_loras():
+    os.makedirs(LORA_DIR, exist_ok=True)
+    return sorted(f for f in os.listdir(LORA_DIR) if f.endswith((".safetensors", ".bin")))
+
+
+def trigger_words(file):
+    p = os.path.join(LORA_DIR, os.path.splitext(file)[0] + ".txt")
+    try:
+        with open(p) as fh:
+            return fh.read().strip()
+    except OSError:
+        return ""
+
+
+def download_loras():
+    """Fetch the default style LoRAs into loras/ (skips the ones already there)."""
+    from huggingface_hub import hf_hub_download, list_repo_files
+    os.makedirs(LORA_DIR, exist_ok=True)
+    for file, (repo, name, trigger) in DEFAULT_LORAS.items():
+        dest = os.path.join(LORA_DIR, file)
+        if trigger and not os.path.exists(dest[:-len(".safetensors")] + ".txt"):
+            with open(dest[:-len(".safetensors")] + ".txt", "w") as fh:
+                fh.write(trigger)
+        if os.path.exists(dest) or os.path.exists(dest[:-len(".safetensors")] + ".bin"):
+            continue
+        try:
+            if name is None:                                     # find the weights file in the repo
+                files = list_repo_files(repo)
+                cands = [f for f in files if f.endswith(".safetensors")] or [f for f in files if f.endswith(".bin")]
+                name = cands[0]
+                if name.endswith(".bin"):
+                    dest = dest[:-len(".safetensors")] + ".bin"
+            shutil.copy(hf_hub_download(repo, name), dest)
+            print(f"[lora] downloaded {file}  ({repo})")
+        except Exception as e:
+            print(f"[lora] couldn't download {file} from {repo}: {e}")
+
+
 def load_pipe(device="cpu", dtype=None):
-    """Loads (and on first use downloads) every model this engine needs."""
+    """Loads (and on first use downloads) every model the painter needs."""
     import torch
     from diffusers import AutoencoderTiny, LCMScheduler, StableDiffusionPipeline
 
     dtype = dtype or torch.float16
 
-    def get(repo):
+    def get(repo, **kw):
         try:
-            return StableDiffusionPipeline.from_pretrained(repo, torch_dtype=dtype, variant="fp16", safety_checker=None)
+            return StableDiffusionPipeline.from_pretrained(repo, torch_dtype=dtype, variant="fp16", safety_checker=None, **kw)
         except Exception:
-            return StableDiffusionPipeline.from_pretrained(repo, torch_dtype=dtype, safety_checker=None)
+            return StableDiffusionPipeline.from_pretrained(repo, torch_dtype=dtype, safety_checker=None, **kw)
 
-    if ENGINE == "turbo":
-        pipe = get(TURBO_MODEL)
+    if PAINTER == "dmd":
+        print(f"[gen] loading the one-step DMD painter ({DMD_UNET}) ...")
+        pipe = get(BASE_MODEL, unet=load_dmd_unet(dtype))
     else:
-        pipe = get(SD15_MODEL)
+        pipe = get(BASE_MODEL)
         pipe.scheduler = LCMScheduler.from_config(pipe.scheduler.config)
         print("[gen] adding LCM-LoRA (fast steps) ...")
-        pipe.load_lora_weights(LCM_LORA)
+        pipe.load_lora_weights(LCM_LORA, adapter_name="lcm")
         pipe.fuse_lora()
-        print("[gen] adding IP-Adapter (reference images) ...")
-        pipe.load_ip_adapter(IP_ADAPTER[0], subfolder=IP_ADAPTER[1], weight_name=IP_ADAPTER[2])
+        pipe.unload_lora_weights()                               # keeps the fused weights, frees the slot for style LoRAs
+    print("[gen] adding IP-Adapter (reference images) ...")
+    pipe.load_ip_adapter(IP_ADAPTER[0], subfolder=IP_ADAPTER[1], weight_name=IP_ADAPTER[2])
     tiny = AutoencoderTiny.from_pretrained(TINY_VAE, torch_dtype=dtype)
     pipe.to(device)
     tiny.to(device)
     pipe.set_progress_bar_config(disable=True)
     return pipe, tiny
+
+
+def load_dmd_unet(dtype):
+    """The DMD repo's layout isn't documented, so try the likely ones in turn."""
+    from diffusers import UNet2DConditionModel
+    errors = []
+    for kw in ({}, {"subfolder": "unet"}):
+        try:
+            return UNet2DConditionModel.from_pretrained(DMD_UNET, torch_dtype=dtype, **kw)
+        except Exception as e:
+            errors.append(f"{kw or 'repo root'}: {e}")
+    try:                                                         # a single weights file (ComfyUI style)
+        from huggingface_hub import hf_hub_download, list_repo_files
+        f = next(f for f in list_repo_files(DMD_UNET) if f.endswith(".safetensors"))
+        return UNet2DConditionModel.from_single_file(hf_hub_download(DMD_UNET, f), config=BASE_MODEL, subfolder="unet", torch_dtype=dtype)
+    except Exception as e:
+        errors.append(f"single file: {e}")
+    raise RuntimeError("couldn't load the DMD UNet:\n  " + "\n  ".join(errors) +
+                       "\nStart with PAINTER=lcm to use the previous painter meanwhile.")
 
 
 # ---------- the generator ----------
@@ -103,25 +193,56 @@ class Generator:
         import torch
 
         self.np, self.torch = np, torch
-        self.device = "mps" if torch.backends.mps.is_available() else ("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = "cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu")
         self.dtype = torch.float16 if self.device != "cpu" else torch.float32
-        print(f"[gen] loading engine '{ENGINE}' on {self.device} ...")
+        print(f"[gen] painter '{PAINTER}' on {self.device} ...")
         pipe, self.tiny_vae = load_pipe(self.device, self.dtype)
         self.pipe, self.unet, self.full_vae = pipe, pipe.unet, pipe.vae
         self.prediction = pipe.scheduler.config.get("prediction_type", "epsilon")
         self.alphas = pipe.scheduler.alphas_cumprod.to(self.device, torch.float32)
-        self.has_ip = ENGINE == "sd15"
+        self.has_ip = True
         self.embeds = {}                                         # prompt -> encoded prompt
         self.noises = {}                                         # (step, shape) -> fixed noise
         self.prev, self.prev_key = None, None
         self.refs = {s: {"style": None, "image": None} for s in ("person", "background")}
-        self.ip = {"person": None, "background": None}           # side -> combined image embedding
+        self.ip = {"person": None, "background": None}
         self.ip_scale = None
-        self.style = {"person": 0.8, "background": 0.8}           # set live by the STYLE slider
-        if self.has_ip:
-            self.ip_plus = "plus" in IP_ADAPTER[2]
-            self.ip_zero = self.encode_images([Image.new("RGB", (224, 224), (128, 128, 128))]) * 0
-        print(f"[gen] ready · prediction={self.prediction} · references={'yes' if self.has_ip else 'background image only'}")
+        self.lora_key, self.lora_loaded, self.lora_errors = None, set(), {}
+        self.ip_zero = self.encode_images([Image.new("RGB", (224, 224), (128, 128, 128))]) * 0
+        print(f"[gen] ready · prediction={self.prediction}")
+
+    # --- style LoRAs (applied before every frame; only does work when something changed) ---
+    def apply_loras(self, t):
+        want = collections.OrderedDict()
+        for f, w in ((t["lora_a"], t["lora_a_w"]), (t["lora_b"], t["lora_b_w"])):
+            if f and w > 0 and f not in self.lora_errors:
+                want[f] = want.get(f, 0) + float(w)
+        key = tuple(want.items())
+        if key == self.lora_key:
+            return
+        names, weights = [], []
+        for f, w in want.items():
+            name = re.sub(r"\W", "_", os.path.splitext(f)[0])
+            if name not in self.lora_loaded:
+                try:
+                    t0 = time.perf_counter()
+                    self.pipe.load_lora_weights(LORA_DIR, weight_name=f, adapter_name=name)
+                    self.lora_loaded.add(name)
+                    print(f"[lora] loaded {f} in {time.perf_counter() - t0:.1f} s")
+                except Exception as e:
+                    self.lora_errors[f] = str(e)[:300]
+                    print(f"[lora] couldn't load {f}: {e}")
+                    continue
+            names.append(name)
+            weights.append(w)
+        if names:
+            self.pipe.enable_lora()
+            self.pipe.set_adapters(names, adapter_weights=weights)
+        elif self.lora_loaded:
+            self.pipe.disable_lora()
+        self.lora_key = key
+        self.embeds.clear()                                      # LoRAs can change the text encoder too
+        self.prev = None
 
     # --- prompts and references ---
     def embed(self, prompt):
@@ -135,35 +256,26 @@ class Generator:
     def set_reference(self, side, kind, img):
         self.refs[side][kind] = img
         self.prev = None
-        if not self.has_ip:
-            return
         imgs = [im for k, im in self.refs[side].items() if im is not None and not (side == "background" and k == "image")]
-        if not imgs:
-            self.ip[side] = None
-            return
-        self.ip[side] = self.encode_images(imgs)
+        self.ip[side] = self.encode_images(imgs) if imgs else None
 
     def encode_images(self, imgs):
         """Reference images -> one IP-Adapter embedding (several images are mixed together)."""
         with self.torch.no_grad():
             px = self.pipe.feature_extractor(images=imgs, return_tensors="pt").pixel_values.to(self.device, self.dtype)
-            if self.ip_plus:   # plus reads the encoder's detailed patch features, which carry the style
-                e = self.pipe.image_encoder(px, output_hidden_states=True).hidden_states[-2]
-            else:
-                e = self.pipe.image_encoder(px).image_embeds
+            e = self.pipe.image_encoder(px, output_hidden_states=True).hidden_states[-2]
             return e.mean(0, keepdim=True)[:, None]                   # (1, 1, ...)
 
-    def unet_kwargs(self, side):
-        if not self.has_ip:
-            return {}
+    def image_embeds(self, side, batch2):
         emb = self.ip[side]
-        scale = self.style[side] if emb is not None else 0.0
+        scale = TUNE["ip_style"] if emb is not None else 0.0
         if scale != self.ip_scale:
             self.pipe.set_ip_adapter_scale(scale)
             self.ip_scale = scale
-        return {"added_cond_kwargs": {"image_embeds": [emb if emb is not None else self.ip_zero]}}
+        e = emb if emb is not None else self.ip_zero
+        return [self.torch.cat([self.ip_zero, e])] if batch2 else [e]
 
-    # --- denoising ---
+    # --- painting ---
     def noise(self, i, shape, seed=None):
         torch = self.torch
         if seed is not None:
@@ -176,22 +288,31 @@ class Generator:
         return self.noises[key]
 
     def denoise(self, lat, timesteps, prompt, side, seed=None):
-        """Few-step sampling: noise up to t, predict the clean picture, repeat at a lower t."""
+        """Noise up to t, predict the clean picture, repeat at a lower t. One timestep = one-step painting."""
         torch = self.torch
         x0 = lat if lat is not None else torch.zeros((1, 4, HEIGHT // 8, WIDTH // 8), device=self.device, dtype=self.dtype)
-        kw = self.unet_kwargs(side)
+        g = float(TUNE["guidance"])
+        cfg = g > 1.01
         text = self.embed(prompt)
+        if cfg:
+            text = torch.cat([self.embed(TUNE["negative"]), text])
+        kw = {"added_cond_kwargs": {"image_embeds": self.image_embeds(side, cfg)}}
         for i, t in enumerate(timesteps):
             a = self.alphas[t]
             sa, s1a = a.sqrt().to(self.dtype), (1 - a).sqrt().to(self.dtype)
             noisy = sa * x0 + s1a * self.noise(i, x0.shape, seed)
-            out = self.unet(noisy, torch.tensor([t], device=self.device), encoder_hidden_states=text, **kw).sample
+            inp = torch.cat([noisy, noisy]) if cfg else noisy
+            out = self.unet(inp, torch.tensor([t] * inp.shape[0], device=self.device), encoder_hidden_states=text, **kw).sample
+            if cfg:
+                u, c = out.chunk(2)
+                out = u + g * (c - u)
             x0 = sa * noisy - s1a * out if self.prediction == "v_prediction" else (noisy - s1a * out) / sa
         return x0
 
-    def person(self, img, prompt, strength, steady):
-        t1 = int(max(1, min(999, round(strength * 1000) - 1)))
-        ts = [t1] if PERSON_STEPS == 1 else [t1, max(1, int(t1 * 0.4))]
+    def person(self, img, prompt):
+        change, steady = float(TUNE["change"]), float(TUNE["steady"])
+        t1 = int(max(1, min(999, round(change * 1000) - 1)))
+        ts = [t1]                                                # one step, live
         with self.torch.no_grad():
             lat = self.tiny_vae.encode(self.to_tensor(img)).latents
             same = self.prev is not None and self.prev_key == prompt and self.prev.shape == lat.shape
@@ -209,20 +330,26 @@ class Generator:
     def background(self, prompt, seed):
         init = self.refs["background"]["image"]
         sf = self.full_vae.config.scaling_factor
+        n = max(1, min(4, int(TUNE["world_steps"])))
         with self.torch.no_grad():
             if init is not None:                                 # start from the reference picture
                 img = ImageOps.fit(init, (WIDTH, HEIGHT))
                 lat = self.full_vae.encode(self.to_tensor(img)).latent_dist.mean * sf
                 t0 = int((1 - BG_IMAGE_KEEP) * 1000) - 1
-                ts = [t0] if ENGINE == "turbo" else [t0, int(t0 * 0.6), int(t0 * 0.3)]
+                ts = [int(t0 * (n - k) / n) for k in range(n)]
             else:                                                # start from pure noise
                 lat = None
-                ts = [999] if ENGINE == "turbo" else [999, 749, 499, 249]
+                ts = [int(999 * (n - k) / n) for k in range(n)]      # 1: [999]  2: [999, 499]  4: [999, 749, 499, 249]
             x0 = self.denoise(lat, ts, prompt, "background", seed=seed)
             y = self.full_vae.decode(x0 / sf).sample
             if self.torch.isnan(y).any():                        # fp16 trouble: fall back to the tiny VAE
                 y = self.tiny_vae.decode(x0).sample
         return self.to_image(y)
+
+    def gpu_mb(self):
+        if self.device != "cuda":
+            return None
+        return round(self.torch.cuda.memory_allocated() / 1e6), round(self.torch.cuda.get_device_properties(0).total_memory / 1e6)
 
     def to_tensor(self, img):
         x = self.torch.from_numpy(self.np.asarray(img.convert("RGB"), dtype="float32")).permute(2, 0, 1)[None]
@@ -234,11 +361,19 @@ class Generator:
 
 
 class MockGenerator:
-    """No model: fake effects so the page and the loop can be tested."""
+    """No model: fake effects so the pages and the loop can be tested."""
     has_ip = True
 
     def __init__(self):
         self.refs = {s: {"style": None, "image": None} for s in ("person", "background")}
+        self.lora_errors = {}
+        self.lora_key = None
+
+    def apply_loras(self, t):
+        self.lora_key = (t["lora_a"], t["lora_a_w"], t["lora_b"], t["lora_b_w"])
+
+    def gpu_mb(self):
+        return None
 
     @staticmethod
     def tint(prompt):
@@ -254,11 +389,11 @@ class MockGenerator:
             return fallback
         return tuple(int(v) for v in ImageStat.Stat(imgs[0].convert("RGB")).mean)
 
-    def person(self, img, prompt, strength, steady):
-        time.sleep(0.1)
+    def person(self, img, prompt):
+        time.sleep(0.05)
         c = self.ref_colour("person", self.tint(prompt))
         g = ImageOps.colorize(ImageOps.grayscale(ImageOps.posterize(img, 3)), black=(20, 10, 40), white=c)
-        return Image.blend(img, g, strength)
+        return Image.blend(img, g, min(1.0, float(TUNE["change"])))
 
     def background(self, prompt, seed):
         time.sleep(0.3)
@@ -273,12 +408,14 @@ class MockGenerator:
                 x, y, r = rnd.randrange(WIDTH), rnd.randrange(HEIGHT), rnd.randrange(10, 80)
                 d.ellipse((x - r, y - r, x + r, y + r), fill=tuple(min(255, max(0, v + rnd.randrange(-60, 60))) for v in c))
             img = img.filter(ImageFilter.GaussianBlur(6))
-        ImageDraw.Draw(img).text((12, HEIGHT - 24), "MOCK BACKGROUND · " + prompt[:50], fill=(255, 255, 255))
+        ImageDraw.Draw(img).text((12, HEIGHT - 24), "MOCK WORLD · " + prompt[:70], fill=(255, 255, 255))
         return img
 
 
 gen = None
 lock = asyncio.Lock()
+frame_log = collections.deque(maxlen=60)          # (time, ms) of recent avatar frames, for the readout
+world_ms = None
 
 
 def jpeg_bytes(img):
@@ -287,39 +424,59 @@ def jpeg_bytes(img):
     return buf.getvalue()
 
 
-def run_person(jpeg, prompt, strength, steady=0.4, style=None):
-    if style is not None and hasattr(gen, "style"):
-        gen.style["person"] = style
+def full_prompt(prompt):
+    """The stage / lab prompt + the trigger words of the LoRAs that are on + the style prompt."""
+    parts = [prompt]
+    for f, w in ((TUNE["lora_a"], TUNE["lora_a_w"]), (TUNE["lora_b"], TUNE["lora_b_w"])):
+        if f and w > 0:
+            parts.append(trigger_words(f))
+    parts.append(TUNE["style_prompt"])
+    return ", ".join(p.strip() for p in parts if p and p.strip())
+
+
+def run_person(jpeg, prompt):
     t0 = time.perf_counter()
+    gen.apply_loras(TUNE)
     img = Image.open(io.BytesIO(jpeg)).convert("RGB")
     if img.size != (WIDTH, HEIGHT):
         img = ImageOps.fit(img, (WIDTH, HEIGHT))
-    out = gen.person(img, prompt, strength, steady)
-    return jpeg_bytes(out), (time.perf_counter() - t0) * 1000
+    out = gen.person(img, full_prompt(prompt))
+    ms = (time.perf_counter() - t0) * 1000
+    frame_log.append((time.time(), ms))
+    return jpeg_bytes(out), ms
 
 
-def run_background(prompt, seed, style=None):
-    if style is not None and hasattr(gen, "style"):
-        gen.style["background"] = style
+def run_background(prompt, seed):
+    global world_ms
     t0 = time.perf_counter()
-    out = gen.background(prompt, seed)
-    return jpeg_bytes(out), (time.perf_counter() - t0) * 1000
+    gen.apply_loras(TUNE)
+    out = gen.background(full_prompt(prompt), seed)
+    world_ms = (time.perf_counter() - t0) * 1000
+    return jpeg_bytes(out), world_ms
 
 
 # ---------- web ----------
 @app.on_event("startup")
 async def load():
     global gen
+    if not MOCK:
+        await asyncio.to_thread(download_loras)
     gen = await asyncio.to_thread(MockGenerator if MOCK else Generator)
     if not MOCK:   # warm up so the first real frames aren't slow
         await asyncio.to_thread(run_background, "warm up", 0)
-        await asyncio.to_thread(run_person, jpeg_bytes(Image.new("RGB", (WIDTH, HEIGHT), (128, 128, 128))), "warm up", 0.5)
-    print(f"open http://localhost:{PORT}" + ("   (MOCK mode)" if MOCK else ""))
+        await asyncio.to_thread(run_person, jpeg_bytes(Image.new("RGB", (WIDTH, HEIGHT), (128, 128, 128))), "warm up")
+        frame_log.clear()
+    print(f"open http://localhost:{PORT}   (tuning: http://localhost:{PORT}/panel)" + ("   (MOCK mode)" if MOCK else ""))
 
 
 @app.get("/game")
 async def game():
     return FileResponse(os.path.join(HERE, "web", "game.html"))
+
+
+@app.get("/panel")
+async def panel():
+    return FileResponse(os.path.join(HERE, "web", "panel.html"))
 
 
 # ---------- chance ----------
@@ -354,48 +511,148 @@ async def draw(n: int = 1, lo: int = 1, hi: int = 6):
 
 @app.get("/config")
 async def config():
-    return {"width": WIDTH, "height": HEIGHT, "mock": MOCK, "engine": "mock" if MOCK else ENGINE, "references": bool(gen and gen.has_ip)}
+    return {"width": WIDTH, "height": HEIGHT, "mock": MOCK, "engine": "mock" if MOCK else PAINTER,
+            "references": True, "look": look_version}
+
+
+# ---------- tuning ----------
+def clean_tune(d):
+    """Only known keys, with sane types and ranges."""
+    out = {}
+    rng = {"change": (0.1, 1.0), "world_steps": (1, 4), "lora_a_w": (0, 2), "lora_b_w": (0, 2),
+           "ip_style": (0, 1.5), "guidance": (1, 4), "steady": (0, 0.85)}
+    for k, v in d.items():
+        if k not in TUNE_DEFAULTS:
+            continue
+        if k in rng:
+            try:
+                v = max(rng[k][0], min(rng[k][1], float(v)))
+            except (TypeError, ValueError):
+                continue
+            if k == "world_steps":
+                v = int(round(v))
+        else:
+            v = str(v)[:400]
+            if k in ("lora_a", "lora_b") and v and v not in list_loras():
+                v = ""
+        out[k] = v
+    return out
+
+
+def settings_view():
+    now = time.time()
+    recent = [(t, ms) for t, ms in frame_log if now - t < 3]
+    fps = (len(recent) - 1) / (recent[-1][0] - recent[0][0]) if len(recent) > 2 and recent[-1][0] > recent[0][0] else 0
+    mem = gen.gpu_mb() if gen else None
+    return {
+        "tune": TUNE, "defaults": TUNE_DEFAULTS, "look": look_version,
+        "loras": [{"file": f, "trigger": trigger_words(f), "error": (gen.lora_errors.get(f) if gen else None)} for f in list_loras()],
+        "readout": {
+            "painter": "mock" if MOCK else PAINTER,
+            "fps": round(fps, 1),
+            "ms": round(sum(ms for _, ms in recent) / len(recent)) if recent else None,
+            "world_ms": round(world_ms) if world_ms else None,
+            "gpu_mb": mem[0] if mem else None, "gpu_total_mb": mem[1] if mem else None,
+            "ready": gen is not None,
+        },
+    }
+
+
+@app.get("/settings")
+async def get_settings():
+    return settings_view()
+
+
+@app.post("/settings")
+async def post_settings(request: Request):
+    global look_version
+    new = clean_tune(await request.json())
+    if any(TUNE.get(k) != v for k, v in new.items() if k in LOOK_KEYS):
+        look_version += 1
+    TUNE.update(new)
+    return settings_view()
+
+
+@app.post("/redraw")
+async def redraw():
+    """Ask every open page to repaint the world (same prompt, new look)."""
+    global look_version
+    look_version += 1
+    return {"look": look_version}
+
+
+def preset_path(name):
+    name = re.sub(r"[^\w\- ]", "", name).strip()[:40]
+    return os.path.join(PRESET_DIR, name + ".json") if name else None
+
+
+@app.get("/presets")
+async def presets():
+    os.makedirs(PRESET_DIR, exist_ok=True)
+    return sorted(f[:-5] for f in os.listdir(PRESET_DIR) if f.endswith(".json"))
+
+
+@app.post("/presets")
+async def save_preset(name: str):
+    p = preset_path(name)
+    if not p:
+        return JSONResponse({"error": "give it a name"}, status_code=400)
+    os.makedirs(PRESET_DIR, exist_ok=True)
+    with open(p, "w") as fh:
+        json.dump(TUNE, fh, indent=2)
+    return {"saved": os.path.basename(p)[:-5]}
+
+
+@app.get("/presets/{name}")
+async def load_preset(name: str):
+    global look_version
+    p = preset_path(name)
+    if not p or not os.path.exists(p):
+        return JSONResponse({"error": "no such preset"}, status_code=404)
+    with open(p) as fh:
+        TUNE.update(clean_tune(json.load(fh)))
+    look_version += 1
+    return settings_view()
 
 
 @app.post("/reference")
 async def reference(request: Request, side: str, kind: str):
     """Set (image in the body) or clear (empty body) one reference image."""
+    global look_version
     if side not in ("person", "background") or kind not in ("style", "image"):
         return Response(status_code=400)
     body = await request.body()
     img = Image.open(io.BytesIO(body)).convert("RGB") if body else None
     async with lock:
         await asyncio.to_thread(gen.set_reference, side, kind, img)
-    works = gen.has_ip or (side == "background" and kind == "image")
-    return {"ok": True, "works": works}
+    return {"ok": True, "works": True}
 
 
 @app.post("/frame")
-async def frame(request: Request, prompt: str = "", strength: float = 0.6, steady: float = 0.4, style: float = 0.8):
-    """One camera frame in (JPEG), the person re-imagined out (JPEG)."""
+async def frame(request: Request, prompt: str = ""):
+    """One camera frame in (JPEG), the person repainted out (JPEG). All tuning comes from /settings.
+    (Older pages still send strength / steady / style in the address: they're ignored now.)"""
     jpeg = await request.body()
     prompt = prompt.strip() or "a person"
-    strength = max(0.1, min(0.95, strength))
-    steady = max(0.0, min(0.85, steady))
     async with lock:
-        out, ms = await asyncio.to_thread(run_person, jpeg, prompt, strength, steady, max(0.0, min(1.5, style)))
-    return Response(out, media_type="image/jpeg", headers={"X-Gen-Ms": str(round(ms)), "Cache-Control": "no-store"})
+        out, ms = await asyncio.to_thread(run_person, jpeg, prompt)
+    return Response(out, media_type="image/jpeg", headers={"X-Gen-Ms": str(round(ms)), "X-Look": str(look_version), "Cache-Control": "no-store"})
 
 
 @app.get("/background")
-async def background(prompt: str = "", style: float = 0.8):
-    """A fresh background for the prompt. A new random seed every time, so every Enter is a new place."""
+async def background(prompt: str = ""):
+    """A fresh world for the prompt. A new random seed every time, so every draw is a new place."""
     prompt = prompt.strip() or "an empty landscape"
     async with lock:
-        out, ms = await asyncio.to_thread(run_background, prompt, random.randrange(1 << 30), max(0.0, min(1.5, style)))
-    return Response(out, media_type="image/jpeg", headers={"X-Gen-Ms": str(round(ms)), "Cache-Control": "no-store"})
+        out, ms = await asyncio.to_thread(run_background, prompt, random.randrange(1 << 30))
+    return Response(out, media_type="image/jpeg", headers={"X-Gen-Ms": str(round(ms)), "X-Look": str(look_version), "Cache-Control": "no-store"})
 
 
-# the pages (index.html = the lab, game.html = the game, live.js, stages.js); mounted last so the routes above win
+# the pages (index.html = the lab, game.html, panel.html, live.js, stages.js); mounted last so the routes above win
 app.mount("/", StaticFiles(directory=os.path.join(HERE, "web"), html=True), name="web")
 
 
 if __name__ == "__main__":
     import uvicorn
-    print("loading..." + ("   (MOCK mode)" if MOCK else f"  engine '{ENGINE}' (first start takes a while)"))
+    print("loading..." + ("   (MOCK mode)" if MOCK else f"  painter '{PAINTER}' (first start downloads models and takes a while)"))
     uvicorn.run(app, host="127.0.0.1", port=PORT, log_level="warning")
