@@ -108,7 +108,7 @@ import { createLive } from "./live.js";
 import { createDiceReader } from "./dice.js";
 import { createDiceReader as createRemoteReader } from "./dice-remote.js";
 import { findCamera } from "./cameras.js";
-import { PHASES, MOMENTS, avatar, worldScene } from "./storyline.js";
+import { PHASES, PHASE_REFS, MOMENTS, avatar, worldScene } from "./storyline.js";
 
 const $ = (id) => document.getElementById(id);
 const msgEl = $("msg"), go = $("go"), choicesEl = $("choices"), statusEl = $("status");
@@ -162,7 +162,21 @@ function subLine(html) {
   sub.innerHTML = html;
 }
 $("steps").innerHTML = PHASES.map(p => `<span>${p}</span>`).join("<i></i>");
-function setPhase(i) { [...$("steps").querySelectorAll("span")].forEach((s, k) => { s.className = k < i ? "done" : k === i ? "now" : ""; }); }
+let phaseShown = -1;
+function setPhase(i) {
+  [...$("steps").querySelectorAll("span")].forEach((s, k) => { s.className = k < i ? "done" : k === i ? "now" : ""; });
+  if (i !== phaseShown) { phaseShown = i; phaseRef(i); }
+}
+async function phaseRef(i) {                               // optional: this phase's style reference painting (storyline.js)
+  const url = PHASE_REFS[i];
+  if (!url) return;
+  try {
+    const img = await (await fetch(url, { cache: "force-cache" })).blob();
+    for (const side of ["person", "background"])
+      await fetch(`/reference?side=${side}&kind=style`, { method: "POST", body: img, headers: { "Content-Type": img.type || "image/jpeg" } });
+    live.refresh(); lastBg = null;                          // repaint in the new look
+  } catch (e) { console.warn("[phase ref]", url, e); }
+}
 let action = null;
 function button(label, fn) { go.textContent = label; go.disabled = !fn; action = fn; }
 go.addEventListener("click", () => { if (!go.disabled && action) action(); });
@@ -357,7 +371,7 @@ async function choiceMoment(m, age) {
 
 // ---------- the run ----------
 async function play() {
-  S = freshLife(); lastBg = null;
+  S = freshLife(); lastBg = null; phaseShown = -1;
   live.setPerson(null); live.setBackground(null);
   phase = "idle"; winner = 0;
   for (const m of MOMENTS) {
@@ -385,7 +399,7 @@ function ending() {
   choicesEl.innerHTML = "";
   const g = S.body.sex === "girl", she = g ? "she" : "he", She = g ? "She" : "He", her = g ? "her" : "his";
   const T = (s) => String(s).replace(/\{she\}/g, she).replace(/\{She\}/g, She).replace(/\{her\}/g, her)
-    .replace(/\{Her\}/g, cap(her)).replace(/\{hers\}/g, g ? "hers" : "his");
+    .replace(/\{Her\}/g, cap(her)).replace(/\{hers\}/g, g ? "hers" : "his").replace(/\{him\}/g, g ? "her" : "him");
   const past = (id) => T(S.log.find(l => l.id === id).past);
   const wishText = (pk) => {
     const aim = T(pk.wished.aim || low(pk.wished.short)), pt = T(pk.got.past || pk.got.text);

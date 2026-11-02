@@ -96,14 +96,17 @@ TUNE_DEFAULTS = {
     "lora_a": "", "lora_a_w": 0.8,
     "lora_b": "", "lora_b_w": 0.5,
     "ip_style": 0.6,          # how strongly STYLE / IMAGE references steer the look
+    "ref_mode": "style",      # where references act: "style" (look only, InstantStyle), "layout" (look + composition), "all" (look + content)
     "style_prompt": "",       # added to every prompt (avatar and world)
     "negative": "photo, realistic, blurry, deformed, extra limbs",
     "guidance": 1.0,          # 1.0 = off (DMD's own). Above 1: the negative prompt works, each frame costs ~2x
     # stability
-    "steady": 0.4,            # how much each frame leans on the last one
+    "steady": 0.4,            # how much each frame leans on the last one (when you're still)
+    "ghost_guard": 0.5,       # how quickly that leaning lets go when you move (0 = never: smooth but ghosty, 1 = at once)
+    "skip_still": 1.5,        # browser: don't send a new frame unless the camera changed at least this much (0 = always send)
 }
 TUNE = dict(TUNE_DEFAULTS)
-LOOK_KEYS = {"style", "world_steps", "lora_a", "lora_a_w", "lora_b", "lora_b_w", "ip_style", "style_prompt", "negative", "guidance"}
+LOOK_KEYS = {"style", "ref_mode", "world_steps", "lora_a", "lora_a_w", "lora_b", "lora_b_w", "ip_style", "style_prompt", "negative", "guidance"}
 look_version = 0              # goes up when the look changes, so the pages redraw the world
 tune_version = 0              # goes up on any change, so the pages send a fresh avatar frame
 
@@ -296,6 +299,7 @@ class Generator:
         self.lora_key, self.lora_loaded, self.lora_errors = None, set(), {}
         self.cn, self.depth_model, self.depth_range = {}, None, None      # structure, loaded when first used
         self.shape_img, self.shape_ms, self.prev_shape = None, None, None
+        self.prev_in, self.motion, self.lean, self.timing, self.t_lap = None, None, None, {}, 0.0
         self.ip_zero = self.encode_images([Image.new("RGB", (224, 224), (128, 128, 128))]) * 0
         print(f"[gen] ready · prediction={self.prediction}")
 
@@ -403,12 +407,27 @@ class Generator:
             e = self.pipe.image_encoder(px, output_hidden_states=True).hidden_states[-2]
             return e.mean(0, keepdim=True)[:, None]                   # (1, 1, ...)
 
+    # Where a reference image acts inside the painter (InstantStyle, stage 3). In SD 1.5 the look (colour, texture,
+    # brushwork) is carried mostly by the middle attention of the lowest-resolution up block; composition by the
+    # down block before it. Putting the reference only there gives its style without its subject.
+    # (InstantStyle was worked out on SDXL; these SD 1.5 blocks are the matching ones, worth checking by eye.)
+    IP_BLOCKS = {"style": ("up_blocks.1.attentions.1",),
+                 "layout": ("up_blocks.1.attentions.1", "down_blocks.2.attentions.1")}
+
+    def set_ip_scales(self, scale, mode):
+        for name, proc in self.unet.attn_processors.items():
+            if not hasattr(proc, "scale") or not isinstance(proc.scale, list):
+                continue                                         # not an IP-Adapter layer
+            on = mode == "all" or any(name.startswith(b) for b in self.IP_BLOCKS.get(mode, ()))
+            proc.scale = [scale if on else 0.0 for _ in proc.scale]
+
     def image_embeds(self, side, batch2):
         emb = self.ip[side]
         scale = TUNE["ip_style"] if emb is not None else 0.0
-        if scale != self.ip_scale:
-            self.pipe.set_ip_adapter_scale(scale)
-            self.ip_scale = scale
+        key = (scale, TUNE["ref_mode"])
+        if key != self.ip_scale:
+            self.set_ip_scales(*key)
+            self.ip_scale = key
         e = emb if emb is not None else self.ip_zero
         return [self.torch.cat([self.ip_zero, e])] if batch2 else [e]
 
@@ -454,26 +473,44 @@ class Generator:
             x0 = sa * noisy - s1a * out if self.prediction == "v_prediction" else (noisy - s1a * out) / sa
         return x0
 
+    def lap(self, name):
+        """Time since the last lap, for the readout (waits for the GPU, so the numbers are real)."""
+        if self.device == "cuda":
+            self.torch.cuda.synchronize()
+        now = time.perf_counter()
+        self.timing[name] = (now - self.t_lap) * 1000
+        self.t_lap = now
+
     def person(self, img, prompt, pose=None):
-        change, steady = float(TUNE["change"]), float(TUNE["steady"])
+        """One avatar frame. Steadiness (stage 4): the SAME noise every frame (so the style can't wander), and the
+        frame leans on the previous one by STEADY when you're still, letting go as you move (GHOST GUARD)."""
+        change, steady, guard = float(TUNE["change"]), float(TUNE["steady"]), float(TUNE["ghost_guard"])
         t1 = int(max(1, min(999, round(change * 1000) - 1)))
         ts = [t1]                                                # one step, live
+        self.timing, self.t_lap = {}, time.perf_counter()
         with self.torch.no_grad():
             x = self.to_tensor(img)
             control = self.shape_for(x, pose)
+            self.lap("shape")
             lat = self.tiny_vae.encode(x).latents
             if self.prev_shape != TUNE["shape"]:
                 self.prev, self.prev_shape = None, TUNE["shape"]
             same = self.prev is not None and self.prev_key == prompt and self.prev.shape == lat.shape
-            if same and steady > 0:
-                # feedback: the new frame starts partly from the last result, so the look carries over
-                lat = (1 - steady) * lat + steady * self.prev
+            # how much you moved since the last frame (in the tiny VAE's space; ~0.05 = still, 0.3+ = moving)
+            motion = float((lat - self.prev_in).abs().mean()) if same and self.prev_in is not None else 1.0
+            w = steady / (1 + motion * (2 + 18 * guard)) if same else 0.0
+            self.motion, self.lean = motion, w
+            self.prev_in = lat
+            if w > 0:
+                lat = (1 - w) * lat + w * self.prev               # start partly from the last result: the look carries over
+            self.lap("encode")
             x0 = self.denoise(lat, ts, prompt, "person", control=control)
-            if same and steady > 0:
-                # and the result is blended a little with the last one, so it doesn't jump
-                x0 = (steady * 0.5) * self.prev + (1 - steady * 0.5) * x0
+            self.lap("paint")
+            if w > 0:
+                x0 = w * self.prev + (1 - w) * x0                 # and land close to it, so it doesn't jump
             self.prev, self.prev_key = x0, prompt
             y = self.tiny_vae.decode(x0).sample
+            self.lap("decode")
         return self.to_image(y)
 
     def background(self, prompt, seed):
@@ -521,7 +558,8 @@ class MockGenerator:
     def apply_loras(self, t):
         self.lora_key = (t["lora_a"], t["lora_a_w"], t["lora_b"], t["lora_b_w"])
 
-    shape_img, shape_ms = None, None
+    shape_img, shape_ms, motion, lean = None, None, None, None
+    timing = {}
 
     def shape_jpeg(self):
         return jpeg_bytes(self.shape_img) if self.shape_img is not None else None
@@ -548,6 +586,8 @@ class MockGenerator:
         kind = TUNE["shape"]
         self.shape_img = None if kind == "off" else (draw_openpose(pose or []) if kind == "pose" else
                                                      ImageOps.autocontrast(ImageOps.grayscale(img).filter(ImageFilter.GaussianBlur(4))).convert("RGB"))
+        self.timing = {"shape": 3.0, "encode": 2.0, "paint": 40.0, "decode": 3.0}
+        self.motion, self.lean = 0.1, float(TUNE["steady"]) / 2
         c = self.ref_colour("person", self.tint(prompt))
         g = ImageOps.colorize(ImageOps.grayscale(ImageOps.posterize(img, 3)), black=(20, 10, 40), white=c)
         return Image.blend(img, g, min(1.0, float(TUNE["change"])))
@@ -571,7 +611,9 @@ class MockGenerator:
 
 gen = None
 lock = asyncio.Lock()
-frame_log = collections.deque(maxlen=60)          # (time, ms) of recent avatar frames, for the readout
+frame_log = collections.deque(maxlen=60)          # (time, ms, {part: ms}) of recent avatar frames, for the readout
+rtt_log = collections.deque(maxlen=30)            # the browser's measured round trip per frame (ms)
+wait_log = collections.deque(maxlen=30)           # how long each frame queued behind the previous one on the server (ms)
 world_ms = None
 
 
@@ -597,10 +639,16 @@ def run_person(jpeg, prompt, pose=None):
     img = Image.open(io.BytesIO(jpeg)).convert("RGB")
     if img.size != (WIDTH, HEIGHT):
         img = ImageOps.fit(img, (WIDTH, HEIGHT))
+    t1 = time.perf_counter()
     out = gen.person(img, full_prompt(prompt), pose)
-    ms = (time.perf_counter() - t0) * 1000
-    frame_log.append((time.time(), ms))
-    return jpeg_bytes(out), ms
+    t2 = time.perf_counter()
+    data = jpeg_bytes(out)
+    t3 = time.perf_counter()
+    parts = dict(getattr(gen, "timing", {}) or {})
+    parts["jpeg"] = ((t1 - t0) + (t3 - t2)) * 1000                # reading the camera frame + writing the result
+    ms = (t3 - t0) * 1000
+    frame_log.append((time.time(), ms, parts))
+    return data, ms
 
 
 def run_background(prompt, seed):
@@ -670,7 +718,7 @@ async def draw(n: int = 1, lo: int = 1, hi: int = 6):
 async def config():
     return {"width": WIDTH, "height": HEIGHT, "mock": MOCK, "engine": "mock" if MOCK else PAINTER,
             "references": True, "look": look_version, "tune": tune_version, "shape": TUNE["shape"],
-            "filter": current_style().get("filter", "")}
+            "filter": current_style().get("filter", ""), "skip_still": TUNE["skip_still"]}
 
 
 # ---------- tuning ----------
@@ -678,7 +726,8 @@ def clean_tune(d):
     """Only known keys, with sane types and ranges."""
     out = {}
     rng = {"change": (0.1, 1.0), "world_steps": (1, 4), "lora_a_w": (0, 2), "lora_b_w": (0, 2),
-           "ip_style": (0, 1.5), "guidance": (1, 4), "steady": (0, 0.85), "cn_strength": (0, 1.5)}
+           "ip_style": (0, 1.5), "guidance": (1, 4), "steady": (0, 0.9), "cn_strength": (0, 1.5),
+           "ghost_guard": (0, 1), "skip_still": (0, 10)}
     for k, v in d.items():
         if k not in TUNE_DEFAULTS:
             continue
@@ -697,13 +746,26 @@ def clean_tune(d):
                 continue
             if k == "style" and v not in load_styles():
                 continue
+            if k == "ref_mode" and v not in ("style", "layout", "all"):
+                continue
         out[k] = v
     return out
 
 
 def settings_view():
     now = time.time()
-    recent = [(t, ms) for t, ms in frame_log if now - t < 3]
+    recent = [(t, ms) for t, ms, _ in frame_log if now - t < 3]
+    parts = {}
+    for t_, _, p in frame_log:
+        if now - t_ < 3:
+            for k, v in p.items():
+                parts.setdefault(k, []).append(v)
+    parts = {k: round(sum(v) / len(v), 1) for k, v in parts.items()}
+    avg_ms = sum(ms for _, ms in recent) / len(recent) if recent else None
+    rtt = sum(rtt_log) / len(rtt_log) if rtt_log else None
+    wait = sum(wait_log) / len(wait_log) if wait_log else 0
+    if parts:
+        parts["queue"] = round(wait, 1)
     fps = (len(recent) - 1) / (recent[-1][0] - recent[0][0]) if len(recent) > 2 and recent[-1][0] > recent[0][0] else 0
     mem = gen.gpu_mb() if gen else None
     return {
@@ -718,6 +780,10 @@ def settings_view():
             "world_ms": round(world_ms) if world_ms else None,
             "gpu_mb": mem[0] if mem else None, "gpu_total_mb": mem[1] if mem else None,
             "shape_ms": round(gen.shape_ms, 1) if gen and gen.shape_ms else None,
+            "parts": parts,                                      # server time per frame, by step (ms)
+            "network_ms": max(0, round(rtt - avg_ms - wait)) if rtt and avg_ms else None,   # round trip minus server time and queueing
+            "motion": round(gen.motion, 3) if gen and gen.motion is not None else None,
+            "lean": round(gen.lean, 2) if gen and gen.lean is not None else None,
             "ready": gen is not None,
         },
     }
@@ -811,13 +877,21 @@ async def frame(request: Request, prompt: str = ""):
     (Older pages still send strength / steady / style in the address: they're ignored now.)"""
     jpeg = await request.body()
     prompt = prompt.strip() or "a person"
+    try:                                                         # the browser's round trip for its previous frame
+        rtt = float(request.headers.get("X-RTT", "0"))
+        if 0 < rtt < 10000:
+            rtt_log.append(rtt)
+    except ValueError:
+        pass
     pose = None
     try:                                                         # pose mode: the browser sends the joints along
         raw = request.headers.get("X-Pose")
         pose = [[float(v) for v in p[:3]] for p in json.loads(raw)][:33] if raw else None
     except (ValueError, TypeError):
         pose = None
+    arrived = time.perf_counter()
     async with lock:
+        wait_log.append((time.perf_counter() - arrived) * 1000)   # the browser keeps two frames in flight: one waits here
         out, ms = await asyncio.to_thread(run_person, jpeg, prompt, pose)
     return Response(out, media_type="image/jpeg", headers={"X-Gen-Ms": str(round(ms)), "X-Look": str(look_version), "Cache-Control": "no-store"})
 

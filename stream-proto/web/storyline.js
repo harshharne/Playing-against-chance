@@ -11,13 +11,19 @@
 //  Modifiers ("mods") move a target one step: +1 = harder, -1 = easier. Exact targets never move.
 //    mods: [{ at: "stream", opts: ["science", "medical"], step: +1 }]    opts "*" = every option there
 //  Options or entries with needs: "RADIO" only exist when that mark is held; ifSpouse: true only if married.
-//  "past" is the same outcome in the third person, for the ending ({she} {her} {hers} {She} {Her} filled in);
+//  "past" is the same outcome in the third person, for the ending ({she} {her} {him} {hers} {She} {Her} filled in);
 //  "aim" is how the ending names an option someone went for (default: its button text).
 //  An entry's "scene" becomes the world picture (with the place and the year), "wear" dresses the avatar.
 //  Never shown to the player: odds, percentages, the marks (until the ending).
 // ============================================================================
 
 export const PHASES = ["BASELINE", "CRUST", "ADULTHOOD", "LATER LIFE"];
+
+// OPTIONAL: a style reference painting per life phase, so the look itself ages with the life
+// (e.g. bright for the crust, faded for later life). Put the images in web/refs/ and name them here, e.g.
+//   export const PHASE_REFS = { 0: "refs/baseline.jpg", 1: "refs/crust.jpg", 2: "refs/adulthood.jpg", 3: "refs/later.jpg" };
+// Each one is used in style-only mode (its look, not its subject). Empty = the panel's reference stays in charge.
+export const PHASE_REFS = {};
 
 export const MOMENTS = [
   // ---------------- BASELINE (age 0) ----------------
@@ -89,7 +95,7 @@ export const MOMENTS = [
         scene: "a family loading a truck with bundles and a steel trunk, a new street" },
       { faces: [3], short: "A SIBLING IS BORN", text: "A sibling is born. You mind the baby after school.", past: "A sibling was born; {she} minded the baby after school.", mods: [{ at: "stream", opts: ["medical"], step: +1 }],
         scene: "a child rocking a baby in a cradle, schoolbooks left open" },
-      { faces: [4], short: "A GRANDFATHER MOVES IN", text: "A grandfather moves in and reads to you every night.", past: "A grandfather moved in and read to {her} every night.", mods: [{ at: "stream", opts: ["arts"], step: -1 }],
+      { faces: [4], short: "A GRANDFATHER MOVES IN", text: "A grandfather moves in and reads to you every night.", past: "A grandfather moved in and read to {him} every night.", mods: [{ at: "stream", opts: ["arts"], step: -1 }],
         scene: "a grandfather reading a book aloud by lamplight, a child listening" },
       { faces: [5], short: "AN UNCLE PAYS FOR TUITION", text: "An uncle's shop does well. He pays for tuition.", past: "An uncle's shop did well; he paid for tuition.", mods: [{ at: "stream", opts: ["science", "medical"], step: -1 }],
         scene: "a tuition class, rows of children, a blackboard full of equations" },
@@ -185,12 +191,12 @@ export const MOMENTS = [
     override: (S) => S.marks.has("HIDDEN")
       ? { text: "What the body hid comes up. A condition you were born with surfaces.", past: "A condition {she} was born with surfaced.", health: "surfaced", scene: "a hospital corridor, a doctor holding an x-ray to the light" }
       : S.marks.has("NAME")
-        ? { text: "A clerical error declares you dead.", past: "A clerical error declared {her} dead.", health: "dead-on-paper", scene: "a government office, a death certificate with your name, spelled right" }
+        ? { text: "A clerical error declares you dead.", past: "A clerical error declared {him} dead.", health: "dead-on-paper", scene: "a government office, a death certificate with your name, spelled right" }
         : null,
     table: [
       { faces: [1], short: "A SCARE", text: "A scare that turns out to be nothing.", past: "A scare that turned out to be nothing.", scene: "a clinic waiting room, a report in an envelope" },
       { faces: [2, 3, 4, 5], short: "NOTHING, YET", text: "Nothing, yet.", past: "Nothing, yet.", scene: "an ordinary evening at home, tea and the news" },
-      { faces: [6], short: "DECLARED DEAD", text: "A clerical error declares you dead.", past: "A clerical error declared {her} dead.", health: "dead-on-paper", scene: "a government office, a death certificate on the desk" },
+      { faces: [6], short: "DECLARED DEAD", text: "A clerical error declares you dead.", past: "A clerical error declared {him} dead.", health: "dead-on-paper", scene: "a government office, a death certificate on the desk" },
     ] },
 
   // ---------------- LATER LIFE (60–end) ----------------
@@ -207,7 +213,7 @@ export const MOMENTS = [
         text: "You open a repair shop, finally.", past: "Opened a repair shop, finally.", scene: "a small repair shop full of old radios, a hand-painted sign", wear: "a work apron", later: "opened a repair shop, finally" },
     ],
     allotted: [
-      { short: "THE GRANDCHILDREN DECIDE", text: "The grandchildren arrive and decide for you.", past: "the grandchildren arriving and deciding for {her}", scene: "grandchildren pulling an old person by the hand", later: "let the grandchildren decide" },
+      { short: "THE GRANDCHILDREN DECIDE", text: "The grandchildren arrive and decide for you.", past: "the grandchildren arriving and deciding for {him}", scene: "grandchildren pulling an old person by the hand", later: "let the grandchildren decide" },
       { short: "A PILGRIMAGE, ALREADY BOOKED", ifSpouse: true, text: "A pilgrimage your spouse already booked.", past: "a pilgrimage {her} spouse had already booked", scene: "a pilgrimage, a crowded river ghat, a tour bus", later: "went on a pilgrimage someone else had booked" },
     ] },
 

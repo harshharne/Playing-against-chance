@@ -283,7 +283,7 @@ export function createLive({ out, video, params }) {
       if (m.width !== W || m.height !== H) { W = m.width; H = m.height; sizeCanvases(); }
       stat.engine = m.engine; stat.references = m.references;
       if (lookSeen === null) { lookSeen = m.look; tuneSeen = m.tune; }
-      stat.filter = m.filter || "";
+      stat.filter = m.filter || ""; stat.skip = m.skip_still;
       shapeMode = m.shape || "depth";
       online = true; ready.splice(0).forEach(f => f(m)); pump();
     } catch (e) { online = false; setTimeout(connect, 2000); }
@@ -298,7 +298,7 @@ export function createLive({ out, video, params }) {
       const m = await (await fetch("/config", { cache: "no-store" })).json();
       if (tuneSeen !== null && m.tune !== tuneSeen) refresh();                       // any setting: a fresh avatar frame
       if (lookSeen !== null && m.look !== lookSeen && bgPrompt) setBackground(bgPrompt);   // the look: a fresh world too
-      lookSeen = m.look; tuneSeen = m.tune; shapeMode = m.shape || "depth"; stat.filter = m.filter || "";
+      lookSeen = m.look; tuneSeen = m.tune; shapeMode = m.shape || "depth"; stat.filter = m.filter || ""; stat.skip = m.skip_still;
       if (shapeMode === "pose") startPoser();
     } catch (e) {}
   }, 1000);
@@ -312,7 +312,7 @@ export function createLive({ out, video, params }) {
     if (!video.videoWidth) { schedule(100); return; }
     // if you haven't moved, don't make a new frame: a still person stays perfectly still
     const sig = signature();
-    if (lastSig && moved(sig, lastSig) < 1.5) { schedule(60); return; }
+    if (lastSig && moved(sig, lastSig) < (stat.skip ?? 1.5)) { schedule(60); return; }   // SKIP WHEN STILL, set on /panel
     lastSig = sig;
     flying++;
     const mine = ++seq, prompt = fgPrompt;
@@ -329,10 +329,13 @@ export function createLive({ out, video, params }) {
       const q = "prompt=" + encodeURIComponent(prompt);     // all tuning is on the server (/panel)
       const headers = { "Content-Type": "image/jpeg" };
       if (pts) headers["X-Pose"] = JSON.stringify(pts);
+      if (stat.rtt) headers["X-RTT"] = String(Math.round(stat.rtt));   // so the panel can show where the time goes
+      const sent = performance.now();
       const res = await fetch("/frame?" + q, { method: "POST", body: jpeg, headers });
       if (!res.ok) throw new Error("status " + res.status);
       stat.ms = +res.headers.get("X-Gen-Ms") || 0;
       const bmp = await createImageBitmap(await res.blob());
+      stat.rtt = performance.now() - sent;                 // camera frame out -> painted frame back, as the browser sees it
       flying--;
       if (mine < shownSeq || prompt !== fgPrompt) { bmp.close(); pump(); return; }   // late or out of date: skip it
       shownSeq = mine;

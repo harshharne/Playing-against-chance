@@ -42,6 +42,7 @@ picture descriptions are in `web/storyline.js`; the rules are in `web/game.html`
   Marks open exact-number options later and change some outcomes; modifiers move targets one step, never explained.
 - Never shown: odds, percentages, marks. The ending reveals them: who you became (third person), the astrologer's forecast, every fluke.
 - Each picture: the avatar at that age (body from the race, clothes from the outcome) + the world = the outcome's scene + place + year.
+- Optional: a style reference painting per life phase (PHASE_REFS in storyline.js, images in web/refs/), so the look ages with the life.
 - The look: stage one is paint only. The server starts on the "Painterly (game)" look; the panel can still switch it for tuning.
 
 ## Run
@@ -70,8 +71,14 @@ All painting settings live on the server, so the panel tunes the game and the la
 - STYLE, continued: two LoRA slots with weights, reference style strength (IP-Adapter), style prompt (added to every prompt), negative prompt, prompt guidance.
   Guidance 1.0 = off (fastest). The negative prompt only does something above 1.0, and then each frame costs about twice as long.
 - CHANGE: how much of you is repainted; world steps (1–4).
-- STABILITY: STEADY, how much each frame leans on the last one.
-- READOUT: painter, avatar frames per second, ms per frame, world time, GPU memory.
+- STYLE, reference: a STYLE REFERENCE slot (one painting for the avatar and the world) and where it acts:
+  STYLE ONLY (InstantStyle: only the painter's style layers, so you get its look without its subject), STYLE + LAYOUT, or EVERYTHING.
+  The layers were picked for SD 1.5 by analogy with InstantStyle's SDXL ones: judge by eye. The reference isn't saved in presets.
+- STABILITY: every frame uses the same noise (the style can't wander). STEADY = how much a frame leans on the last one while you're
+  still; GHOST GUARD = how quickly that lets go when you move; SKIP WHEN STILL = how much the camera must change before a new frame.
+- READOUT: painter, avatar frames per second, ms per frame and WHERE IT GOES (shape, encode, painter, decode, jpeg, queued),
+  NETWORK + BROWSER (the browser's round trip minus all of that), world time, GPU memory. If network + browser is bigger than the
+  server's time, a bigger GPU won't help much.
 - PRESETS: save / load all of the above by name (files in presets/ on the server).
 
 ## The painter
