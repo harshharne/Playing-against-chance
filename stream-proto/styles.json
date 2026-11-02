@@ -1,6 +1,7 @@
 {
   "_how": "The looks on /panel. Edit freely: changes show up on the panel within a few seconds, no restart. prompt = words added to every prompt (avatar and world); negative = added to the negative prompt (only used when guidance > 1); filter = a browser filter over the finished picture: \"\", \"pixel\", \"line\" or \"matrix\"; lora = [file in loras/, weight]: picking the look also puts that LoRA in slot A (if the file is there).",
   "none":         {"name": "As painted",          "prompt": "", "negative": "", "filter": ""},
+  "painterly":    {"name": "Painterly (game)",    "prompt": "painterly illustration, visible soft brushstrokes, warm muted colours, gentle light, storybook painting", "negative": "photo, realistic, 3d render, sharp digital", "filter": ""},
   "cartoon":      {"name": "Cartoon",             "prompt": "cartoon illustration, bold clean outlines, flat bright colours, simple shapes, cel shading", "negative": "photo, realistic, 3d render", "filter": ""},
   "caricature":   {"name": "Caricature",          "prompt": "caricature drawing, exaggerated features, big head, small body, expressive face, pen and ink with watercolour wash", "negative": "photo, realistic", "filter": ""},
   "comic":        {"name": "Comic book",          "prompt": "comic book art, heavy inked outlines, halftone dots, bold flat colours, dramatic shading", "negative": "photo, realistic, blurry", "filter": ""},

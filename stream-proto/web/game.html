@@ -6,7 +6,7 @@
 <title>Playing Against Chance</title>
 <style>
 /* Layout: the live picture fills the framed screen; one short message sits centred at its bottom edge.
-   Underneath: the four stages (left), the choices for this round (centre), one big button (right). White, minimal. */
+   Underneath: the life phases + age (left), this moment's table or options (centre), one big button (right). White, minimal. */
 :root { --ink: #111; --dim: #8a8a8a; --line: #d6d6d6; --bg: #fff; --miss: #c0392b; color-scheme: light; }
 html, body { height: 100%; }
 body { margin: 0; background: var(--bg); color: var(--ink); font-family: ui-sans-serif, system-ui, -apple-system, "Helvetica Neue", sans-serif; }
@@ -18,16 +18,21 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: ui-sans
 .status b { font-weight: 600; color: var(--ink); }
 
 /* the message: centred along the bottom of the picture */
-.msg { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); width: max-content; max-width: min(720px, calc(100% - 28px)); box-sizing: border-box; padding: 12px 20px; background: rgba(255,255,255,0.94); border: 1.5px solid var(--ink); border-radius: 4px; text-align: center; display: flex; flex-direction: column; gap: 5px; }
+.msg { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); width: max-content; max-width: min(720px, calc(100% - 28px)); max-height: calc(100% - 70px); overflow: auto; box-sizing: border-box; padding: 12px 20px; background: rgba(255,255,255,0.95); border: 1.5px solid var(--ink); border-radius: 4px; text-align: center; display: flex; flex-direction: column; gap: 5px; }
 .msg[hidden] { display: none; }
 .msg .kicker { font-size: 10px; font-weight: 600; letter-spacing: 0.14em; color: var(--dim); }
 .msg .line { font-size: 19px; line-height: 1.25; font-weight: 600; text-wrap: balance; }
 .msg .sub { font-size: 13px; color: #555; line-height: 1.4; text-wrap: balance; }
 .msg .sub b { color: var(--ink); }
 .msg .miss { color: var(--miss); }
-.msg dl { margin: 6px 0 2px; display: grid; grid-template-columns: auto auto; gap: 4px 14px; text-align: left; font-size: 13px; justify-content: center; }
-.msg dt { font-size: 10px; font-weight: 600; letter-spacing: 0.12em; color: var(--dim); padding-top: 2px; }
-.msg dd { margin: 0; font-weight: 600; }
+/* the ending: a longer read */
+.msg.end { text-align: left; width: min(720px, calc(100% - 28px)); gap: 10px; padding: 18px 24px; }
+.msg.end p { margin: 0; font-size: 14px; line-height: 1.5; }
+.msg.end h3 { margin: 4px 0 0; font-size: 10px; font-weight: 600; letter-spacing: 0.14em; color: var(--dim); }
+.msg.end ol { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.5; }
+.msg.end table { border-collapse: collapse; font-size: 13px; }
+.msg.end td { padding: 2px 12px 2px 0; vertical-align: top; }
+.msg.end td:first-child { color: var(--dim); white-space: nowrap; font-variant-numeric: tabular-nums; }
 
 .bar { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 18px; align-items: center; min-height: 64px; }
 .steps { display: flex; gap: 6px; align-items: center; font-size: 11px; font-weight: 600; letter-spacing: 0.12em; color: #bbb; }
@@ -36,37 +41,39 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: ui-sans
 .steps i { width: 16px; height: 1.5px; background: var(--line); }
 .left { display: flex; flex-direction: column; gap: 10px; }
 .fs { align-self: flex-start; font: inherit; font-size: 10px; font-weight: 600; letter-spacing: 0.1em; padding: 6px 11px; border: 1.5px solid var(--ink); border-radius: 4px; background: #fff; color: var(--ink); cursor: pointer; }
+.dicestat { font-size: 10px; font-weight: 600; letter-spacing: 0.1em; color: var(--dim); }
+.dicestat b { color: var(--ink); }
+.dicestat a { color: var(--ink); }
+
+/* this moment's table (defaults) or options (choices) */
+.choices { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.ch { min-width: 64px; max-width: 240px; padding: 8px 12px; display: flex; flex-direction: column; align-items: center; gap: 4px; font: inherit; background: #fff; color: var(--ink); border: 1.5px solid var(--ink); border-radius: 4px; cursor: pointer; transition: background 0.08s, color 0.08s; }
+.ch b { font-size: 11px; font-weight: 650; letter-spacing: 0.05em; text-align: center; }
+.ch .tgt { font-size: 12px; font-weight: 500; color: #555; }
+.ch .faces { display: flex; gap: 3px; height: 15px; }
+.ch .faces svg { width: 15px; height: 15px; opacity: 0.7; }
+.ch.table { cursor: default; }
+.ch:disabled { cursor: default; }
+.ch.wish { box-shadow: 0 0 0 3px #fff, 0 0 0 5px var(--ink); }          /* what you went for */
+.ch.on, .ch.got { background: var(--ink); color: #fff; }                  /* chance's light / what happened */
+.ch.on .tgt, .ch.got .tgt { color: #ccc; }
+.ch.on .faces svg, .ch.got .faces svg { opacity: 0.8; }
+.ch.dim { opacity: 0.35; }
+.ch.allot { border-style: dashed; }
+
+.go { font: inherit; font-size: 15px; font-weight: 600; letter-spacing: 0.08em; min-width: 170px; padding: 18px 26px; border: 1.5px solid var(--ink); border-radius: 4px; background: var(--ink); color: #fff; cursor: pointer; }
+.go:disabled { background: #fff; color: #bbb; border-color: #ccc; cursor: default; }
+.go:active:not(:disabled) { transform: translateY(1px); }
+button:focus-visible { outline: 3px solid #888; outline-offset: 2px; }
 
 /* FULL SCREEN: the picture covers the whole screen edge to edge; the bar floats over its bottom */
 body.full .frame { padding: 0; gap: 0; grid-template-rows: minmax(0, 1fr); }
 body.full .gen { border: 0; border-radius: 0; background: #000; }
 body.full .gen canvas { object-fit: cover; }
 body.full .bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; padding: 12px 20px; background: rgba(255,255,255,0.86); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
-body.full .msg { bottom: 112px; }
-.dicestat { font-size: 10px; font-weight: 600; letter-spacing: 0.1em; color: var(--dim); }
-.dicestat b { color: var(--ink); }
-.dicestat a { color: var(--ink); }
-
-/* the choices for this round */
-.choices { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
-.ch { min-width: 64px; padding: 9px 14px; display: flex; flex-direction: column; align-items: center; gap: 3px; font: inherit; background: #fff; color: var(--ink); border: 1.5px solid var(--ink); border-radius: 4px; cursor: pointer; transition: background 0.08s, color 0.08s; }
-.ch b { font-size: 12px; font-weight: 650; letter-spacing: 0.05em; white-space: nowrap; }
-.ch .faces { display: flex; gap: 3px; height: 15px; }
-.ch .faces svg { width: 15px; height: 15px; opacity: 0.7; }
-.ch:disabled { cursor: default; }
-.ch.round { width: 52px; height: 52px; min-width: 0; padding: 0; border-radius: 50%; justify-content: center; }
-.ch.round b { font-size: 17px; }
-.ch.wish { box-shadow: 0 0 0 3px #fff, 0 0 0 5px var(--ink); }          /* what you wished for */
-.ch.on, .ch.got { background: var(--ink); color: #fff; }                  /* chance's light / chance's pick */
-.ch.on .faces svg, .ch.got .faces svg { opacity: 0.8; }
-.ch.dim { opacity: 0.35; }
-
-.go { font: inherit; font-size: 15px; font-weight: 600; letter-spacing: 0.08em; min-width: 170px; padding: 18px 26px; border: 1.5px solid var(--ink); border-radius: 4px; background: var(--ink); color: #fff; cursor: pointer; }
-.go:disabled { background: #fff; color: #bbb; border-color: #ccc; cursor: default; }
-.go:active:not(:disabled) { transform: translateY(1px); }
-button:focus-visible { outline: 3px solid #888; outline-offset: 2px; }
+body.full .msg { bottom: 120px; max-height: calc(100% - 180px); }
 @media (max-width: 900px) {
-  .frame { padding: 16px; }
+  .frame { padding: 12px; }
   .bar { grid-template-columns: 1fr; justify-items: center; }
   .go { width: 100%; }
 }
@@ -82,37 +89,42 @@ button:focus-visible { outline: 3px solid #888; outline-offset: 2px; }
   </div>
   <div class="bar">
     <div class="left">
-      <div class="steps" id="steps"><span>BIRTH</span><i></i><span>BODY</span><i></i><span>HOME</span><i></i><span>WORLD</span></div>
+      <div class="steps" id="steps"></div>
       <button class="fs" id="fs" title="Full screen (F). Esc leaves it.">FULL SCREEN</button>
       <div class="dicestat" id="dice" aria-live="polite">DIE · …</div>
     </div>
-    <div class="choices" id="choices" role="group" aria-label="Your choices"></div>
+    <div class="choices" id="choices" role="group" aria-label="This moment"></div>
     <button class="go" id="go" disabled>…</button>
   </div>
 </div>
 
 <script type="module">
+// ============================================================================
+//  Playing Against Chance — stage one: one life, eighteen moments (the words are in storyline.js).
+//  Two sources of chance: YOUR die (only for choices) and random.org (everything else, never seen).
+//  Never shown: odds, percentages, the marks (until the ending).
+// ============================================================================
 import { createLive } from "./live.js";
 import { createDiceReader } from "./dice.js";
 import { createDiceReader as createRemoteReader } from "./dice-remote.js";
 import { findCamera } from "./cameras.js";
-import { BIRTH, BODY, HOME, WORLD, PROMPTS } from "./stages.js";
+import { PHASES, MOMENTS, avatar, worldScene } from "./storyline.js";
 
 const $ = (id) => document.getElementById(id);
 const msgEl = $("msg"), go = $("go"), choicesEl = $("choices"), statusEl = $("status");
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-let stageStrength = 0.75;
-// the look (cartoon, caricature, pixel art, ...) and everything about the painting is chosen on /panel
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const low = (s) => String(s).toLowerCase();
+
+// the look and everything about the painting is chosen on /panel
 const live = createLive({ out: $("out"), video: $("pip"), params: () => ({}) });
-// what's on screen, so it can be redrawn in a new look: a function giving { person, background } prompts
-let current = null, lastBg = null;
-function show(fn) {
-  current = fn;
-  const p = fn();
-  if (p.background !== lastBg) { lastBg = p.background; live.setBackground(p.background); }   // backgrounds only when they change
-  live.setPerson(p.person);
+let lastBg = null;
+function paint(person, background) {                       // the avatar and the world for this moment
+  live.setScene(null);
+  if (background !== lastBg) { lastBg = background; live.setBackground(background); }   // a new world only when it changes
+  live.setPerson(person);
 }
-function clearShow() { current = null; lastBg = null; live.setPerson(null); live.setBackground(null); }
+
 // ---------- full screen: the picture edge to edge (button or F; Esc leaves) ----------
 function setFull(on) {
   if (on && !document.fullscreenElement) document.documentElement.requestFullscreen?.().catch(() => {});
@@ -122,9 +134,8 @@ function setFull(on) {
 }
 $("fs").addEventListener("click", () => setFull(!document.body.classList.contains("full")));
 document.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement) setFull(false); });
-document.addEventListener("keydown", (e) => { if ((e.key === "f" || e.key === "F") && !e.repeat && !(e.target instanceof HTMLInputElement)) setFull(!document.body.classList.contains("full")); });
 
-// ---------- chance ----------
+// ---------- chance: random.org (through the server) ----------
 let source = "";
 async function draw(n, lo, hi) {
   try {
@@ -135,148 +146,80 @@ async function draw(n, lo, hi) {
     return Array.from({ length: n }, () => lo + Math.floor(Math.random() * (hi - lo + 1)));
   }
 }
-const total = (opts) => opts.reduce((s, o) => s + o.w, 0);
-async function weighted(opts) {                            // draw 1..total, walk the list
-  const [v] = await draw(1, 1, total(opts));
-  let c = 0;
-  for (const o of opts) { c += o.w; if (v <= c) return o; }
-  return opts[opts.length - 1];
-}
-const odds = (o, opts) => { const p = o.w / total(opts); return p >= 0.1 ? Math.round(p * 100) + "%" : "1 in " + Math.round(1 / p); };   // 49%, or 1 in 20 for the rare ones
-const name = (o) => (o.short || o.label);
+const d6 = async () => (await draw(1, 1, 6))[0];
 
-// which die faces pick which option: 6 options = one face each. Fewer options share the six faces;
-// the faces left over go to the most common options. An option's own "faces: [5, 6]" in stages.js overrides this.
-function faceMap(opts) {
-  const map = new Array(6).fill(-1);
-  if (opts.some(o => o.faces)) { opts.forEach((o, i) => (o.faces || []).forEach(f => { map[f - 1] = i; })); return map; }
-  const per = opts.map(() => Math.floor(6 / opts.length));
-  const extra = 6 - per.reduce((a, b) => a + b, 0);
-  [...opts.keys()].sort((a, b) => opts[b].w - opts[a].w || a - b).slice(0, extra).forEach(i => per[i]++);
-  let f = 0;
-  per.forEach((k, i) => { for (let j = 0; j < k && f < 6; j++) map[f++] = i; });
-  return map;
-}
 const PIPS = { 1: [[2, 2]], 2: [[1, 1], [3, 3]], 3: [[1, 1], [2, 2], [3, 3]], 4: [[1, 1], [3, 1], [1, 3], [3, 3]], 5: [[1, 1], [3, 1], [2, 2], [1, 3], [3, 3]], 6: [[1, 1], [3, 1], [1, 2], [3, 2], [1, 3], [3, 3]] };
 const dieFace = (n) => `<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="0.75" y="0.75" width="14.5" height="14.5" rx="3" fill="none" stroke="currentColor" stroke-width="1.5"/>${PIPS[n].map(([x, y]) => `<circle cx="${x * 4}" cy="${y * 4}" r="1.5" fill="currentColor"/>`).join("")}</svg>`;
-const low = (s) => String(s).toLowerCase();
 
 // ---------- the screen and the bar ----------
-const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 function msg(kicker, line, sub = "") {
-  msgEl.hidden = false;
+  msgEl.hidden = false; msgEl.className = "msg";
   msgEl.innerHTML = `<span class="kicker">${kicker}</span>${line ? `<span class="line">${line}</span>` : ""}${sub ? `<span class="sub">${sub}</span>` : ""}`;
 }
-function setSteps(i) { [...$("steps").querySelectorAll("span")].forEach((s, k) => { s.className = k < i ? "done" : k === i ? "now" : ""; }); }
+function subLine(html) {
+  let sub = msgEl.querySelector(".sub");
+  if (!sub) { sub = document.createElement("span"); sub.className = "sub"; msgEl.appendChild(sub); }
+  sub.innerHTML = html;
+}
+$("steps").innerHTML = PHASES.map(p => `<span>${p}</span>`).join("<i></i>");
+function setPhase(i) { [...$("steps").querySelectorAll("span")].forEach((s, k) => { s.className = k < i ? "done" : k === i ? "now" : ""; }); }
 let action = null;
 function button(label, fn) { go.textContent = label; go.disabled = !fn; action = fn; }
 go.addEventListener("click", () => { if (!go.disabled && action) action(); });
-let waiting = false;                                        // between rounds: a throw of the die presses the big button
+let waiting = false;                                        // between moments: a throw of the die presses the big button
 const waitFor = (label) => new Promise(res => {
   waiting = true;
   if (diceOn) chip("<b>throw to go on</b>");
   button(label, () => { waiting = false; button("…", null); res(); });
 });
-let choose = null, pickFace = null;                         // set while a round is waiting for your pick
-document.addEventListener("keydown", (e) => {
-  if (e.repeat) return;
-  if ((e.key === " " || e.key === "Enter") && !(e.target instanceof HTMLButtonElement)) { e.preventDefault(); go.click(); }
-  const n = parseInt(e.key, 10);
-  if (n >= 1 && n <= 6 && pickFace) pickFace(n);              // keys 1–6 = the die's faces
-});
-
-// ---------- one round: you pick what you wish for, then chance draws what you get ----------
-function round({ kicker, line, options, showFaces = true, roundButtons = false, onPick, onRoll, onLand }) {
-  return new Promise(resolve => {
-    msg(kicker, line, diceOn ? "Throw the die." : "");
-    const faces = faceMap(options);
-    choicesEl.innerHTML = "";
-    const btns = options.map((o, i) => {
-      const b = document.createElement("button");
-      b.className = "ch" + (roundButtons ? " round" : "");
-      const mine = [1, 2, 3, 4, 5, 6].filter(f => faces[f - 1] === i);
-      b.innerHTML = `<b>${esc(name(o))}</b>${showFaces ? `<span class="faces" title="die: ${mine.join(", ")}">${mine.map(dieFace).join("")}</span>` : ""}`;
-      b.addEventListener("click", () => choose && choose(i));
-      choicesEl.appendChild(b);
-      return b;
-    });
-    let wish = -1, byDie = false, face = 0;
-    button(diceOn ? "THROW THE DIE" : "PICK ONE", null);
-    pickFace = (f, die) => { if (faces[f - 1] >= 0) choose(faces[f - 1], die, f); };
-    choose = (i, die, f) => {
-      if (i >= options.length) return;
-      wish = i; byDie = !!die; face = f || [1, 2, 3, 4, 5, 6].find(k => faces[k - 1] === i);
-      btns.forEach((b, k) => b.classList.toggle("wish", k === i));
-      if (onPick) onPick(i);
-      button("ROLL", roll);
-      if (byDie) {                                          // your roll is in: chance answers by itself
-        const what = name(options[i]);                       // birth's options are just numbers: no need to say "4 → 4"
-        msg(kicker, /^\d+$/.test(what) ? `You rolled <b>${face}</b>.` : `You rolled <b>${face}</b> → ${esc(low(what))}`, "Now chance rolls.");
-        setTimeout(() => { if (action === roll) go.click(); }, 900);
-      }
-    };
-    async function roll() {
-      choose = null; pickFace = null; button("…", null);
-      btns.forEach(b => b.disabled = true);
-      if (onRoll) onRoll();
-      const result = weighted(options);
-      // chance's light runs along your choices while random.org answers, then stops on its pick
-      const got = options.indexOf(await result), n = options.length, steps = n * 2 + got + (n < 4 ? n : 0);
-      for (let s = 0; s <= steps; s++) {
-        btns.forEach((b, k) => b.classList.toggle("on", k === s % n));
-        await sleep(55 + Math.max(0, s - steps + 6) * 50);
-      }
-      btns.forEach((b, k) => { b.classList.remove("on"); b.classList.toggle("got", k === got); b.classList.toggle("dim", k !== got && k !== wish); });
-      const res = { wish: options[wish], got: options[got], met: wish === got, byDie, face };
-      if (onLand) onLand(res);
-      resolve(res);
-    }
+function chips(items, render, cls = "") {                  // the buttons in the middle of the bar
+  choicesEl.innerHTML = "";
+  return items.map((it, i) => {
+    const b = document.createElement("button");
+    b.className = "ch " + cls; b.type = "button";
+    b.innerHTML = render(it, i);
+    choicesEl.appendChild(b);
+    return b;
   });
 }
-function wishLine(res, opts) {
-  if (res.byDie) return res.met
-    ? `You rolled <b>${res.face}</b> → <b>${esc(low(name(res.wish)))}</b>. Chance rolled the same. (${odds(res.got, opts)})`
-    : `You rolled <b>${res.face}</b> → <b>${esc(low(name(res.wish)))}</b>. <span class="miss">Chance rolled <b>${esc(low(name(res.got)))}</b></span> (${odds(res.got, opts)}).`;
-  return res.met
-    ? `You wished for <b>${esc(low(name(res.wish)))}</b>, and got it. (${odds(res.got, opts)})`
-    : `You wished for <b>${esc(low(name(res.wish)))}</b>. <span class="miss">Chance gave you <b>${esc(low(name(res.got)))}</b></span> (${odds(res.got, opts)}).`;
+async function light(btns, land) {                          // chance's light runs along the table, stops on what happened
+  const n = btns.length, steps = n * 2 + land + (n < 4 ? n : 0);
+  for (let s = 0; s <= steps; s++) {
+    btns.forEach((b, k) => b.classList.toggle("on", k === s % n));
+    await sleep(55 + Math.max(0, s - steps + 6) * 50);
+  }
+  btns.forEach((b, k) => { b.classList.remove("on"); b.classList.toggle("got", k === land); b.classList.toggle("dim", k !== land); });
 }
 
-// ---------- the physical die ----------
-// Your throw picks your option; random.org then rolls chance's. Buttons and number keys still work.
-// Two readers, same events: dice_reader.py (OpenCV, its own window and camera) if it's running when the page
-// opens, otherwise the in-browser reader set up on /dice.html.
-let diceOn = false;
+// ---------- keys: Space / Enter = the big button, 1–5 = pick an option, F = full screen ----------
+let pickKey = null;
+document.addEventListener("keydown", (e) => {
+  if (e.repeat || e.target instanceof HTMLInputElement) return;
+  if (e.key === "f" || e.key === "F") { setFull(!document.body.classList.contains("full")); return; }
+  if ((e.key === " " || e.key === "Enter") && !(e.target instanceof HTMLButtonElement)) { e.preventDefault(); go.click(); }
+  const n = parseInt(e.key, 10);
+  if (n >= 1 && n <= 9 && pickKey) pickKey(n - 1);
+});
+
+// ---------- the physical die (dice_reader.py, or the browser reader set up on /dice.html) ----------
+let diceOn = false, diceSrc = "", rollWaiter = null;
 const diceEl = $("dice");
 const diceStates = { waiting: "throw it", rolling: "rolling…", settling: "landing…", reading: "reading…", unclear: "can't read it, throw again", shown: "", off: "off" };
-let diceSrc = "";                                           // "python" or "browser": shown on the chip
 const chip = (html) => { diceEl.innerHTML = `DIE${diceSrc ? ` (${diceSrc})` : ""} · ${html}`; };
 const diceEvents = {
-  onState: (s) => {
-    if (!diceOn) return;
-    chip(s === "needs empty tray" ? '<a href="/dice.html">set up the empty tray</a>' : `<b>${diceStates[s] ?? s}</b>`);
-  },
+  onState: (s) => { if (diceOn) chip(s === "needs empty tray" ? '<a href="/dice.html">set up the empty tray</a>' : `<b>${diceStates[s] ?? s}</b>`); },
   onRoll: (n) => {
     chip(`<b>${n}</b>`);
-    if (pickFace) pickFace(n, true);                         // a round is open: your throw is your wish
-    else if (waiting && action) go.click();                 // between rounds: go on
+    if (rollWaiter) rollWaiter(n, true);                   // a choice is waiting for your roll
+    else if (waiting && action) go.click();                 // between moments: go on
   },
 };
-function diceReady(src) {
-  diceOn = true; diceSrc = src; chip("<b>throw it</b>");
-  if (choose && go.textContent === "PICK ONE") { subLine("Throw the die."); go.textContent = "THROW THE DIE"; }   // the first round was already up
-}
-function subLine(text) {                                    // set the small line under the message
-  let sub = msgEl.querySelector(".sub");
-  if (!sub) { sub = document.createElement("span"); sub.className = "sub"; msgEl.appendChild(sub); }
-  sub.textContent = text;
-}
-// dice_reader.py always wins: the game keeps looking for it, and hands over to it the moment it appears.
+function diceReady(src) { diceOn = true; diceSrc = src; chip("<b>throw it</b>"); }
 let browserDice = null;
-async function tryPython() {
+async function tryPython() {                                // dice_reader.py always wins, whenever it appears
   try {
     await createRemoteReader(diceEvents).start();
-    if (browserDice) { browserDice.stop(); browserDice = null; }   // the browser stops watching the die
+    if (browserDice) { browserDice.stop(); browserDice = null; }
     diceReady("python");
     return true;
   } catch (e) { return false; }
@@ -284,7 +227,7 @@ async function tryPython() {
 (async () => {
   if (await tryPython()) return;
   const look = setInterval(async () => { if (await tryPython()) clearInterval(look); }, 3000);
-  let cam = "";                                             // meanwhile: the browser reader, if one was set up on /dice.html
+  let cam = "";
   try { cam = await findCamera("pac-dice-cam"); } catch (e) {}
   if (!cam) { diceEl.innerHTML = 'DIE · <a href="/dice.html">start dice_reader.py, or set up</a>'; return; }
   const dice = createDiceReader({ video: Object.assign(document.createElement("video"), { muted: true, playsInline: true }), ...diceEvents });
@@ -292,68 +235,232 @@ async function tryPython() {
   catch (e) { console.warn("[dice]", e.name, e.message); if (!diceOn) diceEl.innerHTML = 'DIE · <a href="/dice.html">camera not found</a>'; }
 })();
 
-// ---------- the run ----------
-let r = {}, oddsAll = 1, attempts = 0, met = 0, asked = 0;
-
-// ---------- 1. BIRTH (drawn, no generation) ----------
-let mine = 0, winner = 0, raceAt = 0, phase = "pick";
-async function birth() {
-  r = {}; oddsAll = 1; attempts = 0; met = 0; asked = 0;
-  setSteps(0);
-  clearShow();
-  live.setScene(drawBirth);
-  const sperm = Array.from({ length: BIRTH.sperm }, (_, i) => ({ label: String(i + 1), w: 1 }));
-  while (true) {
-    phase = "pick"; mine = 0; winner = 0;
-    attempts++;
-    const res = await round({
-      kicker: "1 · BIRTH" + (attempts > 1 ? ` · TRY ${attempts}` : ""),
-      line: esc(BIRTH.intro), options: sperm, showFaces: false, roundButtons: true,
-      onPick: (i) => { mine = i + 1; },
-      onRoll: () => { phase = "race"; raceAt = performance.now(); },
-      onLand: (res) => { winner = +res.got.label; phase = "result"; raceAt = performance.now(); },
-    });
-    if (res.met) break;
-    msg("1 · BIRTH", esc(BIRTH.lost(winner)), (res.byDie ? `You rolled ${res.face}. ` : "") + `Your odds were 1 in ${BIRTH.sperm}.`);
-    await waitFor("TRY AGAIN");
-  }
-  oddsAll *= 1 / BIRTH.sperm;
-  msg("1 · BIRTH", esc(BIRTH.won), `After ${attempts} ${attempts === 1 ? "try" : "tries"}. Chance: ${source}.`);
-  await waitFor("NEXT: BODY");
-  body();
+// ============================================================================
+//  THE LIFE
+// ============================================================================
+let S;                                                      // everything that has happened so far
+function freshLife() {
+  return { marks: new Set(), mods: [], body: null, home: null, world: null, place: null, scene: null, wear: null,
+           forecast: null, flukes: [], log: [], picks: {}, work: null, health: null, endAge: null, age: 0 };
 }
+const kicker = (m) => m.age === null ? `${PHASES[m.phase]} · ${m.title}` : `${PHASES[m.phase]} · AGE ${m.age} · ${m.title}`;
+function show(age) { paint(avatar(S, age), worldScene(S, age)); }
+
+// what an outcome does to the life: marks, modifiers, body/home/world, the picture
+function apply(m, e) {
+  if (e.mark) S.marks.add(e.mark);
+  if (e.mods) S.mods.push(...e.mods);
+  if (e.body) S.body = e.body;
+  if (e.home) S.home = e.home;
+  if (e.world) { S.world = e.world; S.place = e.world.place; }
+  if (e.move && S.world) S.place = "a new city in " + S.world.place.split(" in ").pop();
+  for (const k of ["forecast", "work", "health", "endAge", "spouse"]) if (e[k] !== undefined) S[k] = e[k];
+  if (e.scene || m.scene) S.scene = e.scene || m.scene;
+  if (e.wear) S.wear = e.wear;
+  S.log.push({ id: m.id, age: m.age, title: m.title, text: e.text, past: e.past || e.text });
+}
+
+// ---------- targets: "a 6", "5 or more", "exactly 3" (moved by modifiers and marks, never shown why) ----------
+function target(m, o) {
+  if (o.exact) return o.exact;                              // exact numbers never move
+  let t = o.target;
+  for (const md of S.mods) if (md.at === m.id && (md.opts === "*" || md.opts.includes(o.id))) t += md.step;
+  for (const [mk, step] of Object.entries(o.markMods || {})) if (S.marks.has(mk)) t += step;
+  return Math.max(2, Math.min(6, t));
+}
+const tLabel = (m, o) => o.exact ? `exactly ${o.exact}` : target(m, o) === 6 ? "a 6" : `${target(m, o)} or more`;
+const hard = (m, o) => o.exact ? 6 : target(m, o);         // how hard, for "the next easier option"
+
+// ---------- DEFAULT: happens to you; random.org rolls on the table; you watch ----------
+async function defaultMoment(m, age) {
+  msg(kicker(m), esc(m.intro));
+  button("…", null);
+  let e = m.override ? m.override(S) : null;
+  if (e) { choicesEl.innerHTML = ""; await sleep(1500); }   // a mark decides this one: no roll
+  else {
+    const btns = chips(m.table, (it) => `<b>${esc(it.short)}</b><span class="faces">${it.faces.map(dieFace).join("")}</span>`, "table");
+    if (m.id === "race") { phase = "race"; raceAt = performance.now(); }
+    await sleep(900);
+    let f = await d6();
+    if (m.faceShift) f = Math.max(1, Math.min(6, f + m.faceShift(S)));
+    const i = m.table.findIndex(it => it.faces.includes(f));
+    await light(btns, i);
+    e = m.table[i];
+    for (const [mk, alt] of Object.entries(e.ifMark || {})) if (S.marks.has(mk)) e = { ...e, ...alt };
+    if (m.id === "race") { winner = f; phase = "result"; raceAt = performance.now(); }
+  }
+  apply(m, e);
+  msg(kicker(m), esc(e.text), m.id === "astrologer" ? esc(m.intro) : "");
+}
+
+// ---------- FLUKE: something small; random.org rolls; a 6 leaves a hidden mark ----------
+async function flukeMoment(m, age) {
+  choicesEl.innerHTML = "";
+  S.scene = m.scene; show(age);
+  msg(kicker(m), esc(m.intro));
+  button("…", null);
+  await sleep(1800);
+  const hit = (await d6()) === 6;
+  if (hit) S.marks.add(m.mark);
+  S.flukes.push({ id: m.id, age, hit });
+  S.log.push({ id: m.id, age, title: m.title, text: m.intro + (hit ? " " + m.six : "") });
+  if (hit) msg(kicker(m), esc(m.intro), esc(m.six));
+}
+
+// ---------- CHOICE: you pick, you roll your die; a miss is settled by random.org ----------
+async function choiceMoment(m, age) {
+  const opts = m.options.filter(o => !o.needs || S.marks.has(o.needs));
+  const btns = chips(opts, (o, i) => `<b>${esc(o.short)}</b><span class="tgt">${tLabel(m, o)}</span>`);
+  msg(kicker(m), esc(m.intro), "Pick one. Then roll.");
+  const { wish, n, byDie } = await new Promise(resolve => {
+    let wish = -1;
+    const pick = (i) => {
+      if (i < 0 || i >= opts.length) return;
+      wish = i; btns.forEach((b, k) => b.classList.toggle("wish", k === i));
+      msg(kicker(m), `${esc(opts[i].short)}: <b>${tLabel(m, opts[i])}</b>`, diceOn ? "Throw the die. (Or press ROLL.)" : "Roll.");
+      button("ROLL", async () => { button("…", null); const r = await d6(); finish(r, false); });
+    };
+    const finish = (r, die) => {
+      if (wish < 0) { subLine("Pick one first."); return; }
+      rollWaiter = null; pickKey = null; btns.forEach(b => b.disabled = true);
+      resolve({ wish, n: r, byDie: die });
+    };
+    btns.forEach((b, i) => b.addEventListener("click", () => pick(i)));
+    pickKey = pick; rollWaiter = finish;
+    button("PICK ONE", null);
+  });
+  const o = opts[wish], t = target(m, o);
+  const hit = o.exact ? n === o.exact : n >= t;
+  let got = o, how = "hit";
+  if (!hit) {
+    btns[wish].classList.add("dim");
+    msg(kicker(m), `You rolled <b>${n}</b>. <span class="miss">${esc(cap(low(o.short)))} needed ${tLabel(m, o)}.</span>`, "Chance decides what you get instead…");
+    await sleep(1600);
+    const c = await d6();
+    const easier = opts.filter(x => !x.exact && target(m, x) < hard(m, o)).sort((a, b) => target(m, b) - target(m, a))[0];
+    if (c <= 4 && easier) { got = easier; how = "easier"; }
+    else {
+      const pool = m.allotted.filter(a => (!a.needs || S.marks.has(a.needs)) && (!a.ifSpouse || S.spouse));
+      got = pool[(await draw(1, 1, pool.length))[0] - 1]; how = "allotted";
+      const b = document.createElement("button"); b.className = "ch allot got"; b.type = "button"; b.disabled = true;
+      b.innerHTML = `<b>${esc(got.short)}</b><span class="tgt">allotted</span>`; choicesEl.appendChild(b);
+    }
+  }
+  btns.forEach((b, k) => { b.classList.toggle("got", opts[k] === got); if (opts[k] !== got && k !== wish) b.classList.add("dim"); });
+  S.picks[m.id] = { wished: o, got, how, n };
+  apply(m, got);
+  const rolled = `You rolled <b>${n}</b>${byDie ? "" : " (on screen)"}.`, need = esc(cap(low(o.short))) + " needed " + tLabel(m, o);
+  if (how === "hit") msg(kicker(m), esc(got.text), `${rolled} ${need}.`);
+  else if (how === "easier") msg(kicker(m), esc(got.text), `${rolled} <span class="miss">${need}</span>. Chance gave you the next one down.`);
+  else msg(kicker(m), esc(got.text), `${rolled} <span class="miss">${need}</span>. Chance allotted you this instead.`);
+}
+
+// ---------- the run ----------
+async function play() {
+  S = freshLife(); lastBg = null;
+  live.setPerson(null); live.setBackground(null);
+  phase = "idle"; winner = 0;
+  for (const m of MOMENTS) {
+    setPhase(m.phase);
+    const age = m.age ?? 62;
+    S.age = age;
+    if (m.id === "race") live.setScene(drawBirth);
+    else if (m.kind !== "fluke") show(age);
+    if (m.kind === "default") await defaultMoment(m, age);
+    else if (m.kind === "fluke") await flukeMoment(m, age);
+    else await choiceMoment(m, age);
+    if (m.id === "race") { S.scene = "a dim room, the first hours of a newborn's life, soft lamp light"; await sleep(1800); }
+    if (m.id === "end") S.scene = "a quiet room, an empty chair by a window, late afternoon light";
+    show(m.id === "end" ? S.endAge : age);
+    await waitFor(m.id === "end" ? "WHO YOU BECAME" : "NEXT");
+  }
+  ending();
+  await waitFor("AGAIN");
+  play();
+}
+
+// ---------- THE ENDING: who you became, from outside ----------
+function ending() {
+  setPhase(PHASES.length);
+  choicesEl.innerHTML = "";
+  const g = S.body.sex === "girl", she = g ? "she" : "he", She = g ? "She" : "He", her = g ? "her" : "his";
+  const T = (s) => String(s).replace(/\{she\}/g, she).replace(/\{She\}/g, She).replace(/\{her\}/g, her)
+    .replace(/\{Her\}/g, cap(her)).replace(/\{hers\}/g, g ? "hers" : "his");
+  const past = (id) => T(S.log.find(l => l.id === id).past);
+  const wishText = (pk) => {
+    const aim = T(pk.wished.aim || low(pk.wished.short)), pt = T(pk.got.past || pk.got.text);
+    return pk.how === "hit" ? pt : pk.how === "easier" ? `Went for ${aim}. ${pt}` : `Went for ${aim}; allotted ${pt}.`;
+  };
+  const p = S.picks, year = S.world.year;
+  const bodyWords = low(MOMENTS[0].table.find(e => e.body === S.body).text.replace(/^A (girl|boy)\.\s*/, "").replace(/\.$/, ""));
+  const forecastWords = low(MOMENTS[4].table.find(e => e.forecast === S.forecast).short);
+  const offer = p.offer.got;
+  let became = offer.became || "someone who worked";
+  became += { up: ", later promoted", boss: ", who ended up at the boss's desk", typo: ", kept on because a typo became the product's name", out: ", until restructured out" }[S.work] || "";
+  const match = { doctor: p.stream.got.id === "medical", engineer: p.stream.got.id === "science", officer: offer.job === "officer",
+                  abroad: offer.job === "abroad", marries: p.marriage.got.spouse?.includes("family") && S.marks.has("RICH"), famous: S.work === "typo" }[S.forecast];
+  const fl = Object.fromEntries(S.flukes.map(f => [f.id, f.hit]));
+  const flukeLines = [
+    fl.registry ? `At birth, a clerk added a letter to ${her} name.` + (offer.id === "interview" ? ` At 26 it got ${her} an interview meant for someone else.` : "")
+                  + (S.health === "dead-on-paper" ? ` At 47 it had ${her} declared dead: the dead man had the name spelled right.` : "")
+                  + (offer.id !== "interview" && S.health !== "dead-on-paper" ? " Nothing ever came of it." : "")
+                : "At birth, a clerk wrote the name down exactly right.",
+    fl.radio ? `At 7, ${she} took a broken radio apart and put it back together.` + (p.stream.got.id === "phones" ? ` At 16 ${she} left school to fix phones.` : "")
+               + (p.later.got.id === "repair" ? ` At 62 ${she} opened a repair shop, finally.` : "") + (p.stream.got.id !== "phones" && p.later.got.id !== "repair" ? " The knack waited, unused." : "")
+             : "At 7, a broken radio sat in a cupboard for thirty years.",
+    fl.train ? "At 19, a missed train, and a stranger on the platform." + (p.marriage.got.id === "stranger" ? ` At 31 ${she} married them.` : " They never met again.")
+             : "At 19, a missed train meant twenty minutes on a bench, nothing more.",
+    fl.typo ? "At 38, a typo ended up on the whiteboard." + (S.work === "typo" ? ` At 45 it saved ${her} job.` : " It stayed there for a year.")
+            : "At 38, a typo went round the office and was forgotten by lunch.",
+  ];
+  if (S.marks.has("HIDDEN")) flukeLines.push(`From the first day, the body hid something. It surfaced at 47${S.endAge ? ", and took a little off the end" : ""}.`);
+  const rows = [
+    [11, past("family")], [16, wishText(p.stream)], [23, past("economy")], [26, wishText(p.offer)], [31, wishText(p.marriage)],
+    [45, past("office")], [47, past("buried")], [62, wishText(p.later)], [S.endAge, `${She} died in ${year + S.endAge}.`],
+  ];
+  msgEl.hidden = false; msgEl.className = "msg end";
+  msgEl.innerHTML = `<span class="kicker">WHO YOU BECAME</span>
+    <span class="line">${esc(cap(became))}.</span>
+    <p>${She} was born a ${esc(S.body.sex)}, ${esc(bodyWords)}, into ${esc(S.home)}, in ${esc(S.world.place)}, ${year}.
+       The astrologer said ${she} would become ${esc(forecastWords)}. ${match ? "Just as the astrologer said." : `${She} didn't.`}</p>
+    <table>${rows.map(([a, t]) => `<tr><td>${a}</td><td>${esc(t)}</td></tr>`).join("")}</table>
+    <h3>THE SMALL THINGS</h3>
+    <ol>${flukeLines.map(l => `<li>${esc(l)}</li>`).join("")}</ol>`;
+  // the avatar stays as they ended, in their last room
+}
+function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+
+// ---------- 1. THE RACE: drawn, no generation ----------
+let winner = 0, raceAt = 0, phase = "idle";
 function drawBirth(g, W, H, now) {
   // H's sketch: the egg in the middle, the sperm around it, heads pointing in, tails trailing out
   const t = now / 1000;
-  const cx = W * 0.5, cy = H * 0.47, er = H * 0.17;          // centred, a touch high to clear the message
+  const cx = W * 0.5, cy = H * 0.47, er = H * 0.17;
   const bg = g.createRadialGradient(cx, cy, 10, cx, cy, W * 0.75);
   bg.addColorStop(0, "#f6c7c2"); bg.addColorStop(1, "#7a1f2b");
   g.fillStyle = bg; g.fillRect(0, 0, W, H);
-  // the egg, with its nucleus
-  const born = phase === "result" && winner === mine;
+  const born = phase === "result";
   const glow = born ? 0.5 + 0.5 * Math.sin((now - raceAt) / 120) : 0;
   g.fillStyle = `rgba(255,240,220,${0.22 + glow * 0.45})`; g.beginPath(); g.arc(cx, cy, er * 1.22, 0, 7); g.fill();
   g.fillStyle = "#fff4e6"; g.beginPath(); g.arc(cx, cy, er, 0, 7); g.fill();
   g.strokeStyle = "rgba(122,31,43,0.45)"; g.lineWidth = 2.5; g.stroke();
   g.strokeStyle = "rgba(122,31,43,0.18)"; g.lineWidth = 1; g.beginPath(); g.arc(cx, cy, er * 0.9, 0, 7); g.stroke();
   g.fillStyle = "#c98f8a"; g.beginPath(); g.arc(cx - er * 0.08, cy - er * 0.3, er * 0.16, 0, 7); g.fill();
-  // the sperm, spread evenly around it (none straight above or below)
-  const n = BIRTH.sperm, ring = er + H * 0.15, tail = H * 0.12;
+  const n = 6, ring = er + H * 0.15, tail = H * 0.12;
   const pix = live.stat.filter === "pixel";
   const big = pix ? 1.5 : 1, hx = Math.max(7, H * 0.034) * big, hy = Math.max(5, H * 0.024) * big;
   for (let i = 1; i <= n; i++) {
     const a = -Math.PI / 2 + (Math.PI * 2 / n) * (i - 0.5);
-    const ux = Math.cos(a), uy = Math.sin(a);                 // pointing out from the egg
-    let d = ring + Math.sin(t * 2 + i * 1.7) * 3;              // a gentle idle drift
+    const ux = Math.cos(a), uy = Math.sin(a);
+    let d = ring + Math.sin(t * 2 + i * 1.7) * 3;
     if (phase === "race") d = ring - Math.min(1, (now - raceAt) / 1400) * H * 0.06 + Math.sin(t * 5 + i) * 3;
     if (phase === "result") {
       const k = Math.min(1, (now - raceAt) / 1600);
-      if (i === winner) d = (ring - H * 0.06) + (er + hx * 0.6 - (ring - H * 0.06)) * k;   // the winner reaches the egg
-      else { d = ring - H * 0.06 + k * H * 0.05; g.globalAlpha = 1 - k * 0.8; }          // the rest fall back
+      if (i === winner) d = (ring - H * 0.06) + (er + hx * 0.6 - (ring - H * 0.06)) * k;
+      else { d = ring - H * 0.06 + k * H * 0.05; g.globalAlpha = 1 - k * 0.8; }
     }
-    const x = cx + ux * d, y = cy + uy * d, sel = i === mine;
-    // tail: trails outward, wriggling sideways
-    g.strokeStyle = sel ? "#111" : "rgba(255,255,255,0.95)"; g.lineWidth = pix ? (sel ? 6 : 5) : (sel ? 3 : 2); g.lineCap = "round";   // thicker so it survives the pixel filter
+    const x = cx + ux * d, y = cy + uy * d, sel = phase === "result" && i === winner;
+    g.strokeStyle = sel ? "#111" : "rgba(255,255,255,0.95)"; g.lineWidth = pix ? (sel ? 6 : 5) : (sel ? 3 : 2); g.lineCap = "round";
     g.beginPath();
     for (let s = 0; s <= 24; s++) {
       const along = hx + (s / 24) * tail, side = Math.sin(t * 9 + s * 0.5 + i) * (s * 0.3);
@@ -361,7 +468,6 @@ function drawBirth(g, W, H, now) {
       s ? g.lineTo(px, py) : g.moveTo(px, py);
     }
     g.stroke();
-    // head, pointing at the egg, with its number
     g.save(); g.translate(x, y); g.rotate(a);
     g.fillStyle = sel ? "#111" : "#fff"; g.beginPath(); g.ellipse(0, 0, hx, hy, 0, 0, 7); g.fill();
     g.restore();
@@ -369,84 +475,6 @@ function drawBirth(g, W, H, now) {
     g.fillText(i, x, y + 1);
     g.globalAlpha = 1;
   }
-}
-
-
-// ---------- 2. BODY ----------
-// your avatar appears as soon as the first trait lands, and fills in trait by trait
-function bodyPrompt() {
-  // while traits are still landing (the full prompt, once all are in, comes from stages.js)
-  const b = r.body, hair = [b.hair && b.hair.p, b.curl && b.curl.p].filter(Boolean).join(" ");
-  return [`a newborn ${b.sex ? b.sex.baby : "baby"}`, hair && `${hair} hair`, b.eyes && `${b.eyes.p} eyes`, "wrapped in a soft blanket"].filter(Boolean).join(", ");
-}
-async function body() {
-  setSteps(1);
-  live.setScene(null);
-  stageStrength = BODY.strength;
-  r.body = {};
-  const nurseryBg = () => PROMPTS.body({ body: { sex: {}, hair: {}, curl: {}, eyes: {}, build: {} } }).background;
-  show(() => ({ person: null, background: nurseryBg() }));
-  for (const tr of BODY.traits) {
-    const res = await round({ kicker: "2 · BODY · " + tr.name, line: esc(BODY.intro), options: tr.options });
-    r.body[tr.key] = res.got; oddsAll *= res.got.w / total(tr.options); asked++; if (res.met) met++;
-    msg("2 · BODY · " + tr.name, "", wishLine(res, tr.options));
-    show(() => ({ person: bodyPrompt(), background: nurseryBg() }));
-    await sleep(1600);
-  }
-  show(() => PROMPTS.body(r));
-  msg("2 · BODY", "This is you, newborn.", `You got ${met} of ${asked} wishes.`);
-  await waitFor("NEXT: HOME");
-  home();
-}
-
-// ---------- 3. HOME ----------
-async function home() {
-  setSteps(2);
-  stageStrength = HOME.strength;
-  const res = await round({ kicker: "3 · HOME", line: esc(HOME.intro), options: HOME.options });
-  r.home = res.got; oddsAll *= res.got.w / total(HOME.options); asked++; if (res.met) met++;
-  show(() => PROMPTS.home(r));
-  msg("3 · HOME", esc(r.home.label.toLowerCase().replace(/^./, c => c.toUpperCase())) + ".", wishLine(res, HOME.options) + "<br>" + r.home.privileges.map(esc).join(" · "));
-  await waitFor("NEXT: WORLD");
-  world();
-}
-
-// ---------- 4. WORLD ----------
-async function world() {
-  setSteps(3);
-  stageStrength = WORLD.strength;
-  const where = await round({ kicker: "4 · WORLD · WHERE", line: esc(WORLD.intro), options: WORLD.where });
-  const [ci] = await draw(1, 1, where.got.cities.length);   // the city inside the region: pure chance, no wish
-  const city = where.got.cities[ci - 1];
-  asked++; if (where.met) met++;
-  msg("4 · WORLD · WHERE", esc(city) + ".", wishLine(where, WORLD.where));
-  await sleep(1800);
-  const when = await round({ kicker: "4 · WORLD · WHEN", line: esc(WORLD.introWhen || "And when?"), options: WORLD.when });
-  asked++; if (when.met) met++;
-  r.world = { where: where.got, city, when: when.got };
-  oddsAll *= (where.got.w / total(WORLD.where)) * (1 / where.got.cities.length) * (when.got.w / total(WORLD.when));
-  show(() => PROMPTS.world(r));
-  msg("4 · WORLD", `${esc(city)}, ${esc(low(r.world.when.label))}.`, wishLine(when, WORLD.when));
-  await waitFor("WHO CHANCE MADE");
-  summary();
-}
-
-// ---------- the baseline ----------
-async function summary() {
-  setSteps(4);
-  choicesEl.innerHTML = "";
-  const b = r.body;
-  msgEl.hidden = false;
-  msgEl.innerHTML = `<span class="kicker">THE BASELINE</span><span class="line">This is the start chance gave you.</span>
-    <dl>
-      <dt>BIRTH</dt><dd>born on try ${attempts}</dd>
-      <dt>BODY</dt><dd>${esc(`${low(b.sex.label)} · ${low(b.hair.label)} ${low(b.curl.label)} hair · ${low(b.eyes.label)} eyes · ${low(b.build.label)}`)}</dd>
-      <dt>HOME</dt><dd>${esc(low(r.home.label))}</dd>
-      <dt>WORLD</dt><dd>${esc(r.world.city)}, ${esc(low(r.world.when.label))}</dd>
-    </dl>
-    <span class="sub">You got <b>${met} of ${asked}</b> wishes. Odds of this exact start: <b>1 in ${Math.round(1 / oddsAll).toLocaleString("en-IN")}</b>.</span>`;
-  await waitFor("AGAIN");
-  birth();
 }
 
 // ---------- status ----------
@@ -458,7 +486,7 @@ function status() {
 }
 status();
 live.camera.catch(e => msg("NO CAMERA", esc(e.message || e.name)));
-birth();                                                    // straight into birth
+play();                                                     // straight into the race
 </script>
 </body>
 </html>

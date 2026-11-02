@@ -8,7 +8,7 @@ If the download stops halfway, run it again: it carries on.
 
 ## Pages
 - http://localhost:8766/panel — the tuning panel (see below).
-- http://localhost:8766/game — the game: BIRTH → BODY → HOME → WORLD → the baseline. Space / Enter = the big button, keys 1–6 pick a sperm.
+- http://localhost:8766/game — the game: one life, eighteen moments, BASELINE → CRUST → ADULTHOOD → LATER LIFE → who you became (see "The storyline"). Space / Enter = the big button, keys 1–5 pick an option, F = full screen.
 - http://localhost:8766/dice.html — set up the physical die (see below).
 - http://localhost:8766 — the lab: type prompts and add references by hand to tune the look. References set here carry over into the game.
 
@@ -19,21 +19,30 @@ If the download stops halfway, run it again: it carries on.
    Set it up in its window (c = mark the tray, l = lock, e = empty tray), THEN open the game. It tells the game on http://localhost:8767/events (`web/dice-remote.js`). Hover the DIE chip in the game to see which reader it's using.
 2. The browser reader below, if dice_reader.py isn't running.
 
-Your throw is your wish, random.org rolls chance's answer. The die is read with plain image processing in the browser (no AI, no GPU).
+In choices, your throw is your roll against the option's target; everything else is rolled by random.org. The die is read with plain image processing in the browser (no AI, no GPU).
 How: a picture of the EMPTY throwing area is remembered; after a throw, whatever differs from it is the die (table, tape, stains and glare cancel out). The top face is the die's brightest part, the dots are the holes in it.
 - A webcam pointing straight down at the throwing square. Even light. A die with dark dots.
 - Open http://localhost:8766/dice.html → pick the DICE CAMERA and the AVATAR CAMERA → drag a box just inside the square → take the die out and press EMPTY TRAY → throw a few times (green = what changed, box = top face, red = dots) → SAVE FOR THE GAME.
 - Press EMPTY TRAY again whenever the camera moves or the light changes a lot.
 - Tuning: SENSITIVITY lower if parts of the die aren't green, higher if the table turns green. TOP FACE higher if side dots get counted, lower if dots are missed.
-- In the game, the DIE chip under the stage names shows the die. Every button shows the faces that pick it (fewer than six choices share the faces; set your own with `faces` in stages.js). Between stages, a throw = the big button. Clicking, and keys 1–6 as faces, still work.
+- In the game, the DIE chip under the phases shows the die. Pick an option (click or keys 1–5), then throw. Between moments, a throw = the big button. Without a die, ROLL rolls one on screen.
 - With no dice camera saved the game works as before.
 
 ## The game screen
 - The look is picked on the panel (/panel → STYLE), not in the game.
 - FULL SCREEN (button under the stage names, or the F key): the picture covers the whole screen edge to edge, the choices float over its bottom. Esc leaves it.
 
-## Changing the trajectories
-Everything chance can hand out (options, odds, prompt fragments, wording) is in `web/stages.js`. Edit it and reload the page; no restart needed.
+## The storyline (stage one, from stage-one-storyline.md)
+One hardcoded life; chance decides how each moment goes. All the words, tables, targets, marks, modifiers, allotments and
+picture descriptions are in `web/storyline.js`; the rules are in `web/game.html`. Edit storyline.js and reload; no restart.
+- DEFAULT moments happen to you: random.org rolls a d6 on the moment's table (shown at the bottom), you watch.
+- CHOICES: options show their target ("a 6", "5 or more", "exactly 3"). Pick one, roll your die.
+  A miss: random.org rolls; 1–4 = the next easier option, 5–6 (or no easier option) = one entry from the allotment list.
+- FLUKES: something small; random.org rolls; a 6 leaves a hidden MARK (NAME, RADIO, PLATFORM, TYPO). HIDDEN, POOR and RICH come from the baseline.
+  Marks open exact-number options later and change some outcomes; modifiers move targets one step, never explained.
+- Never shown: odds, percentages, marks. The ending reveals them: who you became (third person), the astrologer's forecast, every fluke.
+- Each picture: the avatar at that age (body from the race, clothes from the outcome) + the world = the outcome's scene + place + year.
+- The look: stage one is paint only. The server starts on the "Painterly (game)" look; the panel can still switch it for tuning.
 
 ## Run
 On the cloud machine (chance-gpu), see CLOUD.md for the full routine:
@@ -64,7 +73,6 @@ All painting settings live on the server, so the panel tunes the game and the la
 - STABILITY: STEADY, how much each frame leans on the last one.
 - READOUT: painter, avatar frames per second, ms per frame, world time, GPU memory.
 - PRESETS: save / load all of the above by name (files in presets/ on the server).
-Note: the game's per-stage CHANGE values in stages.js aren't used any more; CHANGE comes from the panel.
 
 ## The painter
 - default `dmd`: DreamShaper 8, distilled to ONE step with DMD (`aaronb/dreamshaper-8-dmd-1kstep`, from the OpenDMD project).

@@ -92,7 +92,7 @@ TUNE_DEFAULTS = {
     "change": 0.6,            # how much the avatar is repainted (1.0 = from pure noise: the painter's home ground)
     "world_steps": 2,         # world: painting steps (1 = what DMD is trained for; more = more detail, maybe worse)
     # style
-    "style": "cartoon",       # a look from styles.json: words added to every prompt + a browser filter
+    "style": "painterly",     # a look from styles.json: words added to every prompt + a browser filter (stage one: paint only)
     "lora_a": "", "lora_a_w": 0.8,
     "lora_b": "", "lora_b_w": 0.5,
     "ip_style": 0.6,          # how strongly STYLE / IMAGE references steer the look
