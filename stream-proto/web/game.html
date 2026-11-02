@@ -21,6 +21,11 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: ui-sans
 .msg { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); width: max-content; max-width: min(720px, calc(100% - 28px)); max-height: calc(100% - 70px); overflow: auto; box-sizing: border-box; padding: 12px 20px; background: rgba(255,255,255,0.95); border: 1.5px solid var(--ink); border-radius: 4px; text-align: center; display: flex; flex-direction: column; gap: 5px; }
 .msg[hidden] { display: none; }
 .msg .kicker { font-size: 10px; font-weight: 600; letter-spacing: 0.14em; color: var(--dim); }
+/* whose turn it is: YOUR THROW (black) · IT HAPPENS (outline) · A SMALL THING (dashed) */
+.tag { display: inline-block; margin-right: 8px; padding: 2px 7px; border-radius: 3px; font-size: 9px; letter-spacing: 0.14em; vertical-align: 1px; }
+.tag.you { background: var(--ink); color: #fff; }
+.tag.happens { border: 1px solid #999; color: #555; }
+.tag.small { border: 1px dashed #aaa; color: #888; }
 .msg .line { font-size: 19px; line-height: 1.25; font-weight: 600; text-wrap: balance; }
 .msg .sub { font-size: 13px; color: #555; line-height: 1.4; text-wrap: balance; }
 .msg .sub b { color: var(--ink); }
@@ -46,13 +51,17 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: ui-sans
 .dicestat a { color: var(--ink); }
 
 /* this moment's table (defaults) or options (choices) */
+.mid { display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0; }
+.cap { font-size: 10px; font-weight: 600; letter-spacing: 0.12em; color: var(--dim); min-height: 1em; text-align: center; }
+.cap b { color: var(--ink); }
 .choices { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
 .ch { min-width: 64px; max-width: 240px; padding: 8px 12px; display: flex; flex-direction: column; align-items: center; gap: 4px; font: inherit; background: #fff; color: var(--ink); border: 1.5px solid var(--ink); border-radius: 4px; cursor: pointer; transition: background 0.08s, color 0.08s; }
 .ch b { font-size: 11px; font-weight: 650; letter-spacing: 0.05em; text-align: center; }
 .ch .tgt { font-size: 12px; font-weight: 500; color: #555; }
 .ch .faces { display: flex; gap: 3px; height: 15px; }
 .ch .faces svg { width: 15px; height: 15px; opacity: 0.7; }
-.ch.table { cursor: default; }
+.ch.table { cursor: default; border-color: #c8c8c8; color: #666; background: #fafafa; }   /* chance's table: you watch, you don't press */
+.ch.table b { font-weight: 550; }
 .ch:disabled { cursor: default; }
 .ch.wish { box-shadow: 0 0 0 3px #fff, 0 0 0 5px var(--ink); }          /* what you went for */
 .ch.on, .ch.got { background: var(--ink); color: #fff; }                  /* chance's light / what happened */
@@ -93,7 +102,7 @@ body.full .msg { bottom: 120px; max-height: calc(100% - 180px); }
       <button class="fs" id="fs" title="Full screen (F). Esc leaves it.">FULL SCREEN</button>
       <div class="dicestat" id="dice" aria-live="polite">DIE · …</div>
     </div>
-    <div class="choices" id="choices" role="group" aria-label="This moment"></div>
+    <div class="mid"><div class="cap" id="cap"></div><div class="choices" id="choices" role="group" aria-label="This moment"></div></div>
     <button class="go" id="go" disabled>…</button>
   </div>
 </div>
@@ -183,7 +192,7 @@ go.addEventListener("click", () => { if (!go.disabled && action) action(); });
 let waiting = false;                                        // between moments: a throw of the die presses the big button
 const waitFor = (label) => new Promise(res => {
   waiting = true; sawThrow = false;
-  if (diceOn) chip("<b>throw to go on</b>");
+  setTurn("next"); caption("");
   button(label, () => { waiting = false; button("…", null); res(); });
 });
 function chips(items, render, cls = "") {                  // the buttons in the middle of the bar
@@ -220,14 +229,22 @@ document.addEventListener("keydown", (e) => {
 let diceOn = false, diceSrc = "", rollWaiter = null;
 let sawThrow = false;           // a roll only counts if the reader saw the die MOVE first (no phantom reads of a resting die)
 const diceEl = $("dice");
-const diceStates = { waiting: "throw it", rolling: "rolling…", settling: "landing…", reading: "reading…", unclear: "can't read it, throw again", shown: "", off: "off" };
+const diceStates = { rolling: "rolling…", settling: "landing…", reading: "reading…", unclear: "can't read it, throw again", off: "off" };
 const chip = (html) => { diceEl.innerHTML = `DIE${diceSrc ? ` (${diceSrc})` : ""} · ${html}`; };
+// whose turn it is, so the die chip never says "throw it" while chance is rolling
+let turn = "watch";
+const TURN = { watch: "not your turn: watch", pick: "pick an option first", throw: "<b>throw it</b>", next: "throw to go on" };
+function setTurn(t) { turn = t; if (diceOn) chip(TURN[t]); }
 const diceEvents = {
   onState: (s) => {
     if (s === "rolling") sawThrow = true;
-    if (diceOn) chip(s === "needs empty tray" ? '<a href="/dice.html">set up the empty tray</a>' : `<b>${diceStates[s] ?? s}</b>`);
+    if (!diceOn) return;
+    if (s === "needs empty tray") chip('<a href="/dice.html">set up the empty tray</a>');
+    else if (diceStates[s] && turn !== "watch") chip(`<b>${diceStates[s]}</b>`);
+    else chip(TURN[turn]);
   },
   onRoll: (n) => {
+    if (turn === "watch" || turn === "pick") return;      // not your turn: a throw now means nothing
     if (!sawThrow) { chip(`<b>${n}</b> ignored: no throw seen`); return; }   // the reader read a die that never moved
     sawThrow = false;
     chip(`<b>${n}</b>`);
@@ -235,7 +252,7 @@ const diceEvents = {
     else if (waiting && action) go.click();                 // between moments: go on
   },
 };
-function diceReady(src) { diceOn = true; diceSrc = src; chip("<b>throw it</b>"); }
+function diceReady(src) { diceOn = true; diceSrc = src; chip(TURN[turn]); }
 let browserDice = null;
 async function tryPython() {                                // dice_reader.py always wins, whenever it appears
   try {
@@ -264,7 +281,10 @@ function freshLife() {
   return { marks: new Set(), mods: [], body: null, home: null, world: null, place: null, scene: null, wear: null,
            forecast: null, flukes: [], log: [], picks: {}, work: null, health: null, endAge: null, age: 0 };
 }
-const kicker = (m) => m.age === null ? `${PHASES[m.phase]} · ${m.title}` : `${PHASES[m.phase]} · AGE ${m.age} · ${m.title}`;
+const TAGS = { race: ["you", "YOUR THROW"], wish: ["you", "YOUR THROW"], choice: ["you", "YOUR THROW"], default: ["happens", "IT HAPPENS"], fluke: ["small", "A SMALL THING"] };
+const kicker = (m) => `<span class="tag ${TAGS[m.kind][0]}">${TAGS[m.kind][1]}</span>` +
+  (m.age === null ? `${PHASES[m.phase]} · ${m.title}` : `${PHASES[m.phase]} · AGE ${m.age} · ${m.title}`);
+function caption(html) { $("cap").innerHTML = html; }
 function show(age) { paint(avatar(S, age), worldScene(S, age)); }
 
 // what an outcome does to the life: marks, modifiers, body/home/world, the picture
@@ -294,21 +314,21 @@ const hard = (m, o) => o.exact ? 6 : target(m, o);         // how hard, for "the
 
 // ---------- DEFAULT: happens to you; random.org rolls on the table; you watch ----------
 async function defaultMoment(m, age) {
-  msg(kicker(m), esc(m.intro));
-  button("…", null);
+  msg(kicker(m), esc(m.intro), "Chance rolls. You watch.");
+  button("…", null); setTurn("watch");
+  caption("IT HAPPENS · <b>chance rolls</b>, you watch");
   let e = m.override ? m.override(S) : null;
   if (e) { choicesEl.innerHTML = ""; await sleep(1500); }   // a mark decides this one: no roll
   else {
-    const btns = chips(m.table, (it) => `<b>${esc(it.short)}</b><span class="faces">${it.faces.map(dieFace).join("")}</span>`, "table");
-    if (m.id === "race") { phase = "race"; raceAt = performance.now(); }
-    await sleep(900);
+    const btns = chips(m.table, (it) => `<b>${esc(it.short)}</b>`, "table");
+    btns.forEach(b => b.disabled = true);
+    await sleep(1100);
     let f = await d6();
     if (m.faceShift) f = Math.max(1, Math.min(6, f + m.faceShift(S)));
     const i = m.table.findIndex(it => it.faces.includes(f));
     await light(btns, i);
     e = m.table[i];
     for (const [mk, alt] of Object.entries(e.ifMark || {})) if (S.marks.has(mk)) e = { ...e, ...alt };
-    if (m.id === "race") { winner = f; phase = "result"; raceAt = performance.now(); }
   }
   apply(m, e);
   msg(kicker(m), esc(e.text), m.id === "astrologer" ? esc(m.intro) : "");
@@ -319,7 +339,8 @@ async function flukeMoment(m, age) {
   choicesEl.innerHTML = "";
   S.scene = m.scene; show(age);
   msg(kicker(m), esc(m.intro));
-  button("…", null);
+  button("…", null); setTurn("watch");
+  caption("A SMALL THING · <b>chance decides</b> whether it matters");
   await sleep(1800);
   const hit = (await d6()) === 6;
   if (hit) S.marks.add(m.mark);
@@ -328,38 +349,93 @@ async function flukeMoment(m, age) {
   if (hit) msg(kicker(m), esc(m.intro), esc(m.six));
 }
 
-// ---------- CHOICE: you pick, you roll your die; a miss is settled by random.org ----------
-async function choiceMoment(m, age) {
-  const opts = m.options.filter(o => !o.needs || S.marks.has(o.needs));
-  const btns = chips(opts, (o, i) => `<b>${esc(o.short)}</b><span class="tgt">${tLabel(m, o)}</span>`);
-  msg(kicker(m), esc(m.intro), "Pick one. Then roll.");
-  const { wish, n, byDie } = await new Promise(resolve => {
+// ---------- YOUR THROW: pick one of the buttons, then throw your die (shared by race, wish and choice) ----------
+function pickThenThrow(m, btns, chosenLine) {
+  setTurn("pick");
+  caption("YOUR THROW · <b>pick one</b>, then throw your die");
+  return new Promise(resolve => {
     let wish = -1;
     const pick = (i) => {
-      if (i < 0 || i >= opts.length) return;
+      if (i < 0 || i >= btns.length) return;
       wish = i; btns.forEach((b, k) => b.classList.toggle("wish", k === i));
       sawThrow = false;                                    // only a throw that starts after your pick counts
-      msg(kicker(m), `${esc(opts[i].short)}: <b>${tLabel(m, opts[i])}</b>`, diceOn ? "Throw the die." : "Roll.");
+      msg(kicker(m), chosenLine(i), diceOn ? "Throw the die." : "Roll. (Press ROLL.)");
+      caption("YOUR THROW · <b>throw your die</b>" + (diceOn ? "" : " (or press ROLL)"));
+      setTurn("throw");
       // with a die connected there is no on-screen roll (so Space/Enter can't roll for you); R still rolls on screen, for testing
       if (diceOn) button("THROW THE DIE", null); else button("ROLL", screenRoll);
     };
     const screenRoll = async () => { if (wish < 0) return; button("…", null); const r = await d6(); finish(r, false); };
-    screenRollKey = screenRoll;
     const finish = (r, die) => {
       if (wish < 0) { subLine("Pick one first."); return; }
       rollWaiter = null; pickKey = null; screenRollKey = null; btns.forEach(b => b.disabled = true);
+      setTurn("watch"); caption("");
       resolve({ wish, n: r, byDie: die });
     };
     btns.forEach((b, i) => b.addEventListener("click", () => pick(i)));
-    pickKey = pick; rollWaiter = finish;
+    pickKey = pick; rollWaiter = finish; screenRollKey = screenRoll;
     button("PICK ONE", null);
   });
+}
+
+// ---------- RACE: pick your sperm, throw: the face is the one that makes it ----------
+let mine = 0;
+async function raceMoment(m) {
+  phase = "pick"; mine = 0; winner = 0;
+  const btns = chips(m.table, (it, i) => `<b>${i + 1}</b><span class="tgt">${esc(low(it.short))}</span>`);
+  msg(kicker(m), esc(m.intro), "Pick one. Then throw: your die decides which one makes it.");
+  const { wish, n, byDie } = await pickThenThrowRace(m, btns);
+  phase = "race"; raceAt = performance.now();
+  msg(kicker(m), `You picked <b>${wish + 1}</b>. You threw <b>${n}</b>${byDie ? "" : " (on screen)"}.`, "The race…");
+  await sleep(1500);
+  winner = n; phase = "result"; raceAt = performance.now();
+  const e = m.table.find(it => it.faces.includes(n));
+  btns.forEach((b, k) => { b.classList.toggle("got", k === n - 1); if (k !== n - 1 && k !== wish) b.classList.add("dim"); });
+  S.picks.race = { mine: wish + 1, winner: n };
+  apply(m, e);
+  msg(kicker(m), esc(e.text), wish + 1 === n ? `Number ${n}: the one you picked made it.` : `You picked ${wish + 1}. Number ${n} made it.`);
+}
+function pickThenThrowRace(m, btns) {
+  return pickThenThrow(m, btns, (i) => { mine = i + 1; return `You picked number <b>${i + 1}</b>: ${esc(low(m.table[i].short))}`; });
+}
+
+// ---------- WISH: wish for one entry, throw against its target; a miss = chance rolls the table ----------
+const wishName = (e) => e.home || (e.world ? `${e.world.place}, ${e.world.year}` : low(e.short));
+async function wishMoment(m) {
+  const tl = (e) => e.target === 6 ? "a 6" : `${e.target} or more`;
+  const btns = chips(m.table, (e) => `<b>${esc(e.short)}</b><span class="tgt">${tl(e)}</span>`);
+  msg(kicker(m), esc(m.intro), "Pick what you wish for. Then throw.");
+  const { wish, n, byDie } = await pickThenThrow(m, btns, (i) => `You wish for ${esc(wishName(m.table[i]))}: <b>${tl(m.table[i])}</b>`);
+  const w = m.table[wish], hit = n >= w.target, rolled = `You threw <b>${n}</b>${byDie ? "" : " (on screen)"}.`;
+  let e = w, land = wish;
+  if (!hit) {
+    btns[wish].classList.add("dim");
+    msg(kicker(m), `${rolled} <span class="miss">That wish needed ${tl(w)}.</span>`, "Chance rolls instead…");
+    setTurn("watch"); caption("CHANCE ROLLS · you watch");
+    await sleep(1300);
+    const f = await d6();
+    land = m.table.findIndex(it => it.faces.includes(f)); e = m.table[land];
+    await light(btns, land);
+  }
+  btns.forEach((b, k) => { b.classList.toggle("got", k === land); if (k !== land && k !== wish) b.classList.add("dim"); });
+  S.picks[m.id] = { wished: w, got: e, how: hit ? "hit" : "chance", n };
+  apply(m, e);
+  msg(kicker(m), esc(e.text), hit ? `${rolled} Your wish holds.` : (e === w ? "Chance gave you your wish anyway." : `You wished for ${esc(wishName(w))}. Chance chose this.`));
+}
+
+// ---------- CHOICE: you pick, you roll your die; a miss is settled by random.org ----------
+async function choiceMoment(m, age) {
+  const opts = m.options.filter(o => !o.needs || S.marks.has(o.needs));
+  const btns = chips(opts, (o, i) => `<b>${esc(o.short)}</b><span class="tgt">${tLabel(m, o)}</span>`);
+  msg(kicker(m), esc(m.intro), "Pick one. Then throw.");
+  const { wish, n, byDie } = await pickThenThrow(m, btns, (i) => `${esc(opts[i].short)}: <b>${tLabel(m, opts[i])}</b>`);
   const o = opts[wish], t = target(m, o);
   const hit = o.exact ? n === o.exact : n >= t;
   let got = o, how = "hit";
   if (!hit) {
     btns[wish].classList.add("dim");
     msg(kicker(m), `You rolled <b>${n}</b>. <span class="miss">${esc(cap(low(o.short)))} needed ${tLabel(m, o)}.</span>`, "Chance decides what you get instead…");
+    caption("CHANCE ROLLS · you watch");
     await sleep(1600);
     const c = await d6();
     const easier = opts.filter(x => !x.exact && target(m, x) < hard(m, o)).sort((a, b) => target(m, b) - target(m, a))[0];
@@ -384,14 +460,16 @@ async function choiceMoment(m, age) {
 async function play() {
   S = freshLife(); lastBg = null; phaseShown = -1;
   live.setPerson(null); live.setBackground(null);
-  phase = "idle"; winner = 0;
+  phase = "idle"; winner = 0; mine = 0;
   for (const m of MOMENTS) {
     setPhase(m.phase);
     const age = m.age ?? 62;
     S.age = age;
-    if (m.id === "race") live.setScene(drawBirth);
+    if (m.kind === "race") live.setScene(drawBirth);
     else if (m.kind !== "fluke") show(age);
-    if (m.kind === "default") await defaultMoment(m, age);
+    if (m.kind === "race") await raceMoment(m);
+    else if (m.kind === "wish") await wishMoment(m);
+    else if (m.kind === "default") await defaultMoment(m, age);
     else if (m.kind === "fluke") await flukeMoment(m, age);
     else await choiceMoment(m, age);
     if (m.id === "race") { S.scene = "a dim room, the first hours of a newborn's life, soft lamp light"; await sleep(1800); }
@@ -439,7 +517,11 @@ function ending() {
             : "At 38, a typo went round the office and was forgotten by lunch.",
   ];
   if (S.marks.has("HIDDEN")) flukeLines.push(`From the first day, the body hid something. It surfaced at 47${S.endAge ? ", and took a little off the end" : ""}.`);
+  const wishRow = (pk) => !pk ? null : pk.how === "hit" ? `Wished for ${wishName(pk.wished)}, and got it.`
+    : pk.got === pk.wished ? `Wished for ${wishName(pk.wished)}; chance gave it anyway.` : `Wished for ${wishName(pk.wished)}; got ${wishName(pk.got)}.`;
   const rows = [
+    ...(p.race ? [[0, p.race.mine === p.race.winner ? `Picked number ${p.race.mine}, and it made it.` : `Picked number ${p.race.mine}; number ${p.race.winner} made it.`]] : []),
+    ...[wishRow(p.home), wishRow(p.world)].filter(Boolean).map(r => [0, r]),
     [11, past("family")], [16, wishText(p.stream)], [23, past("economy")], [26, wishText(p.offer)], [31, wishText(p.marriage)],
     [45, past("office")], [47, past("buried")], [62, wishText(p.later)], [S.endAge, `${She} died in ${year + S.endAge}.`],
   ];
@@ -484,7 +566,7 @@ function drawBirth(g, W, H, now) {
       if (i === winner) d = (ring - H * 0.06) + (er + hx * 0.6 - (ring - H * 0.06)) * k;
       else { d = ring - H * 0.06 + k * H * 0.05; g.globalAlpha = 1 - k * 0.8; }
     }
-    const x = cx + ux * d, y = cy + uy * d, sel = phase === "result" && i === winner;
+    const x = cx + ux * d, y = cy + uy * d, sel = i === mine;
     g.strokeStyle = sel ? "#111" : "rgba(255,255,255,0.95)"; g.lineWidth = pix ? (sel ? 6 : 5) : (sel ? 3 : 2); g.lineCap = "round";
     g.beginPath();
     for (let s = 0; s <= 24; s++) {

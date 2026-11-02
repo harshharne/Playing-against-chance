@@ -2,12 +2,17 @@
 //  THE STORYLINE (stage one, v2, one die): one hardcoded life, the same moments for every player.
 //  Chance decides how each one goes. Edit the words here; the rules live in game.html.
 //
-//  Three kinds of moment
-//    default  happens to you. random.org rolls a d6 on the moment's table; the player watches.
-//    choice   the player picks an option (each shows its target), then rolls the die.
-//    fluke    something small. random.org rolls a d6: 1–5 nothing, 6 leaves a hidden MARK.
+//  Kinds of moment (the screen labels each one, so the player always knows whose turn it is)
+//    race     YOUR THROW. The player picks a sperm, then throws: the die's face is the sperm that makes it.
+//    wish     YOUR THROW. Before birth: the player wishes for one entry of the table (each shows its target) and throws.
+//             Hit = the wish comes true. Miss = random.org rolls the table instead.
+//    choice   YOUR THROW. The player picks an option (each shows its target) and throws. A miss is settled by random.org
+//             (1–4 the next easier option, 5–6 or no easier option: an allotment).
+//    default  IT HAPPENS. random.org rolls a d6 on the moment's table; the player watches.
+//    fluke    A SMALL THING. random.org rolls a d6: 1–5 nothing, 6 leaves a hidden MARK.
 //
 //  Targets:  { target: 5 } = "5 or more" (6 = "a 6"),  { exact: 3 } = "exactly 3".
+//    (The wish targets for HOME and WORLD are first guesses: rarer = harder. Tune them.)
 //  Modifiers ("mods") move a target one step: +1 = harder, -1 = easier. Exact targets never move.
 //    mods: [{ at: "stream", opts: ["science", "medical"], step: +1 }]    opts "*" = every option there
 //  Options or entries with needs: "RADIO" only exist when that mark is held; ifSpouse: true only if married.
@@ -27,8 +32,8 @@ export const PHASE_REFS = {};
 
 export const MOMENTS = [
   // ---------------- BASELINE (age 0) ----------------
-  { id: "race", phase: 0, age: 0, title: "THE RACE", kind: "default",
-    intro: "Six of them race for the egg. The winner decides your body.",
+  { id: "race", phase: 0, age: 0, title: "THE RACE", kind: "race",
+    intro: "Six of them race for the egg. The winner decides your body. Pick yours.",
     table: [
       { faces: [1], short: "GIRL · ROBUST · RESTLESS", text: "A girl. Robust, restless.", body: { sex: "girl", build: "robust", temper: "restless" } },
       { faces: [2], short: "BOY · ORDINARY · STEADY", text: "A boy. Ordinary, steady.", body: { sex: "boy", build: "ordinary", temper: "steady" } },
@@ -39,30 +44,30 @@ export const MOMENTS = [
       { faces: [6], short: "BOY · ANXIOUS", text: "A boy. Anxious.", body: { sex: "boy", build: "ordinary", temper: "anxious" }, mark: "HIDDEN" },
     ] },
 
-  { id: "home", phase: 0, age: 0, title: "THE HOME", kind: "default",
-    intro: "Whose house you are carried into.",
+  { id: "home", phase: 0, age: 0, title: "THE HOME", kind: "wish",
+    intro: "Before you're born, one wish. Whose house are you carried into?",
     table: [
-      { faces: [1], short: "SCRAPING BY · ELDEST OF FOUR", text: "Scraping by. The eldest of four.", home: "a home scraping by, the eldest of four", mark: "POOR",
+      { faces: [1], short: "SCRAPING BY · ELDEST OF FOUR", target: 2, text: "Scraping by. The eldest of four.", home: "a home scraping by, the eldest of four", mark: "POOR",
         scene: "a crowded one-room home, four children on a mat, a tin trunk, a single bulb", wear: "worn hand-me-down clothes" },
-      { faces: [2, 3], short: "GETTING BY · MIDDLE OF THREE", text: "Getting by. The middle of three.", home: "a home getting by, the middle of three",
+      { faces: [2, 3], short: "GETTING BY · MIDDLE OF THREE", target: 3, text: "Getting by. The middle of three.", home: "a home getting by, the middle of three",
         scene: "a modest two-room home, three children, a ceiling fan, school bags by the door" },
-      { faces: [4], short: "GETTING BY · ONLY CHILD", text: "Getting by. An only child.", home: "a home getting by, an only child",
+      { faces: [4], short: "GETTING BY · ONLY CHILD", target: 4, text: "Getting by. An only child.", home: "a home getting by, an only child",
         scene: "a small tidy home, one child, a calendar on the wall, a steel cupboard" },
-      { faces: [5], short: "COMFORTABLE · YOUNGEST OF TWO", text: "Comfortable. The youngest of two.", home: "a comfortable home, the youngest of two",
+      { faces: [5], short: "COMFORTABLE · YOUNGEST OF TWO", target: 5, text: "Comfortable. The youngest of two.", home: "a comfortable home, the youngest of two",
         scene: "a comfortable flat, a sofa, a television, two children's school photos" },
-      { faces: [6], short: "WEALTHY · A STRAINED HOME", text: "Wealthy. A strained home.", home: "a wealthy, strained home", mark: "RICH",
+      { faces: [6], short: "WEALTHY · A STRAINED HOME", target: 6, text: "Wealthy. A strained home.", home: "a wealthy, strained home", mark: "RICH",
         scene: "a large house with polished floors, a long dinner table, a tense silence", wear: "neat expensive clothes" },
     ] },
 
-  { id: "world", phase: 0, age: 0, title: "THE WORLD", kind: "default",
-    intro: "Where, and when.",
+  { id: "world", phase: 0, age: 0, title: "THE WORLD", kind: "wish",
+    intro: "And one more wish: where, and when?",
     table: [
-      { faces: [1], short: "VILLAGE · BIHAR · 1972", text: "A village in Bihar, 1972.", world: { place: "a village in Bihar", year: 1972 }, scene: "mud houses, paddy fields, a hand pump" },
-      { faces: [2], short: "CITY · PUNJAB · 1979", text: "A city in Punjab, 1979.", world: { place: "a city in Punjab", year: 1979 }, scene: "a busy street, cycle rickshaws, painted shop signs" },
-      { faces: [3], short: "SMALL TOWN · GUJARAT · 1985", text: "A small town in Gujarat, 1985.", world: { place: "a small town in Gujarat", year: 1985 }, scene: "a bus stand, a temple, scooters, dusty light" },
-      { faces: [4], short: "SMALL TOWN · ASSAM · 1991", text: "A small town in Assam, 1991.", world: { place: "a small town in Assam", year: 1991 }, scene: "tea gardens, rain, tin roofs" },
-      { faces: [5], short: "CITY · KERALA · 1994", text: "A city in Kerala, 1994.", world: { place: "a city in Kerala", year: 1994 }, scene: "coconut palms, red-tiled roofs, backwaters" },
-      { faces: [6], short: "METRO · MAHARASHTRA · 2003", text: "A metro in Maharashtra, 2003.", world: { place: "a metro city in Maharashtra", year: 2003 }, scene: "local trains, high-rises, crowds" },
+      { faces: [1], short: "VILLAGE · BIHAR · 1972", target: 2, text: "A village in Bihar, 1972.", world: { place: "a village in Bihar", year: 1972 }, scene: "mud houses, paddy fields, a hand pump" },
+      { faces: [2], short: "CITY · PUNJAB · 1979", target: 3, text: "A city in Punjab, 1979.", world: { place: "a city in Punjab", year: 1979 }, scene: "a busy street, cycle rickshaws, painted shop signs" },
+      { faces: [3], short: "SMALL TOWN · GUJARAT · 1985", target: 3, text: "A small town in Gujarat, 1985.", world: { place: "a small town in Gujarat", year: 1985 }, scene: "a bus stand, a temple, scooters, dusty light" },
+      { faces: [4], short: "SMALL TOWN · ASSAM · 1991", target: 4, text: "A small town in Assam, 1991.", world: { place: "a small town in Assam", year: 1991 }, scene: "tea gardens, rain, tin roofs" },
+      { faces: [5], short: "CITY · KERALA · 1994", target: 5, text: "A city in Kerala, 1994.", world: { place: "a city in Kerala", year: 1994 }, scene: "coconut palms, red-tiled roofs, backwaters" },
+      { faces: [6], short: "METRO · MAHARASHTRA · 2003", target: 6, text: "A metro in Maharashtra, 2003.", world: { place: "a metro city in Maharashtra", year: 2003 }, scene: "local trains, high-rises, crowds" },
     ] },
 
   { id: "registry", phase: 0, age: 0, title: "THE REGISTRY", kind: "fluke",
