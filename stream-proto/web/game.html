@@ -182,7 +182,7 @@ function button(label, fn) { go.textContent = label; go.disabled = !fn; action =
 go.addEventListener("click", () => { if (!go.disabled && action) action(); });
 let waiting = false;                                        // between moments: a throw of the die presses the big button
 const waitFor = (label) => new Promise(res => {
-  waiting = true;
+  waiting = true; sawThrow = false;
   if (diceOn) chip("<b>throw to go on</b>");
   button(label, () => { waiting = false; button("…", null); res(); });
 });
@@ -206,9 +206,10 @@ async function light(btns, land) {                          // chance's light ru
 }
 
 // ---------- keys: Space / Enter = the big button, 1–5 = pick an option, F = full screen ----------
-let pickKey = null;
+let pickKey = null, screenRollKey = null;
 document.addEventListener("keydown", (e) => {
   if (e.repeat || e.target instanceof HTMLInputElement) return;
+  if ((e.key === "r" || e.key === "R") && screenRollKey) { screenRollKey(); return; }   // roll on screen (testing without the die)
   if (e.key === "f" || e.key === "F") { setFull(!document.body.classList.contains("full")); return; }
   if ((e.key === " " || e.key === "Enter") && !(e.target instanceof HTMLButtonElement)) { e.preventDefault(); go.click(); }
   const n = parseInt(e.key, 10);
@@ -217,12 +218,18 @@ document.addEventListener("keydown", (e) => {
 
 // ---------- the physical die (dice_reader.py, or the browser reader set up on /dice.html) ----------
 let diceOn = false, diceSrc = "", rollWaiter = null;
+let sawThrow = false;           // a roll only counts if the reader saw the die MOVE first (no phantom reads of a resting die)
 const diceEl = $("dice");
 const diceStates = { waiting: "throw it", rolling: "rolling…", settling: "landing…", reading: "reading…", unclear: "can't read it, throw again", shown: "", off: "off" };
 const chip = (html) => { diceEl.innerHTML = `DIE${diceSrc ? ` (${diceSrc})` : ""} · ${html}`; };
 const diceEvents = {
-  onState: (s) => { if (diceOn) chip(s === "needs empty tray" ? '<a href="/dice.html">set up the empty tray</a>' : `<b>${diceStates[s] ?? s}</b>`); },
+  onState: (s) => {
+    if (s === "rolling") sawThrow = true;
+    if (diceOn) chip(s === "needs empty tray" ? '<a href="/dice.html">set up the empty tray</a>' : `<b>${diceStates[s] ?? s}</b>`);
+  },
   onRoll: (n) => {
+    if (!sawThrow) { chip(`<b>${n}</b> ignored: no throw seen`); return; }   // the reader read a die that never moved
+    sawThrow = false;
     chip(`<b>${n}</b>`);
     if (rollWaiter) rollWaiter(n, true);                   // a choice is waiting for your roll
     else if (waiting && action) go.click();                 // between moments: go on
@@ -331,12 +338,16 @@ async function choiceMoment(m, age) {
     const pick = (i) => {
       if (i < 0 || i >= opts.length) return;
       wish = i; btns.forEach((b, k) => b.classList.toggle("wish", k === i));
-      msg(kicker(m), `${esc(opts[i].short)}: <b>${tLabel(m, opts[i])}</b>`, diceOn ? "Throw the die. (Or press ROLL.)" : "Roll.");
-      button("ROLL", async () => { button("…", null); const r = await d6(); finish(r, false); });
+      sawThrow = false;                                    // only a throw that starts after your pick counts
+      msg(kicker(m), `${esc(opts[i].short)}: <b>${tLabel(m, opts[i])}</b>`, diceOn ? "Throw the die." : "Roll.");
+      // with a die connected there is no on-screen roll (so Space/Enter can't roll for you); R still rolls on screen, for testing
+      if (diceOn) button("THROW THE DIE", null); else button("ROLL", screenRoll);
     };
+    const screenRoll = async () => { if (wish < 0) return; button("…", null); const r = await d6(); finish(r, false); };
+    screenRollKey = screenRoll;
     const finish = (r, die) => {
       if (wish < 0) { subLine("Pick one first."); return; }
-      rollWaiter = null; pickKey = null; btns.forEach(b => b.disabled = true);
+      rollWaiter = null; pickKey = null; screenRollKey = null; btns.forEach(b => b.disabled = true);
       resolve({ wish, n: r, byDie: die });
     };
     btns.forEach((b, i) => b.addEventListener("click", () => pick(i)));
