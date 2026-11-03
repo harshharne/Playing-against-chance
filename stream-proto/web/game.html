@@ -5,96 +5,137 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Playing Against Chance</title>
 <style>
-/* Layout: the live picture fills the framed screen; one short message sits centred at its bottom edge.
-   Underneath: the life phases + age (left), this moment's table or options (centre), one big button (right). White, minimal. */
-:root { --ink: #111; --dim: #8a8a8a; --line: #d6d6d6; --bg: #fff; --miss: #c0392b; color-scheme: light; }
+/* One life, unfolding. The painted world fills the screen; text sits in soft translucent windows, one at a time;
+   the options are a fanned deck of glass cards at the bottom (after H's reference). Minimal, a clean sans. */
+:root {
+  --ink: #141414; --dim: #8a8a8a; --line: #d6d6d6; --bg: #fff; --fade: 1.2s;
+  --glass: rgba(255,255,255,0.52); --glass-hi: rgba(255,255,255,0.8); --edge: rgba(255,255,255,0.7);
+  --cw: clamp(104px, 10.5vw, 150px); --gap: calc(var(--cw) * 0.5);
+  color-scheme: light;
+}
 html, body { height: 100%; }
-body { margin: 0; background: var(--bg); color: var(--ink); font-family: ui-sans-serif, system-ui, -apple-system, "Helvetica Neue", sans-serif; }
-.frame { box-sizing: border-box; height: 100%; margin: 0 auto; padding: 14px 16px; display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: 12px; }
-.gen { position: relative; min-height: 0; border: 1.5px solid var(--ink); border-radius: 4px; overflow: hidden; display: grid; place-items: center; background: #f5f5f5; }
-.gen canvas { width: 100%; height: 100%; object-fit: contain; display: block; }
-.pip { position: absolute; top: 12px; right: 12px; width: clamp(110px, 16%, 200px); aspect-ratio: 16 / 9; object-fit: cover; transform: scaleX(-1); border: 1.5px solid var(--ink); border-radius: 3px; background: #ddd; }
-.status { position: absolute; top: 12px; left: 14px; font-size: 11px; letter-spacing: 0.04em; color: var(--dim); background: rgba(255,255,255,0.85); padding: 3px 7px; border-radius: 3px; }
-.status b { font-weight: 600; color: var(--ink); }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: "Inter", ui-sans-serif, system-ui, -apple-system, "Helvetica Neue", sans-serif; -webkit-font-smoothing: antialiased; }
+.frame { box-sizing: border-box; height: 100%; padding: 14px 16px; display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: 10px; }
+.gen { position: relative; min-height: 0; border-radius: 10px; overflow: hidden; display: grid; place-items: center; background: #eceae6; }
+.gen canvas { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pip { position: absolute; top: 14px; right: 14px; width: clamp(96px, 12%, 170px); aspect-ratio: 16 / 9; object-fit: cover; transform: scaleX(-1); border-radius: 8px; opacity: 0.85; background: #ddd; }
+.status { position: absolute; left: 14px; bottom: 10px; font-size: 10px; letter-spacing: 0.04em; color: rgba(255,255,255,0.75); text-shadow: 0 1px 3px rgba(0,0,0,0.4); }
+.status b { font-weight: 600; }
 
-/* the message: centred along the bottom of the picture */
-.msg { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); width: max-content; max-width: min(720px, calc(100% - 28px)); max-height: calc(100% - 70px); overflow: auto; box-sizing: border-box; padding: 12px 20px; background: rgba(255,255,255,0.95); border: 1.5px solid var(--ink); border-radius: 4px; text-align: center; display: flex; flex-direction: column; gap: 5px; }
-.msg[hidden] { display: none; }
-.msg .kicker { font-size: 10px; font-weight: 600; letter-spacing: 0.14em; color: var(--dim); }
-/* whose turn it is: YOUR THROW (black) · IT HAPPENS (outline) · A SMALL THING (dashed) */
-.tag { display: inline-block; margin-right: 8px; padding: 2px 7px; border-radius: 3px; font-size: 9px; letter-spacing: 0.14em; vertical-align: 1px; }
-.tag.you { background: var(--ink); color: #fff; }
-.tag.happens { border: 1px solid #999; color: #555; }
-.tag.small { border: 1px dashed #aaa; color: #888; }
-.msg .line { font-size: 19px; line-height: 1.25; font-weight: 600; text-wrap: balance; }
-.msg .sub { font-size: 13px; color: #555; line-height: 1.4; text-wrap: balance; }
-.msg .sub b { color: var(--ink); }
-.msg .miss { color: var(--miss); }
-/* the ending: a longer read */
-.msg.end { text-align: left; width: min(720px, calc(100% - 28px)); gap: 10px; padding: 18px 24px; }
-.msg.end p { margin: 0; font-size: 14px; line-height: 1.5; }
-.msg.end h3 { margin: 4px 0 0; font-size: 10px; font-weight: 600; letter-spacing: 0.14em; color: var(--dim); }
-.msg.end ol { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.5; }
-.msg.end table { border-collapse: collapse; font-size: 13px; }
-.msg.end td { padding: 2px 12px 2px 0; vertical-align: top; }
-.msg.end td:first-child { color: var(--dim); white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* the age, counting up quietly */
+.age { position: absolute; top: 16px; left: 20px; display: flex; flex-direction: column; color: #fff; text-shadow: 0 1px 10px rgba(0,0,0,0.35); transition: opacity var(--fade); }
+.age small { font-size: 9px; font-weight: 600; letter-spacing: 0.2em; opacity: 0.8; }
+.age span { font-size: 34px; font-weight: 250; line-height: 1; font-variant-numeric: tabular-nums; }
+.age.off { opacity: 0; }
 
-.bar { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 18px; align-items: center; min-height: 64px; }
-.steps { display: flex; gap: 6px; align-items: center; font-size: 11px; font-weight: 600; letter-spacing: 0.12em; color: #bbb; }
+/* the one soft window */
+.say { position: absolute; left: 50%; top: 9%; transform: translate(-50%, 8px); box-sizing: border-box; width: max-content; max-width: min(640px, calc(100% - 40px));
+       padding: 18px 26px; border-radius: 18px; background: var(--glass); border: 1px solid var(--edge);
+       backdrop-filter: blur(16px) saturate(1.15); -webkit-backdrop-filter: blur(16px) saturate(1.15); box-shadow: 0 10px 40px rgba(0,0,0,0.10);
+       text-align: center; display: flex; flex-direction: column; gap: 6px; opacity: 0; pointer-events: none;
+       transition: opacity var(--fade) ease, transform var(--fade) ease; }
+.say.on { opacity: 1; transform: translate(-50%, 0); }
+.say .k { font-size: 9.5px; font-weight: 600; letter-spacing: 0.18em; color: #6d6d6d; text-transform: uppercase; }
+.say .t { font-size: 22px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.2; text-wrap: balance; }
+.say .s { font-size: 14.5px; line-height: 1.45; color: #333; text-wrap: balance; }
+.say.bridge { top: 40%; padding: 20px 30px; background: rgba(255,255,255,0.36); }
+.say.bridge .s { font-size: 19px; font-weight: 400; color: #1b1b1b; }
+.say.small { top: auto; bottom: 14%; padding: 10px 18px; border-radius: 12px; background: rgba(255,255,255,0.3); box-shadow: none; }
+.say.small .s { font-size: 12.5px; color: #333; }
+.say.quote .s { font-size: 18px; font-style: italic; }
+.say.end { top: 6%; text-align: left; width: min(640px, calc(100% - 40px)); max-height: 80%; overflow: auto; pointer-events: auto; gap: 10px; }
+.say.end table { border-collapse: collapse; font-size: 13px; line-height: 1.4; }
+.say.end td { padding: 3px 14px 3px 0; vertical-align: top; }
+.say.end td:first-child { color: var(--dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.say.end td:nth-child(2) { color: #555; white-space: nowrap; }
+.say.end i { color: #777; font-style: normal; }
+
+/* the die, landed: big and alone */
+.big { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; opacity: 0; transition: opacity var(--fade); }
+.big.on { opacity: 1; }
+.big .disc { width: clamp(180px, 38vh, 360px); aspect-ratio: 1; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+             background: rgba(255,255,255,0.72); border: 1px solid var(--edge); backdrop-filter: blur(18px) saturate(1.15); -webkit-backdrop-filter: blur(18px) saturate(1.15); box-shadow: 0 16px 50px rgba(0,0,0,0.14); color: var(--ink); }
+.big b { font-size: clamp(90px, 22vh, 210px); font-weight: 200; line-height: 1; }
+.big span { font-size: 12px; font-weight: 600; letter-spacing: 0.3em; text-transform: uppercase; color: #444; opacity: 0; transition: opacity 0.6s; }
+.big span.on { opacity: 0.9; }
+
+/* ---- the deck: glass plaques fanned in depth; hover one and it turns to face you ---- */
+.deck { position: absolute; left: 50%; bottom: 7%; transform: translateX(-50%); height: calc(var(--cw) * 1.3 + 90px);
+        width: calc((var(--n) - 1) * var(--gap) + var(--cw)); perspective: 1100px; perspective-origin: 50% 20%; }
+.card { position: absolute; bottom: 30px; left: calc(var(--i) * var(--gap)); width: var(--cw); height: calc(var(--cw) * 1.3); box-sizing: border-box;
+        padding: 14px 13px; border-radius: 16px; background: var(--glass); border: 1px solid var(--edge);
+        backdrop-filter: blur(14px) saturate(1.2); -webkit-backdrop-filter: blur(14px) saturate(1.2);
+        box-shadow: 0 14px 34px rgba(0,0,0,0.16), inset 0 1px 0 rgba(255,255,255,0.8);
+        display: flex; flex-direction: column; gap: 8px; text-align: left; font: inherit; color: var(--ink); cursor: pointer;
+        transform-origin: 50% 100%; transform: translateY(calc(var(--i) * -9px)) rotateX(6deg) rotateY(-34deg);
+        transition: transform 0.75s cubic-bezier(.2,.75,.2,1), opacity 0.6s ease, left 0.9s cubic-bezier(.2,.75,.2,1), background 0.4s; }
+.card .nm { font-size: 13px; font-weight: 650; line-height: 1.2; letter-spacing: -0.005em; max-width: calc(var(--gap) - 20px); }   /* resting: fits the strip you can see */
+.deck.open .card:hover .nm, .deck.open .card.focus .nm, .card.locked .nm { max-width: none; }
+.card .rv { font-size: 11.5px; line-height: 1.35; color: #3a3a3a; opacity: 0; transform: translateY(6px); transition: opacity 0.4s, transform 0.4s; }
+.card .tg { margin-top: auto; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; color: #222; opacity: 0; transition: opacity 0.6s; }
+.card .tg b { display: block; font-size: 20px; letter-spacing: -0.01em; font-weight: 600; }
+.card .hint { font-size: 10px; letter-spacing: 0.08em; color: #555; opacity: 0; transition: opacity 0.6s; }
+.card.pre { opacity: 0; transform: translateY(70px) rotateX(6deg) rotateY(-34deg); }
+.deck.open .card:hover, .deck.open .card.focus { transform: translateY(-26px) translateZ(70px) rotateY(0deg) scale(1.12); background: var(--glass-hi); z-index: 50 !important; }
+.deck.open .card:hover .rv, .deck.open .card.focus .rv { opacity: 1; transform: none; }
+.deck.open.hovering .card:not(:hover):not(.focus) { opacity: 0.5; }
+.card.locked { left: calc((var(--n) - 1) * var(--gap) / 2) !important; transform: translateY(-42%) scale(1.4); background: var(--glass-hi); z-index: 60 !important; cursor: default; }
+.card.locked .rv { opacity: 1; transform: none; }
+.card.locked.show .tg, .card.locked.show .hint { opacity: 1; }
+.card.away { opacity: 0; transform: translateY(160px) rotateX(6deg) rotateY(-34deg); pointer-events: none; }
+.card.gone { opacity: 0; }
+.nav { position: absolute; left: 50%; bottom: 0; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; transition: opacity 0.6s; }
+.nav button { width: 22px; height: 22px; border-radius: 50%; border: 0; background: rgba(255,255,255,0.75); color: #333; font: inherit; font-size: 13px; line-height: 22px; padding: 0; cursor: pointer; }
+.nav i { width: 5px; height: 5px; border-radius: 3px; background: rgba(255,255,255,0.7); transition: width 0.3s, background 0.3s; }
+.nav i.on { width: 16px; background: #333; }
+.deck:not(.open) .nav { opacity: 0; pointer-events: none; }
+
+/* the allotted card, turning over */
+.flip { position: absolute; left: 50%; top: 50%; width: calc(var(--cw) * 1.4); height: calc(var(--cw) * 1.82); transform: translate(-50%, -55%); perspective: 900px; opacity: 0; transition: opacity 0.8s; pointer-events: none; }
+.flip.on { opacity: 1; }
+.flip .in { position: absolute; inset: 0; transform-style: preserve-3d; transform: rotateY(180deg); transition: transform 1.8s cubic-bezier(.45,.05,.2,1); }
+.flip.turn .in { transform: rotateY(0deg); }
+.flip .face, .flip .back { position: absolute; inset: 0; box-sizing: border-box; border-radius: 18px; backface-visibility: hidden; -webkit-backface-visibility: hidden; border: 1px solid var(--edge); box-shadow: 0 14px 40px rgba(0,0,0,0.18); }
+.flip .face { padding: 18px; background: var(--glass-hi); display: flex; flex-direction: column; gap: 10px; text-align: left; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+.flip .face small { font-size: 9px; font-weight: 600; letter-spacing: 0.18em; color: #777; }
+.flip .face b { font-size: 18px; line-height: 1.2; }
+.flip .face span { font-size: 13px; line-height: 1.4; color: #333; }
+.flip .back { transform: rotateY(180deg); background: repeating-linear-gradient(45deg, rgba(255,255,255,0.55) 0 8px, rgba(255,255,255,0.3) 8px 16px); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+
+/* the bar under the picture */
+.bar { display: grid; grid-template-columns: 1fr auto; gap: 18px; align-items: center; min-height: 52px; }
+.left { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
+.steps { display: flex; gap: 6px; align-items: center; font-size: 10px; font-weight: 600; letter-spacing: 0.14em; color: #bbb; }
 .steps span.now { color: var(--ink); }
 .steps span.done { color: var(--dim); }
-.steps i { width: 16px; height: 1.5px; background: var(--line); }
-.left { display: flex; flex-direction: column; gap: 10px; }
-.fs { align-self: flex-start; font: inherit; font-size: 10px; font-weight: 600; letter-spacing: 0.1em; padding: 6px 11px; border: 1.5px solid var(--ink); border-radius: 4px; background: #fff; color: var(--ink); cursor: pointer; }
+.steps i { width: 16px; height: 1px; background: var(--line); }
+.fs { font: inherit; font-size: 10px; font-weight: 600; letter-spacing: 0.1em; padding: 6px 11px; border: 1px solid #bbb; border-radius: 20px; background: #fff; color: var(--ink); cursor: pointer; }
 .dicestat { font-size: 10px; font-weight: 600; letter-spacing: 0.1em; color: var(--dim); }
 .dicestat b { color: var(--ink); }
 .dicestat a { color: var(--ink); }
-
-/* this moment's table (defaults) or options (choices) */
-.mid { display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0; }
-.cap { font-size: 10px; font-weight: 600; letter-spacing: 0.12em; color: var(--dim); min-height: 1em; text-align: center; }
-.cap b { color: var(--ink); }
-.choices { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
-.ch { min-width: 64px; max-width: 240px; padding: 8px 12px; display: flex; flex-direction: column; align-items: center; gap: 4px; font: inherit; background: #fff; color: var(--ink); border: 1.5px solid var(--ink); border-radius: 4px; cursor: pointer; transition: background 0.08s, color 0.08s; }
-.ch b { font-size: 11px; font-weight: 650; letter-spacing: 0.05em; text-align: center; }
-.ch .tgt { font-size: 12px; font-weight: 500; color: #555; }
-.ch .faces { display: flex; gap: 3px; height: 15px; }
-.ch .faces svg { width: 15px; height: 15px; opacity: 0.7; }
-.ch.table { cursor: default; border-color: #c8c8c8; color: #666; background: #fafafa; }   /* chance's table: you watch, you don't press */
-.ch.table b { font-weight: 550; }
-.ch:disabled { cursor: default; }
-.ch.wish { box-shadow: 0 0 0 3px #fff, 0 0 0 5px var(--ink); }          /* what you went for */
-.ch.on, .ch.got { background: var(--ink); color: #fff; }                  /* chance's light / what happened */
-.ch.on .tgt, .ch.got .tgt { color: #ccc; }
-.ch.on .faces svg, .ch.got .faces svg { opacity: 0.8; }
-.ch.dim { opacity: 0.35; }
-.ch.allot { border-style: dashed; }
-
-.go { font: inherit; font-size: 15px; font-weight: 600; letter-spacing: 0.08em; min-width: 170px; padding: 18px 26px; border: 1.5px solid var(--ink); border-radius: 4px; background: var(--ink); color: #fff; cursor: pointer; }
-.go:disabled { background: #fff; color: #bbb; border-color: #ccc; cursor: default; }
-.go:active:not(:disabled) { transform: translateY(1px); }
+.go { font: inherit; font-size: 13px; font-weight: 600; letter-spacing: 0.1em; min-width: 150px; padding: 13px 22px; border: 0; border-radius: 30px; background: var(--ink); color: #fff; cursor: pointer; transition: opacity 0.4s; }
+.go:disabled { opacity: 0; pointer-events: none; }
 button:focus-visible { outline: 3px solid #888; outline-offset: 2px; }
 
-/* FULL SCREEN: the picture covers the whole screen edge to edge; the bar floats over its bottom */
 body.full .frame { padding: 0; gap: 0; grid-template-rows: minmax(0, 1fr); }
-body.full .gen { border: 0; border-radius: 0; background: #000; }
-body.full .gen canvas { object-fit: cover; }
-body.full .bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; padding: 12px 20px; background: rgba(255,255,255,0.86); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
-body.full .msg { bottom: 120px; max-height: calc(100% - 180px); }
-@media (max-width: 900px) {
-  .frame { padding: 12px; }
-  .bar { grid-template-columns: 1fr; justify-items: center; }
-  .go { width: 100%; }
-}
+body.full .gen { border-radius: 0; }
+body.full .bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; padding: 8px 18px; background: linear-gradient(transparent, rgba(255,255,255,0.55)); }
+body.full .deck { bottom: 70px; }
+@media (max-width: 760px) { .bar { grid-template-columns: 1fr; } .go { width: 100%; } }
+@media (prefers-reduced-motion: reduce) { .card, .flip .in, .say { transition-duration: 0.01s !important; } }
 </style>
 </head>
 <body>
 <div class="frame">
-  <div class="gen">
-    <canvas id="out" width="640" height="384" aria-label="The game screen"></canvas>
+  <div class="gen" id="gen">
+    <canvas id="out" width="640" height="384" aria-label="The life"></canvas>
     <video id="pip" class="pip" muted playsinline aria-label="Your camera"></video>
+    <div class="age off" id="age" aria-live="off"><small>AGE</small><span id="ageN">0</span></div>
+    <div class="say" id="say" aria-live="polite"></div>
+    <div class="big" id="big" aria-live="polite"><div class="disc"><b id="bigN"></b><span id="bigW"></span></div></div>
+    <div class="deck" id="deck" role="group" aria-label="Your options" hidden></div>
+    <div class="flip" id="flip" aria-live="polite"><div class="in"><div class="face" id="flipFace"></div><div class="back"></div></div></div>
     <div class="status" id="status">connecting…</div>
-    <div class="msg" id="msg" aria-live="polite"></div>
   </div>
   <div class="bar">
     <div class="left">
@@ -102,39 +143,422 @@ body.full .msg { bottom: 120px; max-height: calc(100% - 180px); }
       <button class="fs" id="fs" title="Full screen (F). Esc leaves it.">FULL SCREEN</button>
       <div class="dicestat" id="dice" aria-live="polite">DIE · …</div>
     </div>
-    <div class="mid"><div class="cap" id="cap"></div><div class="choices" id="choices" role="group" aria-label="This moment"></div></div>
     <button class="go" id="go" disabled>…</button>
   </div>
 </div>
 
 <script type="module">
 // ============================================================================
-//  Playing Against Chance — stage one: one life, eighteen moments (the words are in storyline.js).
-//  Two sources of chance: YOUR die (only for choices) and random.org (everything else, never seen).
-//  Never shown: odds, percentages, the marks (until the ending).
+//  Playing Against Chance — Life Trajectory v1. One life, 19 events, from trajectory.json.
+//  Chosen = you pick a card and throw the die; a miss is allotted by random.org.
+//  Happens = random.org picks one of three hidden outcomes. Fluke = something tiny, paid off later.
+//  The unfolding (the beats, all minimums, all in trajectory.json "pacing", tuned live on /panel):
+//    ARRIVE  bridge line · the age counts up · the world paints from the last one · the avatar ages
+//    SETTLE  name + setup in a soft window      CARDS  rise one by one, wait for you
+//    LOCK    your card to the centre, the target   THROW  waits for the die; everything holds still while it rolls
+//    LAND    the number, big and alone, then hit or miss   MISS  the allotted card turns over
+//    LINGER  what happened stays while the new world paints in
+//  Never shown: odds, percentages, the hidden outcomes, that a fluke mattered (until it does).
 // ============================================================================
 import { createLive } from "./live.js";
 import { createDiceReader } from "./dice.js";
 import { createDiceReader as createRemoteReader } from "./dice-remote.js";
 import { findCamera } from "./cameras.js";
-import { PHASES, PHASE_REFS, MOMENTS, avatar, worldScene } from "./storyline.js";
 
 const $ = (id) => document.getElementById(id);
-const msgEl = $("msg"), go = $("go"), choicesEl = $("choices"), statusEl = $("status");
+const sayEl = $("say"), bigEl = $("big"), deckEl = $("deck"), flipEl = $("flip"), go = $("go"), statusEl = $("status");
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-const low = (s) => String(s).toLowerCase();
+const up = (s) => String(s).toUpperCase();
+const nextFrame = () => new Promise(r => requestAnimationFrame(() => r()));
 
-// the look and everything about the painting is chosen on /panel
 const live = createLive({ out: $("out"), video: $("pip"), params: () => ({}) });
-let lastBg = null;
-function paint(person, background) {                       // the avatar and the world for this moment
-  live.setScene(null);
-  if (background !== lastBg) { lastBg = background; live.setBackground(background); }   // a new world only when it changes
-  live.setPerson(person);
+
+// ---------- the life and its timings (trajectory.json; the timings change live from /panel) ----------
+let T = null, P = {}, WK = { keep: 0.5, chapter_keep: 0.25 };
+const sec = (k) => Math.max(0, +P[k] || 0) * 1000;
+function setPacing(doc) {
+  P = doc.pacing || {}; WK = doc.world || WK;
+  document.documentElement.style.setProperty("--fade", (sec("fade") / 1000) + "s");
+}
+async function loadLife() {
+  const doc = await (await fetch("/trajectory", { cache: "no-store" })).json();
+  if (doc.error) throw new Error(doc.error);
+  T = doc; setPacing(doc);
+}
+let paceSeen = null;
+setInterval(async () => {                                     // a slider moved on /panel: take the new timings now
+  try {
+    const m = await (await fetch("/config", { cache: "no-store" })).json();
+    if (paceSeen !== null && m.pace !== paceSeen) setPacing(await (await fetch("/trajectory", { cache: "no-store" })).json());
+    paceSeen = m.pace;
+  } catch (e) {}
+}, 1500);
+
+// ---------- chance: random.org (through the server) ----------
+let source = "";
+async function draw(lo, hi) {
+  try {
+    const r = await (await fetch(`/draw?n=1&lo=${lo}&hi=${hi}`, { cache: "no-store" })).json();
+    source = r.source; return r.values[0];
+  } catch (e) { source = "LOCAL"; return lo + Math.floor(Math.random() * (hi - lo + 1)); }
 }
 
-// ---------- full screen: the picture edge to edge (button or F; Esc leaves) ----------
+// ---------- the one soft window: the old text fades out fully before the new one fades in ----------
+let sayOn = false;
+async function unsay() {
+  if (!sayOn) return;
+  sayOn = false; sayEl.classList.remove("on");
+  await sleep(sec("fade"));
+}
+async function say({ k = "", t = "", s = "", cls = "" }) {
+  await unsay();
+  sayEl.className = "say " + cls;
+  sayEl.innerHTML = (k ? `<span class="k">${k}</span>` : "") + (t ? `<span class="t">${t}</span>` : "") + (s ? `<span class="s">${s}</span>` : "");
+  await nextFrame(); await nextFrame();
+  sayEl.classList.add("on"); sayOn = true;
+  await sleep(sec("fade"));
+}
+const kick = (ev) => `AGE ${Math.floor(S.ageF)} · ${esc(ev.title)}`;    // over an outcome
+const kickAge = () => `AGE ${Math.floor(S.ageF)}`;                           // over the event's own name
+
+// ---------- the age, the avatar, the world ----------
+let S;                                                         // this life
+function freshLife() { return { ageF: 0, gender: null, place: "", wear: "", ledger: [], planted: {}, phase: 0 }; }
+const AGES = [                                                 // the avatar between these: blended, so it ages continuously
+  [0, "a newborn baby wrapped in a soft blanket"], [2, "a toddler"], [6, "a small {child}"], [11, "a {child}"],
+  [15, "a teenage {kid}"], [19, "a young {adult}, late teens"], [25, "a young {adult} in their twenties"],
+  [33, "a {adult} in their thirties"], [45, "a middle-aged {adult}"], [57, "an older {adult} with greying hair"],
+  [68, "an elderly {adult} with white hair and wrinkles"], [82, "a very old frail {adult}, deep wrinkles, white hair"],
+  [95, "an extremely old {adult}, frail and very wrinkled"],
+];
+function who(desc, age) {
+  const g = S.gender, w = { child: g === "boy" ? "boy" : g === "girl" ? "girl" : "child", kid: g === "boy" ? "boy" : g === "girl" ? "girl" : "kid",
+                           adult: g === "boy" ? "man" : g === "girl" ? "woman" : "person" };
+  let d = desc.replace(/\{(\w+)\}/g, (_, k) => w[k]);
+  if (g === "nb" && age >= 2) d += ", androgynous";
+  if (S.wear && age >= 2) d += `, in ${S.wear}`;
+  return d + ", painterly portrait";
+}
+function avatarAt(age) {
+  let i = 0;
+  while (i < AGES.length - 2 && age >= AGES[i + 1][0]) i++;
+  const [a0, d0] = AGES[i], [a1, d1] = AGES[i + 1];
+  const mix = Math.max(0, Math.min(1, (age - a0) / (a1 - a0)));
+  live.setPerson(who(d0, age), who(d1, age), mix);
+}
+function showAge() { $("ageN").textContent = Math.floor(S.ageF); }
+async function ageTo(to, ms) {                                 // the age runs on; the avatar ages with it
+  const from = S.ageF, t0 = performance.now();
+  if (to <= from) { avatarAt(S.ageF); return; }
+  for (;;) {
+    const k = Math.min(1, (performance.now() - t0) / Math.max(1, ms)), e = k * k * (3 - 2 * k);
+    S.ageF = from + (to - from) * e; showAge(); avatarAt(S.ageF);
+    if (k >= 1) return;
+    await sleep(60);
+  }
+}
+let worldDone = Promise.resolve();
+function world(scene, keep, fresh = false) {                   // the next world, painted out of the last one
+  const prompt = scene + (S.place ? ", " + S.place : "");
+  worldDone = live.setBackground(prompt, { keep, fade: sec("world_fade"), fresh }).then(() => sleep(sec("world_fade")));
+  return worldDone;
+}
+
+// ---------- the die (dice_reader.py, the browser reader, or ROLL on screen) ----------
+let diceOn = false, diceSrc = "", rollWaiter = null, sawThrow = false;
+const diceEl = $("dice");
+const chip = (html) => { diceEl.innerHTML = `DIE${diceSrc ? ` (${diceSrc})` : ""} · ${html}`; };
+let turn = "watch";
+const TURN = { watch: "not your turn: watch", pick: "pick a card", throw: "<b>throw it</b>", begin: "<b>throw to begin</b>" };
+function setTurn(t) { turn = t; if (diceOn) chip(TURN[t]); if (t !== "throw") live.hold(false); }
+const READING = { rolling: "rolling…", settling: "landing…", reading: "reading…", unclear: "can't read it, throw again" };
+const diceEvents = {
+  onState: (s) => {
+    if (s === "rolling") { sawThrow = true; if (turn === "throw") live.hold(true); }   // while it rolls, everything holds still
+    if (s === "unclear") live.hold(false);
+    if (!diceOn) return;
+    if (s === "needs empty tray") chip('<a href="/dice.html">set up the empty tray</a>');
+    else if (READING[s] && (turn === "throw" || turn === "begin")) chip(`<b>${READING[s]}</b>`);
+    else chip(TURN[turn]);
+  },
+  onRoll: (n) => {
+    if (turn !== "throw" && turn !== "begin") return;       // not your turn: a throw now means nothing
+    if (!sawThrow) { chip(`<b>${n}</b> ignored: no throw seen`); return; }
+    sawThrow = false; chip(`<b>${n}</b>`);
+    if (rollWaiter) rollWaiter(n, true);
+  },
+};
+function diceReady(src) { diceOn = true; diceSrc = src; chip(TURN[turn]); }
+let browserDice = null;
+async function tryPython() {
+  try { await createRemoteReader(diceEvents).start(); if (browserDice) { browserDice.stop(); browserDice = null; } diceReady("python"); return true; }
+  catch (e) { return false; }
+}
+(async () => {
+  if (await tryPython()) return;
+  const look = setInterval(async () => { if (await tryPython()) clearInterval(look); }, 3000);
+  let cam = "";
+  try { cam = await findCamera("pac-dice-cam"); } catch (e) {}
+  if (!cam) { diceEl.innerHTML = 'DIE · <a href="/dice.html">start dice_reader.py, or set up</a> · R rolls on screen'; return; }
+  const dice = createDiceReader({ video: Object.assign(document.createElement("video"), { muted: true, playsInline: true }), ...diceEvents });
+  try { await dice.start(cam); if (diceSrc !== "python") { browserDice = dice; diceReady("browser"); } else dice.stop(); }
+  catch (e) { if (!diceOn) diceEl.innerHTML = 'DIE · <a href="/dice.html">camera not found</a>'; }
+})();
+
+// one throw: the physical die, or ROLL / R on screen (random.org) when there's no die
+function waitThrow(kind = "throw") {
+  setTurn(kind); sawThrow = false;
+  return new Promise(resolve => {
+    const done = (n, die) => { rollWaiter = null; screenRoll = null; go.disabled = true; resolve({ n, die }); };
+    rollWaiter = done;
+    screenRoll = async () => { screenRoll = null; go.disabled = true; live.hold(true); await sleep(500); done(await draw(1, 6), false); };
+    if (kind === "begin") button(diceOn ? null : "BEGIN", () => { screenRoll = null; done(0, false); });
+    else button(diceOn ? null : "ROLL", () => screenRoll && screenRoll());
+  });
+}
+let screenRoll = null, goAction = null;
+function button(label, fn) { go.textContent = label || "…"; go.disabled = !label; goAction = label ? fn : null; }
+go.addEventListener("click", () => { if (!go.disabled && goAction) goAction(); });
+
+// ---------- the deck ----------
+let deckKeys = null;
+function deck(cards) {                                         // cards rise one by one; resolves with the one you pick
+  deckEl.hidden = false; deckEl.className = "deck";
+  deckEl.style.setProperty("--n", cards.length);
+  deckEl.innerHTML = cards.map((c, i) => `<button type="button" class="card pre" style="--i:${i};z-index:${i + 1}" aria-label="${esc(c.name)}: ${esc(c.reveals)}">
+      <span class="nm">${esc(c.name)}</span><span class="rv">${esc(c.reveals)}</span><span class="tg"></span><span class="hint"></span></button>`).join("")
+    + `<div class="nav"><button type="button" data-d="-1" aria-label="Previous">‹</button>${cards.map(() => "<i></i>").join("")}<button type="button" data-d="1" aria-label="Next">›</button></div>`;
+  const els = [...deckEl.querySelectorAll(".card")], dots = [...deckEl.querySelectorAll(".nav i")];
+  const cw = els[0].offsetWidth, room = $("gen").clientWidth * 0.74;   // spread the deck so each name shows, within the screen
+  deckEl.style.setProperty("--gap", Math.round(Math.max(cw * 0.42, Math.min(cw * 0.8, (room - cw) / Math.max(1, cards.length - 1)))) + "px");
+  return new Promise(async resolve => {
+    for (const el of els) { el.classList.remove("pre"); await sleep(sec("card_rise")); }
+    await sleep(500);
+    deckEl.classList.add("open"); setTurn("pick");
+    let focus = -1;
+    const setFocus = (i) => { focus = (i + els.length) % els.length; els.forEach((e, k) => e.classList.toggle("focus", k === focus)); dots.forEach((d, k) => d.classList.toggle("on", k === focus)); deckEl.classList.add("hovering"); };
+    const pick = (i) => { if (!deckEl.classList.contains("open")) return; deckEl.classList.remove("open", "hovering"); deckKeys = null; resolve({ i, els }); };
+    els.forEach((el, i) => {
+      el.addEventListener("click", () => pick(i));
+      el.addEventListener("mouseenter", () => { els.forEach(e => e.classList.remove("focus")); dots.forEach((d, k) => d.classList.toggle("on", k === i)); focus = i; deckEl.classList.add("hovering"); });
+      el.addEventListener("mouseleave", () => deckEl.classList.remove("hovering"));
+    });
+    deckEl.querySelectorAll(".nav button").forEach(b => b.addEventListener("click", () => setFocus(focus + +b.dataset.d)));
+    deckKeys = (key) => {
+      if (key === "ArrowRight") setFocus(focus + 1);
+      else if (key === "ArrowLeft") setFocus(focus - 1);
+      else if ((key === "Enter" || key === " ") && focus >= 0) pick(focus);
+      else { const n = parseInt(key, 10); if (n >= 1 && n <= els.length) pick(n - 1); }
+    };
+  });
+}
+async function lock(els, i, label) {                           // your card glides to the centre; the others sink away
+  els.forEach((e, k) => { e.classList.remove("focus"); e.classList.toggle("locked", k === i); e.classList.toggle("away", k !== i); });
+  await sleep(sec("lock"));
+  els[i].querySelector(".tg").innerHTML = `throw<b>${esc(label)}</b>`;
+  els[i].classList.add("show");
+  await sleep(700);
+}
+const cardHint = (el, html) => { el.querySelector(".hint").innerHTML = html; };
+function deckGone() { deckEl.hidden = true; deckEl.innerHTML = ""; }
+
+// "3 or more" · "a 6" · "exactly 1": the target is written the way the player sees it
+function target(text) {
+  const t = String(text), m = /(\d)\s*or more/i.exec(t);
+  if (m) { const v = +m[1]; return { hit: (n) => n >= v, label: t }; }
+  const v = +(/(\d)/.exec(t) || [0, 6])[1];
+  return { hit: (n) => n === v, label: t };
+}
+
+// the number, big and alone; then hit or miss
+async function land(n, hit) {
+  $("bigN").textContent = n; $("bigW").textContent = hit ? "hit" : "miss"; $("bigW").classList.remove("on");
+  bigEl.classList.add("on");
+  await sleep(Math.max(600, sec("land") * 0.55));
+  $("bigW").classList.add("on");
+  await sleep(Math.max(500, sec("land") * 0.45));
+  bigEl.classList.remove("on"); await sleep(sec("fade"));
+}
+async function turnOver(card, note) {                          // the allotted card turns over slowly
+  $("flipFace").innerHTML = `<small>${esc(note)}</small><b>${esc(card.name)}</b><span>${esc(card.reveals)}</span>`;
+  flipEl.className = "flip"; await nextFrame(); await nextFrame();
+  flipEl.classList.add("on"); await sleep(700);
+  flipEl.classList.add("turn"); await sleep(Math.max(1900, sec("miss")));
+  flipEl.classList.remove("on"); await sleep(800);
+  flipEl.className = "flip";
+}
+
+// ---------- the events ----------
+function apply(c) {
+  if (c.gender) S.gender = c.gender;
+  if (c.place) S.place = c.place;
+  if (c.wear) S.wear = c.wear;
+}
+async function linger(key, extraAge) {                         // what happened stays while the new world paints in
+  await Promise.all([sleep(sec(key)), worldDone, extraAge ? ageTo(extraAge, sec(key) * 0.8) : null]);
+}
+
+async function chosen(ev) {
+  await say({ k: kickAge(), t: esc(ev.title), s: esc(ev.setup) });
+  await sleep(sec("settle"));
+  const { i, els } = await deck(ev.cards);
+  const c = ev.cards[i], tg = target(c.target);
+  await Promise.all([unsay(), lock(els, i, tg.label)]);
+  const tries = Math.max(1, ev.tries || 1);
+  let hit = false, n = 0, t = 1;
+  for (; t <= tries; t++) {
+    if (tries > 1) cardHint(els[i], t === 1 ? `${tries} throws` : `${tries - t + 1} ${tries - t + 1 === 1 ? "throw" : "throws"} left`);
+    ({ n } = await waitThrow());
+    setTurn("watch"); live.hold(false);
+    els[i].classList.add("gone"); await sleep(500);
+    hit = tg.hit(n);
+    await land(n, hit);
+    if (hit || t === tries) break;
+    els[i].classList.remove("gone"); await sleep(600);
+  }
+  deckGone();
+  let got = c, how = "hit";
+  if (!hit) {
+    if (ev.allot === false) how = "none";
+    else {
+      await sleep(sec("miss") * 0.4);
+      const others = ev.cards.filter(x => x !== c);
+      got = others[(await draw(1, others.length)) - 1];
+      how = tries > 1 ? "override" : "allotted";
+      await turnOver(got, how === "override" ? "THE OVERRIDE" : "ALLOTTED");
+    }
+  }
+  if (how === "none") {
+    world(ev.miss.scene, WK.keep);
+    S.ledger.push([S.ageF, ev.title, `${ev.miss.text.replace(/\.$/, "")}`, `went to: ${c.name}`]);
+    await say({ k: kick(ev), t: esc(ev.miss.text) });
+  } else {
+    apply(got); world(got.scene, WK.keep);
+    const note = how === "hit" ? "" : how === "override" ? `${tries} throws, then the override.` : `You went for ${esc(c.name)}. Chance allotted this.`;
+    S.ledger.push([S.ageF, ev.title, got.name, how === "hit" ? "" : how === "override" ? `went for ${c.name}; ${tries} throws, then the override` : `went for ${c.name}`]);
+    await say({ k: kick(ev), t: esc(got.name), s: esc(got.reveals) + (note ? `<br><span style="color:#777;font-size:12px">${note}</span>` : "") });
+  }
+  avatarAt(S.ageF);                                           // a new outfit / gender: the avatar morphs to it
+  await linger("linger", how !== "none" && got.age);
+}
+
+async function happens(ev) {
+  if (ev.reveals && S.planted[ev.reveals]) {                  // the fluke comes back: slow, the original line word for word
+    const p = S.planted[ev.reveals];
+    await say({ k: kickAge(), t: esc(ev.title) });
+    await sleep(sec("settle") * 0.6);
+    await unsay(); await sleep(sec("fade") * 0.5);
+    await say({ k: `AT ${p.age}`, s: `“${esc(p.text)}”`, cls: "quote" });
+    await sleep(sec("reveal"));
+  } else {
+    await say({ k: kickAge(), t: esc(ev.title), s: "Something happens." });
+    await sleep(sec("happen_hold"));
+  }
+  const key = ["good", "bad", "neutral"][(await draw(1, 3)) - 1], o = ev.outcomes[key];
+  world(o.scene, WK.keep);
+  S.ledger.push([S.ageF, ev.title, o.text, ""]);
+  await say({ k: kick(ev), t: "", s: `<span style="font-size:18px;color:#111">${esc(o.text)}</span>` });
+  await linger("happen_linger");
+}
+
+async function fluke(ev) {                                     // deliberately understated
+  if (ev.plant) {
+    world(ev.scene, WK.keep);
+    S.planted[ev.id] = { age: Math.floor(S.ageF), text: ev.text };
+    S.ledger.push([S.ageF, ev.title, ev.text, ""]);
+    await say({ s: esc(ev.text), cls: "small" });
+    await sleep(sec("fluke_hold"));
+    await unsay();
+    return;
+  }
+  const f = ev.flukes[(await draw(1, ev.flukes.length)) - 1];   // which small thing finds you work
+  await say({ s: esc(f.text), cls: "small" });
+  await sleep(sec("fluke_hold"));
+  world(f.scene, WK.keep);
+  S.ledger.push([S.ageF, ev.title, f.job, f.text]);
+  await say({ k: kick(ev), t: esc(f.job) });
+  await linger("fluke_linger");
+}
+
+// ---------- the run ----------
+const PHASES = ["BASELINE", "CRUST", "ADULTHOOD", "LATER LIFE"];
+$("steps").innerHTML = PHASES.map(p => `<span>${p}</span>`).join("<i></i>");
+function setPhase(i) {
+  [...$("steps").querySelectorAll("span")].forEach((s, k) => { s.className = k < i ? "done" : k === i ? "now" : ""; });
+  phaseRef(i);
+}
+async function phaseRef(i) {                                   // optional: a style reference painting per phase (trajectory.json phase_refs)
+  const url = T && T.phase_refs && T.phase_refs[i];
+  if (!url) return;
+  try {
+    const img = await (await fetch(url, { cache: "force-cache" })).blob();
+    for (const side of ["person", "background"])
+      await fetch(`/reference?side=${side}&kind=style`, { method: "POST", body: img, headers: { "Content-Type": img.type || "image/jpeg" } });
+    live.refresh();
+  } catch (e) { console.warn("[phase ref]", url, e); }
+}
+
+async function arrive(ev, prev) {                              // the bridge, the years, the world and the avatar, together
+  const chapter = !!(prev && prev.chapter);
+  if (chapter) { S.phase = Math.min(PHASES.length - 1, S.phase + 1); setPhase(S.phase); }
+  const dur = sec(chapter ? "chapter" : "arrive");
+  if (prev && prev.bridge) await say({ s: esc(prev.bridge), cls: "bridge" });
+  const w = world(ev.scene, chapter ? WK.chapter_keep : WK.keep);
+  await Promise.all([ageTo(ev.age, dur * 0.85), sleep(dur), w]);
+  await unsay();
+}
+
+async function life() {
+  if (!T) await loadLife();
+  S = freshLife(); setPhase(0);
+  deckGone(); bigEl.classList.remove("on");
+  $("age").classList.add("off"); showAge();
+  live.setPerson(null);
+  await live.whenReady();
+  world(T.events[0].scene, 0, true);                           // a new life: a fresh world
+  await say({ k: "PLAYING AGAINST CHANCE", t: `One life. ${T.events.length} moments.`, s: diceOn ? "Throw the die to begin." : "Press BEGIN." });
+  await waitThrow("begin");
+  setTurn("watch"); live.hold(false);
+  await unsay();
+  $("age").classList.remove("off");
+  avatarAt(0);
+  await sleep(sec("arrive") * 0.6);
+  let prev = null;
+  for (const ev of T.events) {
+    if (prev) await arrive(ev, prev);
+    if (ev.type === "chosen") await chosen(ev);
+    else if (ev.type === "happens") await happens(ev);
+    else await fluke(ev);
+    await unsay();
+    prev = ev;
+  }
+  if (prev && prev.bridge) { await say({ s: esc(prev.bridge), cls: "bridge" }); await sleep(sec("arrive")); await unsay(); }
+  await sleep(sec("final_silence"));                           // a final silence before anything else
+  await ending();
+  await waitThrow("begin");
+  setTurn("watch"); await unsay();
+  T = null;                                                     // the next life re-reads trajectory.json (edits show up)
+  life();
+}
+
+async function ending() {                                       // the life, read back
+  setPhase(PHASES.length);
+  const rows = S.ledger.map(([a, t, what, note]) => `<tr><td>${Math.floor(a)}</td><td>${esc(t)}</td><td>${esc(what)}${note ? ` <i>(${esc(note)})</i>` : ""}</td></tr>`).join("");
+  await say({ k: "A LIFE", t: "", s: `<table>${rows}</table>`, cls: "end" });
+  sayEl.querySelector(".s").insertAdjacentHTML("afterend", `<span class="k">${diceOn ? "THROW THE DIE FOR ANOTHER LIFE" : "PRESS BEGIN FOR ANOTHER LIFE"}</span>`);
+}
+
+// ---------- keys: cards = ← → Enter or 1–9 · R = roll on screen · Space/Enter = the button · F = full screen ----------
+document.addEventListener("keydown", (e) => {
+  if (e.repeat || e.target instanceof HTMLInputElement) return;
+  if (e.key === "f" || e.key === "F") { setFull(!document.body.classList.contains("full")); return; }
+  if (deckKeys && (e.key.startsWith("Arrow") || e.key === "Enter" || e.key === " " || /^[1-9]$/.test(e.key))) { e.preventDefault(); deckKeys(e.key); return; }
+  if ((e.key === "r" || e.key === "R") && screenRoll) { screenRoll(); return; }
+  if ((e.key === " " || e.key === "Enter") && !(e.target instanceof HTMLButtonElement)) { e.preventDefault(); go.click(); }
+});
+
+// ---------- full screen ----------
 function setFull(on) {
   if (on && !document.fullscreenElement) document.documentElement.requestFullscreen?.().catch(() => {});
   if (!on && document.fullscreenElement) document.exitFullscreen?.();
@@ -144,456 +568,14 @@ function setFull(on) {
 $("fs").addEventListener("click", () => setFull(!document.body.classList.contains("full")));
 document.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement) setFull(false); });
 
-// ---------- chance: random.org (through the server) ----------
-let source = "";
-async function draw(n, lo, hi) {
-  try {
-    const r = await (await fetch(`/draw?n=${n}&lo=${lo}&hi=${hi}`, { cache: "no-store" })).json();
-    source = r.source; return r.values;
-  } catch (e) {                                            // server unreachable: the browser's own randomness
-    source = "LOCAL";
-    return Array.from({ length: n }, () => lo + Math.floor(Math.random() * (hi - lo + 1)));
-  }
-}
-const d6 = async () => (await draw(1, 1, 6))[0];
-
-const PIPS = { 1: [[2, 2]], 2: [[1, 1], [3, 3]], 3: [[1, 1], [2, 2], [3, 3]], 4: [[1, 1], [3, 1], [1, 3], [3, 3]], 5: [[1, 1], [3, 1], [2, 2], [1, 3], [3, 3]], 6: [[1, 1], [3, 1], [1, 2], [3, 2], [1, 3], [3, 3]] };
-const dieFace = (n) => `<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="0.75" y="0.75" width="14.5" height="14.5" rx="3" fill="none" stroke="currentColor" stroke-width="1.5"/>${PIPS[n].map(([x, y]) => `<circle cx="${x * 4}" cy="${y * 4}" r="1.5" fill="currentColor"/>`).join("")}</svg>`;
-
-// ---------- the screen and the bar ----------
-function msg(kicker, line, sub = "") {
-  msgEl.hidden = false; msgEl.className = "msg";
-  msgEl.innerHTML = `<span class="kicker">${kicker}</span>${line ? `<span class="line">${line}</span>` : ""}${sub ? `<span class="sub">${sub}</span>` : ""}`;
-}
-function subLine(html) {
-  let sub = msgEl.querySelector(".sub");
-  if (!sub) { sub = document.createElement("span"); sub.className = "sub"; msgEl.appendChild(sub); }
-  sub.innerHTML = html;
-}
-$("steps").innerHTML = PHASES.map(p => `<span>${p}</span>`).join("<i></i>");
-let phaseShown = -1;
-function setPhase(i) {
-  [...$("steps").querySelectorAll("span")].forEach((s, k) => { s.className = k < i ? "done" : k === i ? "now" : ""; });
-  if (i !== phaseShown) { phaseShown = i; phaseRef(i); }
-}
-async function phaseRef(i) {                               // optional: this phase's style reference painting (storyline.js)
-  const url = PHASE_REFS[i];
-  if (!url) return;
-  try {
-    const img = await (await fetch(url, { cache: "force-cache" })).blob();
-    for (const side of ["person", "background"])
-      await fetch(`/reference?side=${side}&kind=style`, { method: "POST", body: img, headers: { "Content-Type": img.type || "image/jpeg" } });
-    live.refresh(); lastBg = null;                          // repaint in the new look
-  } catch (e) { console.warn("[phase ref]", url, e); }
-}
-let action = null;
-function button(label, fn) { go.textContent = label; go.disabled = !fn; action = fn; }
-go.addEventListener("click", () => { if (!go.disabled && action) action(); });
-let waiting = false;                                        // between moments: a throw of the die presses the big button
-const waitFor = (label) => new Promise(res => {
-  waiting = true; sawThrow = false;
-  setTurn("next"); caption("");
-  button(label, () => { waiting = false; button("…", null); res(); });
-});
-function chips(items, render, cls = "") {                  // the buttons in the middle of the bar
-  choicesEl.innerHTML = "";
-  return items.map((it, i) => {
-    const b = document.createElement("button");
-    b.className = "ch " + cls; b.type = "button";
-    b.innerHTML = render(it, i);
-    choicesEl.appendChild(b);
-    return b;
-  });
-}
-async function light(btns, land) {                          // chance's light runs along the table, stops on what happened
-  const n = btns.length, steps = n * 2 + land + (n < 4 ? n : 0);
-  for (let s = 0; s <= steps; s++) {
-    btns.forEach((b, k) => b.classList.toggle("on", k === s % n));
-    await sleep(55 + Math.max(0, s - steps + 6) * 50);
-  }
-  btns.forEach((b, k) => { b.classList.remove("on"); b.classList.toggle("got", k === land); b.classList.toggle("dim", k !== land); });
-}
-
-// ---------- keys: Space / Enter = the big button, 1–5 = pick an option, F = full screen ----------
-let pickKey = null, screenRollKey = null;
-document.addEventListener("keydown", (e) => {
-  if (e.repeat || e.target instanceof HTMLInputElement) return;
-  if ((e.key === "r" || e.key === "R") && screenRollKey) { screenRollKey(); return; }   // roll on screen (testing without the die)
-  if (e.key === "f" || e.key === "F") { setFull(!document.body.classList.contains("full")); return; }
-  if ((e.key === " " || e.key === "Enter") && !(e.target instanceof HTMLButtonElement)) { e.preventDefault(); go.click(); }
-  const n = parseInt(e.key, 10);
-  if (n >= 1 && n <= 9 && pickKey) pickKey(n - 1);
-});
-
-// ---------- the physical die (dice_reader.py, or the browser reader set up on /dice.html) ----------
-let diceOn = false, diceSrc = "", rollWaiter = null;
-let sawThrow = false;           // a roll only counts if the reader saw the die MOVE first (no phantom reads of a resting die)
-const diceEl = $("dice");
-const diceStates = { rolling: "rolling…", settling: "landing…", reading: "reading…", unclear: "can't read it, throw again", off: "off" };
-const chip = (html) => { diceEl.innerHTML = `DIE${diceSrc ? ` (${diceSrc})` : ""} · ${html}`; };
-// whose turn it is, so the die chip never says "throw it" while chance is rolling
-let turn = "watch";
-const TURN = { watch: "not your turn: watch", pick: "pick an option first", throw: "<b>throw it</b>", next: "throw to go on" };
-function setTurn(t) { turn = t; if (diceOn) chip(TURN[t]); }
-const diceEvents = {
-  onState: (s) => {
-    if (s === "rolling") sawThrow = true;
-    if (!diceOn) return;
-    if (s === "needs empty tray") chip('<a href="/dice.html">set up the empty tray</a>');
-    else if (diceStates[s] && turn !== "watch") chip(`<b>${diceStates[s]}</b>`);
-    else chip(TURN[turn]);
-  },
-  onRoll: (n) => {
-    if (turn === "watch" || turn === "pick") return;      // not your turn: a throw now means nothing
-    if (!sawThrow) { chip(`<b>${n}</b> ignored: no throw seen`); return; }   // the reader read a die that never moved
-    sawThrow = false;
-    chip(`<b>${n}</b>`);
-    if (rollWaiter) rollWaiter(n, true);                   // a choice is waiting for your roll
-    else if (waiting && action) go.click();                 // between moments: go on
-  },
-};
-function diceReady(src) { diceOn = true; diceSrc = src; chip(TURN[turn]); }
-let browserDice = null;
-async function tryPython() {                                // dice_reader.py always wins, whenever it appears
-  try {
-    await createRemoteReader(diceEvents).start();
-    if (browserDice) { browserDice.stop(); browserDice = null; }
-    diceReady("python");
-    return true;
-  } catch (e) { return false; }
-}
-(async () => {
-  if (await tryPython()) return;
-  const look = setInterval(async () => { if (await tryPython()) clearInterval(look); }, 3000);
-  let cam = "";
-  try { cam = await findCamera("pac-dice-cam"); } catch (e) {}
-  if (!cam) { diceEl.innerHTML = 'DIE · <a href="/dice.html">start dice_reader.py, or set up</a>'; return; }
-  const dice = createDiceReader({ video: Object.assign(document.createElement("video"), { muted: true, playsInline: true }), ...diceEvents });
-  try { await dice.start(cam); if (diceSrc !== "python") { browserDice = dice; diceReady("browser"); } else dice.stop(); }
-  catch (e) { console.warn("[dice]", e.name, e.message); if (!diceOn) diceEl.innerHTML = 'DIE · <a href="/dice.html">camera not found</a>'; }
-})();
-
-// ============================================================================
-//  THE LIFE
-// ============================================================================
-let S;                                                      // everything that has happened so far
-function freshLife() {
-  return { marks: new Set(), mods: [], body: null, home: null, world: null, place: null, scene: null, wear: null,
-           forecast: null, flukes: [], log: [], picks: {}, work: null, health: null, endAge: null, age: 0 };
-}
-const TAGS = { race: ["you", "YOUR THROW"], wish: ["you", "YOUR THROW"], choice: ["you", "YOUR THROW"], default: ["happens", "IT HAPPENS"], fluke: ["small", "A SMALL THING"] };
-const kicker = (m) => `<span class="tag ${TAGS[m.kind][0]}">${TAGS[m.kind][1]}</span>` +
-  (m.age === null ? `${PHASES[m.phase]} · ${m.title}` : `${PHASES[m.phase]} · AGE ${m.age} · ${m.title}`);
-function caption(html) { $("cap").innerHTML = html; }
-function show(age) { paint(avatar(S, age), worldScene(S, age)); }
-
-// what an outcome does to the life: marks, modifiers, body/home/world, the picture
-function apply(m, e) {
-  if (e.mark) S.marks.add(e.mark);
-  if (e.mods) S.mods.push(...e.mods);
-  if (e.body) S.body = e.body;
-  if (e.home) S.home = e.home;
-  if (e.world) { S.world = e.world; S.place = e.world.place; }
-  if (e.move && S.world) S.place = "a new city in " + S.world.place.split(" in ").pop();
-  for (const k of ["forecast", "work", "health", "endAge", "spouse"]) if (e[k] !== undefined) S[k] = e[k];
-  if (e.scene || m.scene) S.scene = e.scene || m.scene;
-  if (e.wear) S.wear = e.wear;
-  S.log.push({ id: m.id, age: m.age, title: m.title, text: e.text, past: e.past || e.text });
-}
-
-// ---------- targets: "a 6", "5 or more", "exactly 3" (moved by modifiers and marks, never shown why) ----------
-function target(m, o) {
-  if (o.exact) return o.exact;                              // exact numbers never move
-  let t = o.target;
-  for (const md of S.mods) if (md.at === m.id && (md.opts === "*" || md.opts.includes(o.id))) t += md.step;
-  for (const [mk, step] of Object.entries(o.markMods || {})) if (S.marks.has(mk)) t += step;
-  return Math.max(2, Math.min(6, t));
-}
-const tLabel = (m, o) => o.exact ? `exactly ${o.exact}` : target(m, o) === 6 ? "a 6" : `${target(m, o)} or more`;
-const hard = (m, o) => o.exact ? 6 : target(m, o);         // how hard, for "the next easier option"
-
-// ---------- DEFAULT: happens to you; random.org rolls on the table; you watch ----------
-async function defaultMoment(m, age) {
-  msg(kicker(m), esc(m.intro), "Chance rolls. You watch.");
-  button("…", null); setTurn("watch");
-  caption("IT HAPPENS · <b>chance rolls</b>, you watch");
-  let e = m.override ? m.override(S) : null;
-  if (e) { choicesEl.innerHTML = ""; await sleep(1500); }   // a mark decides this one: no roll
-  else {
-    const btns = chips(m.table, (it) => `<b>${esc(it.short)}</b>`, "table");
-    btns.forEach(b => b.disabled = true);
-    await sleep(1100);
-    let f = await d6();
-    if (m.faceShift) f = Math.max(1, Math.min(6, f + m.faceShift(S)));
-    const i = m.table.findIndex(it => it.faces.includes(f));
-    await light(btns, i);
-    e = m.table[i];
-    for (const [mk, alt] of Object.entries(e.ifMark || {})) if (S.marks.has(mk)) e = { ...e, ...alt };
-  }
-  apply(m, e);
-  msg(kicker(m), esc(e.text), m.id === "astrologer" ? esc(m.intro) : "");
-}
-
-// ---------- FLUKE: something small; random.org rolls; a 6 leaves a hidden mark ----------
-async function flukeMoment(m, age) {
-  choicesEl.innerHTML = "";
-  S.scene = m.scene; show(age);
-  msg(kicker(m), esc(m.intro));
-  button("…", null); setTurn("watch");
-  caption("A SMALL THING · <b>chance decides</b> whether it matters");
-  await sleep(1800);
-  const hit = (await d6()) === 6;
-  if (hit) S.marks.add(m.mark);
-  S.flukes.push({ id: m.id, age, hit });
-  S.log.push({ id: m.id, age, title: m.title, text: m.intro + (hit ? " " + m.six : "") });
-  if (hit) msg(kicker(m), esc(m.intro), esc(m.six));
-}
-
-// ---------- YOUR THROW: pick one of the buttons, then throw your die (shared by race, wish and choice) ----------
-function pickThenThrow(m, btns, chosenLine) {
-  setTurn("pick");
-  caption("YOUR THROW · <b>pick one</b>, then throw your die");
-  return new Promise(resolve => {
-    let wish = -1;
-    const pick = (i) => {
-      if (i < 0 || i >= btns.length) return;
-      wish = i; btns.forEach((b, k) => b.classList.toggle("wish", k === i));
-      sawThrow = false;                                    // only a throw that starts after your pick counts
-      msg(kicker(m), chosenLine(i), diceOn ? "Throw the die." : "Roll. (Press ROLL.)");
-      caption("YOUR THROW · <b>throw your die</b>" + (diceOn ? "" : " (or press ROLL)"));
-      setTurn("throw");
-      // with a die connected there is no on-screen roll (so Space/Enter can't roll for you); R still rolls on screen, for testing
-      if (diceOn) button("THROW THE DIE", null); else button("ROLL", screenRoll);
-    };
-    const screenRoll = async () => { if (wish < 0) return; button("…", null); const r = await d6(); finish(r, false); };
-    const finish = (r, die) => {
-      if (wish < 0) { subLine("Pick one first."); return; }
-      rollWaiter = null; pickKey = null; screenRollKey = null; btns.forEach(b => b.disabled = true);
-      setTurn("watch"); caption("");
-      resolve({ wish, n: r, byDie: die });
-    };
-    btns.forEach((b, i) => b.addEventListener("click", () => pick(i)));
-    pickKey = pick; rollWaiter = finish; screenRollKey = screenRoll;
-    button("PICK ONE", null);
-  });
-}
-
-// ---------- RACE: pick your sperm, throw: the face is the one that makes it ----------
-let mine = 0;
-async function raceMoment(m) {
-  phase = "pick"; mine = 0; winner = 0;
-  const btns = chips(m.table, (it, i) => `<b>${i + 1}</b><span class="tgt">${esc(low(it.short))}</span>`);
-  msg(kicker(m), esc(m.intro), "Pick one. Then throw: your die decides which one makes it.");
-  const { wish, n, byDie } = await pickThenThrowRace(m, btns);
-  phase = "race"; raceAt = performance.now();
-  msg(kicker(m), `You picked <b>${wish + 1}</b>. You threw <b>${n}</b>${byDie ? "" : " (on screen)"}.`, "The race…");
-  await sleep(1500);
-  winner = n; phase = "result"; raceAt = performance.now();
-  const e = m.table.find(it => it.faces.includes(n));
-  btns.forEach((b, k) => { b.classList.toggle("got", k === n - 1); if (k !== n - 1 && k !== wish) b.classList.add("dim"); });
-  S.picks.race = { mine: wish + 1, winner: n };
-  apply(m, e);
-  msg(kicker(m), esc(e.text), wish + 1 === n ? `Number ${n}: the one you picked made it.` : `You picked ${wish + 1}. Number ${n} made it.`);
-}
-function pickThenThrowRace(m, btns) {
-  return pickThenThrow(m, btns, (i) => { mine = i + 1; return `You picked number <b>${i + 1}</b>: ${esc(low(m.table[i].short))}`; });
-}
-
-// ---------- WISH: wish for one entry, throw against its target; a miss = chance rolls the table ----------
-const wishName = (e) => e.home || (e.world ? `${e.world.place}, ${e.world.year}` : low(e.short));
-async function wishMoment(m) {
-  const tl = (e) => e.target === 6 ? "a 6" : `${e.target} or more`;
-  const btns = chips(m.table, (e) => `<b>${esc(e.short)}</b><span class="tgt">${tl(e)}</span>`);
-  msg(kicker(m), esc(m.intro), "Pick what you wish for. Then throw.");
-  const { wish, n, byDie } = await pickThenThrow(m, btns, (i) => `You wish for ${esc(wishName(m.table[i]))}: <b>${tl(m.table[i])}</b>`);
-  const w = m.table[wish], hit = n >= w.target, rolled = `You threw <b>${n}</b>${byDie ? "" : " (on screen)"}.`;
-  let e = w, land = wish;
-  if (!hit) {
-    btns[wish].classList.add("dim");
-    msg(kicker(m), `${rolled} <span class="miss">That wish needed ${tl(w)}.</span>`, "Chance rolls instead…");
-    setTurn("watch"); caption("CHANCE ROLLS · you watch");
-    await sleep(1300);
-    const f = await d6();
-    land = m.table.findIndex(it => it.faces.includes(f)); e = m.table[land];
-    await light(btns, land);
-  }
-  btns.forEach((b, k) => { b.classList.toggle("got", k === land); if (k !== land && k !== wish) b.classList.add("dim"); });
-  S.picks[m.id] = { wished: w, got: e, how: hit ? "hit" : "chance", n };
-  apply(m, e);
-  msg(kicker(m), esc(e.text), hit ? `${rolled} Your wish holds.` : (e === w ? "Chance gave you your wish anyway." : `You wished for ${esc(wishName(w))}. Chance chose this.`));
-}
-
-// ---------- CHOICE: you pick, you roll your die; a miss is settled by random.org ----------
-async function choiceMoment(m, age) {
-  const opts = m.options.filter(o => !o.needs || S.marks.has(o.needs));
-  const btns = chips(opts, (o, i) => `<b>${esc(o.short)}</b><span class="tgt">${tLabel(m, o)}</span>`);
-  msg(kicker(m), esc(m.intro), "Pick one. Then throw.");
-  const { wish, n, byDie } = await pickThenThrow(m, btns, (i) => `${esc(opts[i].short)}: <b>${tLabel(m, opts[i])}</b>`);
-  const o = opts[wish], t = target(m, o);
-  const hit = o.exact ? n === o.exact : n >= t;
-  let got = o, how = "hit";
-  if (!hit) {
-    btns[wish].classList.add("dim");
-    msg(kicker(m), `You rolled <b>${n}</b>. <span class="miss">${esc(cap(low(o.short)))} needed ${tLabel(m, o)}.</span>`, "Chance decides what you get instead…");
-    caption("CHANCE ROLLS · you watch");
-    await sleep(1600);
-    const c = await d6();
-    const easier = opts.filter(x => !x.exact && target(m, x) < hard(m, o)).sort((a, b) => target(m, b) - target(m, a))[0];
-    if (c <= 4 && easier) { got = easier; how = "easier"; }
-    else {
-      const pool = m.allotted.filter(a => (!a.needs || S.marks.has(a.needs)) && (!a.ifSpouse || S.spouse));
-      got = pool[(await draw(1, 1, pool.length))[0] - 1]; how = "allotted";
-      const b = document.createElement("button"); b.className = "ch allot got"; b.type = "button"; b.disabled = true;
-      b.innerHTML = `<b>${esc(got.short)}</b><span class="tgt">allotted</span>`; choicesEl.appendChild(b);
-    }
-  }
-  btns.forEach((b, k) => { b.classList.toggle("got", opts[k] === got); if (opts[k] !== got && k !== wish) b.classList.add("dim"); });
-  S.picks[m.id] = { wished: o, got, how, n };
-  apply(m, got);
-  const rolled = `You rolled <b>${n}</b>${byDie ? "" : " (on screen)"}.`, need = esc(cap(low(o.short))) + " needed " + tLabel(m, o);
-  if (how === "hit") msg(kicker(m), esc(got.text), `${rolled} ${need}.`);
-  else if (how === "easier") msg(kicker(m), esc(got.text), `${rolled} <span class="miss">${need}</span>. Chance gave you the next one down.`);
-  else msg(kicker(m), esc(got.text), `${rolled} <span class="miss">${need}</span>. Chance allotted you this instead.`);
-}
-
-// ---------- the run ----------
-async function play() {
-  S = freshLife(); lastBg = null; phaseShown = -1;
-  live.setPerson(null); live.setBackground(null);
-  phase = "idle"; winner = 0; mine = 0;
-  for (const m of MOMENTS) {
-    setPhase(m.phase);
-    const age = m.age ?? 62;
-    S.age = age;
-    if (m.kind === "race") live.setScene(drawBirth);
-    else if (m.kind !== "fluke") show(age);
-    if (m.kind === "race") await raceMoment(m);
-    else if (m.kind === "wish") await wishMoment(m);
-    else if (m.kind === "default") await defaultMoment(m, age);
-    else if (m.kind === "fluke") await flukeMoment(m, age);
-    else await choiceMoment(m, age);
-    if (m.id === "race") { S.scene = "a dim room, the first hours of a newborn's life, soft lamp light"; await sleep(1800); }
-    if (m.id === "end") S.scene = "a quiet room, an empty chair by a window, late afternoon light";
-    show(m.id === "end" ? S.endAge : age);
-    await waitFor(m.id === "end" ? "WHO YOU BECAME" : "NEXT");
-  }
-  ending();
-  await waitFor("AGAIN");
-  play();
-}
-
-// ---------- THE ENDING: who you became, from outside ----------
-function ending() {
-  setPhase(PHASES.length);
-  choicesEl.innerHTML = "";
-  const g = S.body.sex === "girl", she = g ? "she" : "he", She = g ? "She" : "He", her = g ? "her" : "his";
-  const T = (s) => String(s).replace(/\{she\}/g, she).replace(/\{She\}/g, She).replace(/\{her\}/g, her)
-    .replace(/\{Her\}/g, cap(her)).replace(/\{hers\}/g, g ? "hers" : "his").replace(/\{him\}/g, g ? "her" : "him");
-  const past = (id) => T(S.log.find(l => l.id === id).past);
-  const wishText = (pk) => {
-    const aim = T(pk.wished.aim || low(pk.wished.short)), pt = T(pk.got.past || pk.got.text);
-    return pk.how === "hit" ? pt : pk.how === "easier" ? `Went for ${aim}. ${pt}` : `Went for ${aim}; allotted ${pt}.`;
-  };
-  const p = S.picks, year = S.world.year;
-  const bodyWords = low(MOMENTS[0].table.find(e => e.body === S.body).text.replace(/^A (girl|boy)\.\s*/, "").replace(/\.$/, ""));
-  const forecastWords = low(MOMENTS[4].table.find(e => e.forecast === S.forecast).short);
-  const offer = p.offer.got;
-  let became = offer.became || "someone who worked";
-  became += { up: ", later promoted", boss: ", who ended up at the boss's desk", typo: ", kept on because a typo became the product's name", out: ", until restructured out" }[S.work] || "";
-  const match = { doctor: p.stream.got.id === "medical", engineer: p.stream.got.id === "science", officer: offer.job === "officer",
-                  abroad: offer.job === "abroad", marries: p.marriage.got.spouse?.includes("family") && S.marks.has("RICH"), famous: S.work === "typo" }[S.forecast];
-  const fl = Object.fromEntries(S.flukes.map(f => [f.id, f.hit]));
-  const flukeLines = [
-    fl.registry ? `At birth, a clerk added a letter to ${her} name.` + (offer.id === "interview" ? ` At 26 it got ${her} an interview meant for someone else.` : "")
-                  + (S.health === "dead-on-paper" ? ` At 47 it had ${her} declared dead: the dead man had the name spelled right.` : "")
-                  + (offer.id !== "interview" && S.health !== "dead-on-paper" ? " Nothing ever came of it." : "")
-                : "At birth, a clerk wrote the name down exactly right.",
-    fl.radio ? `At 7, ${she} took a broken radio apart and put it back together.` + (p.stream.got.id === "phones" ? ` At 16 ${she} left school to fix phones.` : "")
-               + (p.later.got.id === "repair" ? ` At 62 ${she} opened a repair shop, finally.` : "") + (p.stream.got.id !== "phones" && p.later.got.id !== "repair" ? " The knack waited, unused." : "")
-             : "At 7, a broken radio sat in a cupboard for thirty years.",
-    fl.train ? "At 19, a missed train, and a stranger on the platform." + (p.marriage.got.id === "stranger" ? ` At 31 ${she} married them.` : " They never met again.")
-             : "At 19, a missed train meant twenty minutes on a bench, nothing more.",
-    fl.typo ? "At 38, a typo ended up on the whiteboard." + (S.work === "typo" ? ` At 45 it saved ${her} job.` : " It stayed there for a year.")
-            : "At 38, a typo went round the office and was forgotten by lunch.",
-  ];
-  if (S.marks.has("HIDDEN")) flukeLines.push(`From the first day, the body hid something. It surfaced at 47${S.endAge ? ", and took a little off the end" : ""}.`);
-  const wishRow = (pk) => !pk ? null : pk.how === "hit" ? `Wished for ${wishName(pk.wished)}, and got it.`
-    : pk.got === pk.wished ? `Wished for ${wishName(pk.wished)}; chance gave it anyway.` : `Wished for ${wishName(pk.wished)}; got ${wishName(pk.got)}.`;
-  const rows = [
-    ...(p.race ? [[0, p.race.mine === p.race.winner ? `Picked number ${p.race.mine}, and it made it.` : `Picked number ${p.race.mine}; number ${p.race.winner} made it.`]] : []),
-    ...[wishRow(p.home), wishRow(p.world)].filter(Boolean).map(r => [0, r]),
-    [11, past("family")], [16, wishText(p.stream)], [23, past("economy")], [26, wishText(p.offer)], [31, wishText(p.marriage)],
-    [45, past("office")], [47, past("buried")], [62, wishText(p.later)], [S.endAge, `${She} died in ${year + S.endAge}.`],
-  ];
-  msgEl.hidden = false; msgEl.className = "msg end";
-  msgEl.innerHTML = `<span class="kicker">WHO YOU BECAME</span>
-    <span class="line">${esc(cap(became))}.</span>
-    <p>${She} was born a ${esc(S.body.sex)}, ${esc(bodyWords)}, into ${esc(S.home)}, in ${esc(S.world.place)}, ${year}.
-       The astrologer said ${she} would become ${esc(forecastWords)}. ${match ? "Just as the astrologer said." : `${She} didn't.`}</p>
-    <table>${rows.map(([a, t]) => `<tr><td>${a}</td><td>${esc(t)}</td></tr>`).join("")}</table>
-    <h3>THE SMALL THINGS</h3>
-    <ol>${flukeLines.map(l => `<li>${esc(l)}</li>`).join("")}</ol>`;
-  // the avatar stays as they ended, in their last room
-}
-function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
-
-// ---------- 1. THE RACE: drawn, no generation ----------
-let winner = 0, raceAt = 0, phase = "idle";
-function drawBirth(g, W, H, now) {
-  // H's sketch: the egg in the middle, the sperm around it, heads pointing in, tails trailing out
-  const t = now / 1000;
-  const cx = W * 0.5, cy = H * 0.47, er = H * 0.17;
-  const bg = g.createRadialGradient(cx, cy, 10, cx, cy, W * 0.75);
-  bg.addColorStop(0, "#f6c7c2"); bg.addColorStop(1, "#7a1f2b");
-  g.fillStyle = bg; g.fillRect(0, 0, W, H);
-  const born = phase === "result";
-  const glow = born ? 0.5 + 0.5 * Math.sin((now - raceAt) / 120) : 0;
-  g.fillStyle = `rgba(255,240,220,${0.22 + glow * 0.45})`; g.beginPath(); g.arc(cx, cy, er * 1.22, 0, 7); g.fill();
-  g.fillStyle = "#fff4e6"; g.beginPath(); g.arc(cx, cy, er, 0, 7); g.fill();
-  g.strokeStyle = "rgba(122,31,43,0.45)"; g.lineWidth = 2.5; g.stroke();
-  g.strokeStyle = "rgba(122,31,43,0.18)"; g.lineWidth = 1; g.beginPath(); g.arc(cx, cy, er * 0.9, 0, 7); g.stroke();
-  g.fillStyle = "#c98f8a"; g.beginPath(); g.arc(cx - er * 0.08, cy - er * 0.3, er * 0.16, 0, 7); g.fill();
-  const n = 6, ring = er + H * 0.15, tail = H * 0.12;
-  const pix = live.stat.filter === "pixel";
-  const big = pix ? 1.5 : 1, hx = Math.max(7, H * 0.034) * big, hy = Math.max(5, H * 0.024) * big;
-  for (let i = 1; i <= n; i++) {
-    const a = -Math.PI / 2 + (Math.PI * 2 / n) * (i - 0.5);
-    const ux = Math.cos(a), uy = Math.sin(a);
-    let d = ring + Math.sin(t * 2 + i * 1.7) * 3;
-    if (phase === "race") d = ring - Math.min(1, (now - raceAt) / 1400) * H * 0.06 + Math.sin(t * 5 + i) * 3;
-    if (phase === "result") {
-      const k = Math.min(1, (now - raceAt) / 1600);
-      if (i === winner) d = (ring - H * 0.06) + (er + hx * 0.6 - (ring - H * 0.06)) * k;
-      else { d = ring - H * 0.06 + k * H * 0.05; g.globalAlpha = 1 - k * 0.8; }
-    }
-    const x = cx + ux * d, y = cy + uy * d, sel = i === mine;
-    g.strokeStyle = sel ? "#111" : "rgba(255,255,255,0.95)"; g.lineWidth = pix ? (sel ? 6 : 5) : (sel ? 3 : 2); g.lineCap = "round";
-    g.beginPath();
-    for (let s = 0; s <= 24; s++) {
-      const along = hx + (s / 24) * tail, side = Math.sin(t * 9 + s * 0.5 + i) * (s * 0.3);
-      const px = x + ux * along - uy * side, py = y + uy * along + ux * side;
-      s ? g.lineTo(px, py) : g.moveTo(px, py);
-    }
-    g.stroke();
-    g.save(); g.translate(x, y); g.rotate(a);
-    g.fillStyle = sel ? "#111" : "#fff"; g.beginPath(); g.ellipse(0, 0, hx, hy, 0, 0, 7); g.fill();
-    g.restore();
-    g.fillStyle = sel ? "#fff" : "#7a1f2b"; g.font = `600 ${Math.round(hy * 1.15)}px system-ui, sans-serif`; g.textAlign = "center"; g.textBaseline = "middle";
-    g.fillText(i, x, y + 1);
-    g.globalAlpha = 1;
-  }
-}
-
-// ---------- status ----------
 function status() {
   const st = live.stat;
-  statusEl.innerHTML = !st.online ? "<b>server offline</b>"
-    : [`<b>${st.fps}</b> fps`, source && `chance <b>${source}</b>`, st.note, st.seg].filter(Boolean).join(" · ");
+  statusEl.innerHTML = !st.online ? "<b>server offline</b>" : [`<b>${st.fps}</b> fps`, source && `chance <b>${source}</b>`, st.note, st.seg].filter(Boolean).join(" · ");
   requestAnimationFrame(status);
 }
 status();
-live.camera.catch(e => msg("NO CAMERA", esc(e.message || e.name)));
-play();                                                     // straight into the race
+live.camera.catch(e => say({ k: "NO CAMERA", s: esc(e.message || e.name) }));
+life().catch(e => say({ k: "COULDN'T START", s: esc(e.message || e) }));
 </script>
 </body>
 </html>

@@ -5,7 +5,10 @@
 //   (a browser filter; leave it out to use the look picked on /panel)
 //   Everything about the painting itself (change, style, LoRAs, steadiness) is tuned on /panel and lives on the server.
 //   live.setPerson("a baby girl ...")     // null = show the real you (or nothing)
+//   live.setPerson(a, b, 0.3)             // 30% of the way from prompt a to prompt b (the avatar ages smoothly)
 //   await live.setBackground("a village") // null = your real room
+//   await live.setBackground(p, { keep: 0.5, fade: 2500 })   // painted FROM the last world, crossfaded in over 2.5 s
+//   live.hold(true)                       // freeze the screen (while the die rolls); hold(false) lets go
 //   live.setScene(fn)                     // draw your own scene instead (fn(ctx, W, H, now)); null = back to live
 //   live.stat                             // fps, timings, notes for a status line
 
@@ -19,8 +22,8 @@ export function createLive({ out, video, params }) {
   const tiny = Object.assign(document.createElement("canvas"), { width: 32, height: 20 });       // "has anything moved?"
   const poseCanvas = Object.assign(document.createElement("canvas"), { width: 64, height: 38 }); // "where is the body?"
 
-  let online = false, fgPrompt = null, bgPrompt = null, flying = 0, seq = 0, shownSeq = 0;
-  let bgImg = null, oldBg = null, bgAt = 0, person = null, personAt = 0, fade = 150, lastSig = null;
+  let online = false, fgPrompt = null, fgTo = "", fgMix = 0, bgPrompt = null, flying = 0, seq = 0, shownSeq = 0;
+  let bgImg = null, oldBg = null, bgAt = 0, bgFade = 600, person = null, personAt = 0, fade = 150, lastSig = null, held = false;
   let personPose = null, prevPose = null, livePose = null;
   let segmenter = null, segImage = null, segOk = false, camCover = 0, scene = null;
   const stat = { ms: 0, bgMs: 0, times: [], note: "", seg: "", online: false, engine: "", references: true, fps: "–" };
@@ -142,12 +145,14 @@ export function createLive({ out, video, params }) {
   // ---------- the screen ----------
   function drawBackground(g) {
     if (!bgImg) { g.drawImage(grab, 0, 0); return; }         // no background: your room stays
-    const k = Math.min(1, (performance.now() - bgAt) / 600);
+    let k = Math.min(1, (performance.now() - bgAt) / bgFade);
+    k = k * k * (3 - 2 * k);                                  // ease in and out: a slow paint-over, no visible start or stop
     if (oldBg && k < 1) { g.globalAlpha = 1; g.drawImage(oldBg, 0, 0, W, H); g.globalAlpha = k; }
     g.drawImage(bgImg, 0, 0, W, H);
     g.globalAlpha = 1;
   }
   function render(now) {
+    if (held) { requestAnimationFrame(render); return; }      // everything holds still (the die is rolling)
     if (capture()) {
       segment();
       if (scene) scene(octx, W, H, now);                                     // a drawn scene (e.g. birth)
@@ -308,7 +313,7 @@ export function createLive({ out, video, params }) {
   let pumpTimer = 0;
   const schedule = (ms) => { clearTimeout(pumpTimer); pumpTimer = setTimeout(pump, ms); };
   async function pump() {
-    if (!fgPrompt || scene || flying >= MAX_FLYING || !online) return;
+    if (!fgPrompt || scene || held || flying >= MAX_FLYING || !online) return;
     if (!video.videoWidth) { schedule(100); return; }
     // if you haven't moved, don't make a new frame: a still person stays perfectly still
     const sig = signature();
@@ -316,6 +321,7 @@ export function createLive({ out, video, params }) {
     lastSig = sig;
     flying++;
     const mine = ++seq, prompt = fgPrompt;
+    const ageing = fgTo && fgMix > 0.001 ? `&to=${encodeURIComponent(fgTo)}&mix=${fgMix.toFixed(3)}` : "";
     // you, cut out and placed on the background, so the light and colours blend
     const s = send.getContext("2d");
     drawBackground(s);
@@ -326,7 +332,7 @@ export function createLive({ out, video, params }) {
     schedule(Math.max(40, stat.ms * 0.5));               // start the next one about halfway through this one
     try {
       const jpeg = await new Promise(r => send.toBlob(r, "image/jpeg", 0.85));
-      const q = "prompt=" + encodeURIComponent(prompt);     // all tuning is on the server (/panel)
+      const q = "prompt=" + encodeURIComponent(prompt) + ageing;   // all tuning is on the server (/panel)
       const headers = { "Content-Type": "image/jpeg" };
       if (pts) headers["X-Pose"] = JSON.stringify(pts);
       if (stat.rtt) headers["X-RTT"] = String(Math.round(stat.rtt));   // so the panel can show where the time goes
@@ -337,7 +343,8 @@ export function createLive({ out, video, params }) {
       const bmp = await createImageBitmap(await res.blob());
       stat.rtt = performance.now() - sent;                 // camera frame out -> painted frame back, as the browser sees it
       flying--;
-      if (mine < shownSeq || prompt !== fgPrompt) { bmp.close(); pump(); return; }   // late or out of date: skip it
+      if (mine < shownSeq || !fgPrompt) { bmp.close(); pump(); return; }   // late (or the avatar was switched off): skip it
+      // (a frame made for the previous age is still shown: that's what makes the ageing a morph, not a jump)
       shownSeq = mine;
       const now = performance.now();
       if (person) {                                       // keep the current frame to fade out from
@@ -364,34 +371,45 @@ export function createLive({ out, video, params }) {
   function moved(a, b) { let t = 0; for (let i = 0; i < a.length; i++) t += Math.abs(a[i] - b[i]); return t / a.length; }
   const refresh = () => { lastSig = null; };
 
-  async function setBackground(prompt) {
+  let bgAsk = 0;
+  async function setBackground(prompt, { keep = 0, fade = 600, fresh = false } = {}) {
     bgPrompt = prompt || null;
     if (!bgPrompt) { oldBg = null; bgImg = null; refresh(); return; }
     stat.note = "making background…";
+    const ask = ++bgAsk;
     try {
-      const res = await fetch("/background?prompt=" + encodeURIComponent(bgPrompt), { cache: "no-store" });
+      const q = `prompt=${encodeURIComponent(bgPrompt)}&keep=${(+keep).toFixed(2)}${fresh ? "&fresh=1" : ""}`;
+      const res = await fetch("/background?" + q, { cache: "no-store" });
       if (!res.ok) throw new Error("status " + res.status);
       stat.bgMs = +res.headers.get("X-Gen-Ms") || 0;
       const img = await createImageBitmap(await res.blob());
-      if (prompt !== bgPrompt) { img.close(); return; }   // a newer background was asked for meanwhile
-      oldBg = bgImg; bgImg = img; bgAt = performance.now(); refresh();
+      if (ask !== bgAsk) { img.close(); return; }          // a newer background was asked for meanwhile
+      oldBg = snapshotBg(); bgImg = img; bgAt = performance.now(); bgFade = Math.max(1, fade); refresh();
       stat.note = "";
     } catch (e) { stat.note = ""; offline(); }
   }
-  function setPerson(prompt) {
-    fgPrompt = prompt || null;
-    stat.times.length = 0;
+  // the world as it is on screen right now (mid-fade too), so a new fade starts from exactly what you see
+  function snapshotBg() {
+    if (!bgImg) return null;
+    const c = mk(); drawBackground(c.getContext("2d")); return c;
+  }
+  function setPerson(prompt, to = "", mix = 0) {
+    const same = (prompt || null) === fgPrompt && to === fgTo && Math.abs(mix - fgMix) < 0.002;
+    if (same) return;
+    if ((prompt || null) !== fgPrompt) stat.times.length = 0;
+    fgPrompt = prompt || null; fgTo = to || ""; fgMix = mix || 0;
     refresh();
     if (!fgPrompt && person) { person.close(); person = null; }
     pump();
   }
+  function hold(on) { held = !!on; if (!held) { refresh(); pump(); } }
   function setScene(fn) { scene = fn || null; refresh(); if (!scene) pump(); }
 
   startSegmenter();
   const camera = startCamera();
   connect();
   return {
-    stat, setPerson, setBackground, setScene, refresh, camera,
+    stat, setPerson, setBackground, setScene, refresh, camera, hold,
     whenReady: () => online ? Promise.resolve() : new Promise(r => ready.push(r)),
     get size() { return { W, H }; },
     reconnect: offline,

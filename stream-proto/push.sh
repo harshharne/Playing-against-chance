@@ -3,8 +3,8 @@
 #     ./push.sh          sends the code (pages + server) and tells you whether the server needs a restart
 #     ./push.sh loras    also sends the LoRA files in loras/ (only needed when you add your own)
 set -e
-VM="chance-gpu"
-ZONE="asia-south1-b"
+VM="chance-rtx"
+ZONE="asia-south1-c"
 cd "$(dirname "$0")"
 
 # which Python files changed since the last push? (those need a server restart; web files don't)
@@ -12,9 +12,24 @@ SUMS=$(shasum stream_server.py download_models.py 2>/dev/null)
 LAST="$HOME/.stream-proto-last-push"           # kept outside the folder, so replacing the folder doesn't lose it
 OLD=$(cat "$LAST" 2>/dev/null || true)
 
+# trajectory.json: the WORDS come from this Mac (edit them here); the TIMINGS come from the cloud machine
+# (that's where /panel -> PACING saves them). So first fetch the cloud copy and keep its "pacing" and "world".
+if gcloud compute scp --zone="$ZONE" "$VM":~/stream-proto/trajectory.json /tmp/stream-proto-cloud-trajectory.json --quiet 2>/dev/null; then
+  python3 - <<'PY'
+import json
+mine, cloud = json.load(open("trajectory.json")), json.load(open("/tmp/stream-proto-cloud-trajectory.json"))
+changed = [k for k in ("pacing", "world") if cloud.get(k) and cloud.get(k) != mine.get(k)]
+for k in changed:
+    mine[k] = cloud[k]
+if changed:
+    json.dump(mine, open("trajectory.json", "w"), indent=2, ensure_ascii=False)
+    print("kept the timings tuned on /panel (" + ", ".join(changed) + ") in your trajectory.json")
+PY
+fi
+
 echo "sending code to $VM ..."
 gcloud compute scp --zone="$ZONE" --recurse \
-  web stream_server.py download_models.py styles.json setup_cloud.sh CLOUD.md README.md \
+  web stream_server.py download_models.py styles.json trajectory.json setup_cloud.sh CLOUD.md README.md \
   "$VM":~/stream-proto/ --quiet
 
 if [ "$1" = "loras" ]; then

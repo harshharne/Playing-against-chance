@@ -53,6 +53,8 @@ button.ghost { background: #fff; color: var(--ink); }
 .refslot.full .x { display: block; }
 .refctl { flex: 1; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .status { font-size: 12px; color: var(--dim); min-height: 1.3em; }
+.pace { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px 18px; }
+.pace h3 { grid-column: 1 / -1; margin: 6px 0 -4px; font-size: 10px; font-weight: 700; letter-spacing: 0.14em; color: var(--ink); }
 .status.bad { color: var(--bad); }
 </style>
 </head>
@@ -141,6 +143,13 @@ button.ghost { background: #fff; color: var(--ink); }
         <dt>WORLD</dt><dd id="r_world">–</dd>
         <dt>GPU MEMORY</dt><dd id="r_gpu">–</dd>
       </dl>
+    </section>
+
+    <section class="wide">
+      <h2>PACING</h2>
+      <p class="note">The unfolding, in seconds. Every one is a <b>minimum</b>: cards and throws always wait for the player. Saved straight into <b>trajectory.json</b>; the game picks a change up within two seconds. <b id="pace_total"></b></p>
+      <div class="pace" id="pace"></div>
+      <div class="status" id="pace_stat"></div>
     </section>
 
     <section>
@@ -304,6 +313,82 @@ $("reset").addEventListener("click", async () => {
   show(await r.json(), true); say("back to defaults");
 });
 listPresets();
+
+// ---------- pacing (trajectory.json) ----------
+const PACE = [
+  ["EVERY EVENT", null],
+  ["fade", "TEXT FADE", 0.2, 3, 0.1, "the old text fades out fully, then the new one in"],
+  ["arrive", "ARRIVE", 1, 12, 0.5, "bridge line, the age counting up, the world and the avatar changing"],
+  ["world_fade", "WORLD PAINTS IN", 0.3, 6, 0.1, "the crossfade from one world to the next"],
+  ["chapter", "CHAPTER BREATH", 3, 20, 0.5, "the longer arrive after Whom, the exams, Settling down"],
+  ["CHOSEN", null],
+  ["settle", "SETTLE", 0, 8, 0.5, "name + setup alone, before the cards"],
+  ["card_rise", "CARDS RISE", 0, 1, 0.05, "between one card and the next"],
+  ["lock", "LOCK", 0.3, 4, 0.1, "your card glides to the centre, then the target"],
+  ["land", "LAND", 0.5, 5, 0.1, "the number, big and alone, then hit or miss"],
+  ["miss", "MISS", 1, 6, 0.1, "the allotted card turns over"],
+  ["linger", "LINGER", 1, 15, 0.5, "what happened stays while the new world paints in"],
+  ["HAPPENS AND FLUKES", null],
+  ["happen_hold", "HAPPENS: HOLD", 0.5, 6, 0.1, "\"Something happens.\""],
+  ["happen_linger", "HAPPENS: LINGER", 1, 15, 0.5, "the outcome stays"],
+  ["fluke_hold", "FLUKE: HOLD", 1, 8, 0.5, "the small text"],
+  ["fluke_linger", "FLUKE: LINGER", 1, 12, 0.5, "the job it led to"],
+  ["reveal", "FLUKE COMES BACK", 1, 12, 0.5, "the quote, word for word"],
+  ["final_silence", "FINAL SILENCE", 0, 20, 0.5, "after Death, before anything else"],
+  ["WORLD", null],
+  ["w:keep", "WORLD KEEPS", 0, 0.9, 0.05, "how much of the last world survives into the next (0 = a new place each time)"],
+  ["w:chapter_keep", "AT A CHAPTER", 0, 0.9, 0.05, "the same, between phases (lower = repaints more)"],
+];
+let pace = null, paceTimer = 0, pacePending = { pacing: {}, world: {} };
+function paceTotal() {                                         // a rough length of one life, without the player's own time
+  if (!pace || !pace.events) return;
+  const p = pace.pacing, f = p.fade;
+  let t = 0;
+  pace.events.forEach((ev, i) => {
+    const prev = pace.events[i - 1];
+    if (prev) t += (prev.chapter ? p.chapter : p.arrive) + (prev.bridge ? 3 * f : 0);
+    if (ev.type === "chosen") t += 2 * f + p.settle + ev.cards.length * p.card_rise + 0.5 + p.lock + 0.7 + 0.5 + p.land + f + p.miss * 0.5 + 2 * f + p.linger;
+    else if (ev.type === "happens") t += 2 * f + p.happen_hold + (ev.reveals ? p.reveal + 2 * f : 0) + 2 * f + p.happen_linger;
+    else t += 2 * f + p.fluke_hold + (ev.flukes ? 2 * f + p.fluke_linger : 0);
+  });
+  t += p.arrive + 2 * f + p.final_silence;
+  $("pace_total").textContent = `One life at these timings: about ${Math.round(t / 60)} min, plus the player's own time with the cards and the die.`;
+}
+function paceBuild() {
+  $("pace").innerHTML = PACE.map(([k, label, lo, hi, step, help]) => !label ? `<h3>${k}</h3>` :
+    `<label class="ctl">${label} <span class="v" id="pv_${k}"></span><input type="range" data-k="${k}" min="${lo}" max="${hi}" step="${step}"><small>${help}</small></label>`).join("");
+  $("pace").querySelectorAll("input").forEach(inp => inp.addEventListener("input", () => {
+    const k = inp.dataset.k, v = +inp.value;
+    $("pv_" + k).textContent = k.startsWith("w:") ? v.toFixed(2) : v.toFixed(1) + " s";
+    if (k.startsWith("w:")) { pacePending.world[k.slice(2)] = v; pace.world[k.slice(2)] = v; } else { pacePending.pacing[k] = v; pace.pacing[k] = v; }
+    paceTotal();
+    clearTimeout(paceTimer);
+    paceTimer = setTimeout(async () => {
+      const body = pacePending; pacePending = { pacing: {}, world: {} };
+      try {
+        const r = await (await fetch("/trajectory/pacing", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })).json();
+        $("pace_stat").textContent = "saved to trajectory.json"; $("pace_stat").className = "status";
+      } catch (e) { $("pace_stat").textContent = "couldn't save (server offline?)"; $("pace_stat").className = "status bad"; }
+    }, 250);
+  }));
+}
+function paceShow() {
+  $("pace").querySelectorAll("input").forEach(inp => {
+    const k = inp.dataset.k, v = k.startsWith("w:") ? pace.world[k.slice(2)] : pace.pacing[k];
+    if (v === undefined) { inp.disabled = true; return; }
+    if (document.activeElement !== inp) inp.value = v;
+    $("pv_" + k).textContent = k.startsWith("w:") ? (+v).toFixed(2) : (+v).toFixed(1) + " s";
+  });
+  paceTotal();
+}
+async function paceLoad() {
+  try {
+    const doc = await (await fetch("/trajectory", { cache: "no-store" })).json();
+    if (doc.error) { $("pace_stat").textContent = doc.error; $("pace_stat").className = "status bad"; return; }
+    pace = doc; paceShow();
+  } catch (e) {}
+}
+paceBuild(); paceLoad();
 </script>
 </body>
 </html>

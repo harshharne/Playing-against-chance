@@ -1,4 +1,4 @@
-# Running the generation on Google Cloud (L4 GPU, Mumbai)
+# Running the generation on Google Cloud (now: chance-rtx, RTX PRO 6000 spot, asia-south1-c; first set up on an L4)
 
 The game page, camera and filters stay on your Mac. Only stream_server.py runs on the cloud machine.
 A tunnel makes the cloud server show up as http://localhost:8766 on your Mac, so nothing in the code changes.
@@ -25,20 +25,20 @@ If it still doesn't after 15 minutes, run the installer line by hand with sudo, 
 (if asia-south1-b has no capacity, try asia-south1-a or asia-south1-c, and use that zone everywhere below)
 
 ## Once: copy the project up and set it up (from your Mac, in ~/Downloads)
-    gcloud compute scp stream-proto.zip chance-gpu:~ --zone=asia-south1-b
-    gcloud compute ssh chance-gpu --zone=asia-south1-b
+    gcloud compute scp stream-proto.zip chance-rtx:~ --zone=asia-south1-c
+    gcloud compute ssh chance-rtx --zone=asia-south1-c
         (now you're on the cloud machine)
         sudo apt-get install -y unzip && unzip -o stream-proto.zip && cd stream-proto
         bash setup_cloud.sh
 
 ## Every session
-1. Start the machine:      gcloud compute instances start chance-gpu --zone=asia-south1-b
-2. Start the server:       gcloud compute ssh chance-gpu --zone=asia-south1-b
+1. Start the machine:      gcloud compute instances start chance-rtx --zone=asia-south1-c
+2. Start the server:       gcloud compute ssh chance-rtx --zone=asia-south1-c
                            cd ~/stream-proto && source .venv/bin/activate && python stream_server.py
 3. Open the tunnel (a NEW Mac Terminal window, leave it open):
-                           gcloud compute ssh chance-gpu --zone=asia-south1-b -- -N -L 8766:localhost:8766
+                           gcloud compute ssh chance-rtx --zone=asia-south1-c -- -N -L 8766:localhost:8766
 4. On your Mac, open:      http://localhost:8766/game     (make sure the Mac server is NOT running)
-5. When done, STOP it:     gcloud compute instances stop chance-gpu --zone=asia-south1-b
+5. When done, STOP it:     gcloud compute instances stop chance-rtx --zone=asia-south1-c
    A stopped machine costs only its disk (cents a month). A running one ~US$0.74 an hour from your credit.
 
 ## Updating the code later

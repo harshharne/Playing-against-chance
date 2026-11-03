@@ -1,0 +1,747 @@
+{
+  "_how": [
+    "The life, from H's 'Life Trajectory v1' (3 Nov 2026). The game reads this file at the start of every life, so edits show up on the next life (no restart).",
+    "target: write it the way the player sees it: '3 or more', 'a 6', 'exactly 1'.",
+    "scene: what the world shows (painted from the previous world). place (Where cards) is added to every scene after it. wear (Whom cards) dresses the avatar.",
+    "chapter: true = a longer breath after this event. tries: throws allowed (Birth = 3). allot: false = a miss allots nothing (Love).",
+    "pacing: seconds, all minimums. They're also sliders on /panel (PACING), which save back into this file. world.keep: how much of the last world survives into the next (0-1).",
+    "phase_refs: optional style reference paintings, one per phase (BASELINE, CRUST, ADULTHOOD, LATER LIFE), e.g. \"refs/crust.jpg\" in web/refs/. Empty = none."
+  ],
+  "pacing": {
+    "fade": 1.2,
+    "arrive": 4.5,
+    "world_fade": 2.5,
+    "settle": 3.0,
+    "card_rise": 0.25,
+    "lock": 1.5,
+    "land": 2.0,
+    "miss": 2.5,
+    "linger": 7.0,
+    "happen_hold": 2.5,
+    "happen_linger": 8.0,
+    "fluke_hold": 4.0,
+    "fluke_linger": 6.0,
+    "reveal": 5.0,
+    "chapter": 9.0,
+    "final_silence": 10.0
+  },
+  "world": {
+    "keep": 0.5,
+    "chapter_keep": 0.25
+  },
+  "phase_refs": [
+    "",
+    "",
+    "",
+    ""
+  ],
+  "events": [
+    {
+      "id": "birth",
+      "title": "Birth",
+      "type": "chosen",
+      "age": 0,
+      "tries": 3,
+      "setup": "Before anything else, the form needs a box ticked.",
+      "scene": "a hospital maternity ward, a small cot under a window, soft morning light",
+      "cards": [
+        {
+          "name": "Boy",
+          "reveals": "Sweets are handed out.",
+          "target": "3 or more",
+          "scene": "a hospital ward, a nurse handing out sweets, blue ribbons",
+          "gender": "boy"
+        },
+        {
+          "name": "Girl",
+          "reveals": "Sweets are handed out, eventually.",
+          "target": "3 or more",
+          "scene": "a hospital ward, a box of sweets on a bedside table, pink ribbons",
+          "gender": "girl"
+        },
+        {
+          "name": "Non-binary",
+          "reveals": "The form has two boxes. You'll have to insist.",
+          "target": "a 6",
+          "scene": "a hospital office, a paper form with two boxes, a pen",
+          "gender": "nb"
+        }
+      ],
+      "bridge": "The nurse writes it down. Somewhere, a map unfolds."
+    },
+    {
+      "id": "where",
+      "title": "Where",
+      "type": "chosen",
+      "age": 0,
+      "setup": "Somewhere on the map, a cot is waiting.",
+      "scene": "an old paper world map unfolding on a wooden table, soft light",
+      "cards": [
+        {
+          "name": "Sub-Saharan Africa",
+          "reveals": "The youngest region on earth. Everyone is your age.",
+          "target": "2 or more",
+          "scene": "a cot in a small room with a tin roof",
+          "place": "sub-saharan africa, red earth, acacia trees, tin roofs, warm dusty light"
+        },
+        {
+          "name": "South Asia",
+          "reveals": "A fifth of humanity, and all of them have an opinion about your name.",
+          "target": "2 or more",
+          "scene": "a cot in a busy home, relatives crowding round",
+          "place": "south asia, crowded lanes, monsoon clouds, colourful walls"
+        },
+        {
+          "name": "East Asia",
+          "reveals": "A billion and a half people, very few of them siblings.",
+          "target": "3 or more",
+          "scene": "a cot in a quiet small apartment",
+          "place": "east asia, dense city blocks, apartment towers, neon signs"
+        },
+        {
+          "name": "Southeast Asia and the Pacific",
+          "reveals": "Thousands of islands. The nearest hospital is on another one.",
+          "target": "4 or more",
+          "scene": "a cot in a wooden stilt house by the sea, a boat outside",
+          "place": "southeast asia, tropical islands, palm trees, turquoise sea"
+        },
+        {
+          "name": "Middle East and North Africa",
+          "reveals": "Oil under the ground, history on top of it.",
+          "target": "4 or more",
+          "scene": "a cot in a sandstone house, oil derricks on the horizon",
+          "place": "middle east, desert, sandstone buildings, domes, golden light"
+        },
+        {
+          "name": "Latin America",
+          "reveals": "Between two oceans, and always between two currencies.",
+          "target": "5 or more",
+          "scene": "a cot in a painted house on a green hillside",
+          "place": "latin america, bright painted houses, green hills"
+        },
+        {
+          "name": "Europe",
+          "reveals": "Free healthcare, expensive everything else.",
+          "target": "a 6",
+          "scene": "a cot in a tidy clinic, a nurse in a white uniform",
+          "place": "europe, old stone streets, tiled roofs, grey rainy sky"
+        },
+        {
+          "name": "North America",
+          "reveals": "The passport everyone else queues for.",
+          "target": "a 6",
+          "scene": "a cot in a large suburban house, a passport on the table",
+          "place": "north america, wide suburbs, highways, big skies"
+        }
+      ],
+      "bridge": "The place is decided. Now, whose house."
+    },
+    {
+      "id": "whom",
+      "title": "Whom",
+      "type": "chosen",
+      "age": 0,
+      "chapter": true,
+      "setup": "The household decides most of what comes next, and you don't get a vote.",
+      "scene": "the front door of a home, seen from a cot",
+      "cards": [
+        {
+          "name": "Landless farmers",
+          "reveals": "Five children, one field, someone else's.",
+          "target": "2 or more",
+          "scene": "a mud house at the edge of a field, five children, a borrowed plough",
+          "wear": "simple worn cotton clothes"
+        },
+        {
+          "name": "A shopkeeper's family",
+          "reveals": "You live above the shop and work in it by seven.",
+          "target": "3 or more",
+          "scene": "a small shop with a home above it, shelves of jars, a counter",
+          "wear": "plain everyday clothes"
+        },
+        {
+          "name": "Salaried, on loans",
+          "reveals": "A loan for the flat, the car and the fridge.",
+          "target": "3 or more",
+          "scene": "a small apartment with a new fridge, a car parked outside, bills on the table",
+          "wear": "neat office clothes"
+        },
+        {
+          "name": "Devout and strict",
+          "reveals": "Prayers before breakfast. Questions, never.",
+          "target": "4 or more",
+          "scene": "a modest home with a shrine, prayer books, morning light",
+          "wear": "modest traditional clothes"
+        },
+        {
+          "name": "Artists, rent overdue",
+          "reveals": "Love, books, and a landlord at the door.",
+          "target": "5 or more",
+          "scene": "a cluttered flat full of books and paintings, a landlord at the door",
+          "wear": "paint-stained bohemian clothes"
+        },
+        {
+          "name": "Old money",
+          "reveals": "Everything is paid for, including the silence.",
+          "target": "a 6",
+          "scene": "a grand old mansion, high ceilings, portraits, a silent dining hall",
+          "wear": "expensive tailored clothes"
+        },
+        {
+          "name": "A politician's family",
+          "reveals": "Your birthday is a public event.",
+          "target": "exactly 1",
+          "scene": "a large house with posters and garlands, a crowd at the gate, cameras",
+          "wear": "crisp white formal clothes"
+        }
+      ],
+      "bridge": "You learn to walk, then to wait. Eight years pass."
+    },
+    {
+      "id": "school",
+      "title": "The school year",
+      "type": "happens",
+      "age": 8,
+      "scene": "a school classroom, rows of wooden desks, a blackboard",
+      "outcomes": {
+        "good": {
+          "text": "A teacher notices you and pins your drawing on the wall. She keeps it for years.",
+          "scene": "a classroom wall with a child's drawing pinned on it, a kind teacher"
+        },
+        "bad": {
+          "text": "The family moves in the middle of the year. New school, new accent, nobody saves you a seat.",
+          "scene": "a new unfamiliar classroom, one empty desk at the back, moving boxes"
+        },
+        "neutral": {
+          "text": "A year passes. You learn long division and forget it by summer.",
+          "scene": "a blackboard full of long division, summer light through the window"
+        }
+      },
+      "bridge": "School, homework, school. Eight more years."
+    },
+    {
+      "id": "education",
+      "title": "Education",
+      "type": "chosen",
+      "age": 16,
+      "setup": "Choose a stream at sixteen, as if you knew who you'd be at forty.",
+      "scene": "a school noticeboard with lists of names, a crowded corridor",
+      "cards": [
+        {
+          "name": "Arts",
+          "reveals": "There's always room. The relatives will ask what you'll do with it.",
+          "target": "2 or more",
+          "scene": "an art room with easels and old books"
+        },
+        {
+          "name": "Commerce",
+          "reveals": "Accounts, and a reasonable future.",
+          "target": "3 or more",
+          "scene": "a classroom with ledgers and calculators"
+        },
+        {
+          "name": "Science",
+          "reveals": "The default for anyone whose parents worry.",
+          "target": "4 or more",
+          "scene": "a science lab with test tubes and a periodic table"
+        },
+        {
+          "name": "Engineering",
+          "reveals": "Two years in a coaching town for a rank and a seat.",
+          "target": "5 or more",
+          "scene": "a coaching town, rows of billboards, students with heavy bags"
+        },
+        {
+          "name": "The medical seat",
+          "reveals": "One for the whole district.",
+          "target": "a 6",
+          "scene": "a medical college hall, white coats, an anatomy skeleton"
+        },
+        {
+          "name": "Drop out, start a channel",
+          "reveals": "Four followers, all family.",
+          "target": "exactly 1",
+          "scene": "a bedroom with a phone on a tripod and a ring light"
+        }
+      ],
+      "bridge": "Two years of studying for one week of exams."
+    },
+    {
+      "id": "exams",
+      "title": "The exams",
+      "type": "happens",
+      "age": 18,
+      "chapter": true,
+      "scene": "an exam hall, rows of desks, a big clock on the wall",
+      "outcomes": {
+        "good": {
+          "text": "The paper leaks. The exam is held again, and the retest is easier.",
+          "scene": "an exam hall notice board: exam cancelled, retest"
+        },
+        "bad": {
+          "text": "You fall ill in exam week. You pass, barely, and the marksheet follows you for years.",
+          "scene": "a bed with medicine bottles, a marksheet on the table"
+        },
+        "neutral": {
+          "text": "You make a friend who will call only when they need something, for the next forty years.",
+          "scene": "two friends outside an exam hall, a phone ringing"
+        }
+      },
+      "bridge": "The marksheet is framed, or hidden. You're twenty, and someone asks what you want to be."
+    },
+    {
+      "id": "dream",
+      "title": "The dream",
+      "type": "chosen",
+      "age": 20,
+      "setup": "Who do you dream of becoming?",
+      "scene": "a rooftop at dusk, city lights below",
+      "cards": [
+        {
+          "name": "A doctor, as planned",
+          "reveals": "Everyone else's dream, now yours.",
+          "target": "2 or more",
+          "scene": "a hospital corridor, a white coat on a hook"
+        },
+        {
+          "name": "Rich, honestly",
+          "reveals": "No poetry about it.",
+          "target": "3 or more",
+          "scene": "a glass office tower, a shiny car"
+        },
+        {
+          "name": "Someone who leaves",
+          "reveals": "Anywhere but here.",
+          "target": "3 or more",
+          "scene": "an airport departures hall, a single suitcase"
+        },
+        {
+          "name": "An artist",
+          "reveals": "Poor, but interesting at dinner.",
+          "target": "4 or more",
+          "scene": "a small studio with canvases and a single lamp"
+        },
+        {
+          "name": "Someone people remember",
+          "reveals": "A statue, or at least a plaque.",
+          "target": "5 or more",
+          "scene": "a town square with an empty statue plinth"
+        },
+        {
+          "name": "Left alone",
+          "reveals": "The rarest thing on the list.",
+          "target": "a 6",
+          "scene": "a quiet cabin in the hills, nobody around"
+        }
+      ],
+      "bridge": "You hold on to the dream for two years. Then the world does something."
+    },
+    {
+      "id": "swan",
+      "title": "The black swan",
+      "type": "happens",
+      "age": 22,
+      "scene": "a city street, a big news screen, people looking up",
+      "outcomes": {
+        "good": {
+          "text": "A technology nobody saw coming arrives. It happens to need exactly what you know.",
+          "scene": "a bright new office full of strange new machines"
+        },
+        "bad": {
+          "text": "A pandemic closes the world for two years. Your plans wait in a drawer.",
+          "scene": "an empty city street, closed shutters, a mask on the pavement"
+        },
+        "neutral": {
+          "text": "The stock market crashes. You own no stocks.",
+          "scene": "a stock market screen full of red numbers, people walking past"
+        }
+      },
+      "bridge": "You need work. Work, it turns out, needs a coincidence."
+    },
+    {
+      "id": "job",
+      "title": "The first job",
+      "type": "fluke",
+      "age": 23,
+      "scene": "a cramped room, a laptop open to job listings",
+      "flukes": [
+        {
+          "text": "A stranger messages you online after misreading your profile. They like what they misread.",
+          "job": "A job at a company you've never heard of.",
+          "scene": "a small office with an unfamiliar logo on the door"
+        },
+        {
+          "text": "Your old school teacher spots you at a tea stall. Her nephew needs someone.",
+          "job": "A job at the nephew's firm.",
+          "scene": "a family-run office, a tea stall outside"
+        },
+        {
+          "text": "A wrong-number call. The caller was hiring.",
+          "job": "A job taken over the phone before either of you noticed the mistake.",
+          "scene": "an office desk with an old phone and a new employee badge"
+        }
+      ],
+      "bridge": "Four years at the job. Then one ordinary day."
+    },
+    {
+      "id": "love",
+      "title": "Love",
+      "type": "chosen",
+      "age": 27,
+      "allot": false,
+      "setup": "One day. Somewhere in the city is the love of your life. You meet only if you end up in the same place.",
+      "scene": "a city morning, crowds, many streets",
+      "miss": {
+        "text": "You didn't find love that day.",
+        "scene": "an empty bench in the evening, city lights"
+      },
+      "cards": [
+        {
+          "name": "A friend's wedding",
+          "reveals": "Everyone is single there, briefly.",
+          "target": "3 or more",
+          "scene": "a wedding party with string lights and flowers, two people talking"
+        },
+        {
+          "name": "The metro at rush hour",
+          "reveals": "Forty minutes pressed against strangers.",
+          "target": "4 or more",
+          "scene": "a crowded metro carriage, two people holding the same pole"
+        },
+        {
+          "name": "A dating app",
+          "reveals": "Four hundred matches, none of them where you are.",
+          "target": "5 or more",
+          "scene": "a cafe table for two, a phone glowing"
+        },
+        {
+          "name": "The library",
+          "reveals": "Very quiet. Nobody speaks to anyone.",
+          "target": "a 6",
+          "scene": "a quiet library, two people reaching for the same book"
+        },
+        {
+          "name": "Stay home",
+          "reveals": "They'll have to come to you.",
+          "target": "exactly 1",
+          "scene": "a doorstep, someone knocking with a wrong delivery"
+        }
+      ],
+      "bridge": "Five years pass. A phone call on a Tuesday."
+    },
+    {
+      "id": "pivot",
+      "title": "The pivot",
+      "type": "chosen",
+      "age": 32,
+      "setup": "A chance to change the direction of your life. It expires on Friday.",
+      "scene": "an office desk with a ringing phone, a calendar showing Friday",
+      "cards": [
+        {
+          "name": "Change nothing",
+          "reveals": "The safest bet, and still a bet.",
+          "target": "2 or more",
+          "scene": "the same office desk, the same chair, nothing changed"
+        },
+        {
+          "name": "Move to the big city",
+          "reveals": "Smaller flat, bigger rent, better story.",
+          "target": "3 or more",
+          "scene": "a tiny flat in a huge city, skyscrapers outside the window"
+        },
+        {
+          "name": "A friend's business proposal",
+          "reveals": "He has a deck, and an uncle with money.",
+          "target": "4 or more",
+          "scene": "a small startup office, a pitch deck on a screen"
+        },
+        {
+          "name": "The offer abroad",
+          "reveals": "A new country, and a name nobody there can say.",
+          "target": "5 or more",
+          "scene": "a foreign city street, signs in another language"
+        },
+        {
+          "name": "Quit and start the thing",
+          "reveals": "The thing you've described at every party for ten years.",
+          "target": "a 6",
+          "scene": "a garage workshop with a hand-painted sign"
+        }
+      ],
+      "bridge": "You live with the choice for three years."
+    },
+    {
+      "id": "after",
+      "title": "The years after",
+      "type": "happens",
+      "age": 35,
+      "scene": "an office floor, the same routine every day",
+      "outcomes": {
+        "good": {
+          "text": "A senior colleague retires early. Their work, and their office, become yours.",
+          "scene": "a corner office with a window, a nameplate being changed"
+        },
+        "bad": {
+          "text": "Your company is sold. Your role is \"under review\" for three years.",
+          "scene": "an office full of boxes, a sign: under new management"
+        },
+        "neutral": {
+          "text": "You get a new chair. You talk about it for a week.",
+          "scene": "an office with a shiny new chair"
+        }
+      },
+      "bridge": "The relatives start asking at every wedding."
+    },
+    {
+      "id": "marriage",
+      "title": "Marriage",
+      "type": "chosen",
+      "age": 36,
+      "setup": "Who do you want to spend your life with?",
+      "scene": "a wedding hall full of relatives and garlands",
+      "cards": [
+        {
+          "name": "Whoever the family finds",
+          "reveals": "There is already a shortlist.",
+          "target": "2 or more",
+          "scene": "a living room, two families sitting across from each other, tea and sweets"
+        },
+        {
+          "name": "Someone from the same background",
+          "reveals": "The relatives approve before they meet them.",
+          "target": "3 or more",
+          "scene": "a traditional wedding, relatives nodding"
+        },
+        {
+          "name": "No one: marry your work",
+          "reveals": "Your laptop never forgets an anniversary.",
+          "target": "3 or more",
+          "scene": "a desk at night, a laptop glowing, a cake for one"
+        },
+        {
+          "name": "Someone who makes you laugh",
+          "reveals": "Funny at dinner, funny at 3 a.m.",
+          "target": "4 or more",
+          "scene": "a small kitchen at night, two people laughing"
+        },
+        {
+          "name": "Someone rich",
+          "reveals": "Love can come later. It has a budget.",
+          "target": "5 or more",
+          "scene": "a lavish wedding with chandeliers"
+        },
+        {
+          "name": "Someone who lets you be",
+          "reveals": "Rarer than rich.",
+          "target": "a 6",
+          "scene": "a quiet garden, two chairs side by side, each person reading"
+        }
+      ],
+      "bridge": "Four years in, the house finds its routine."
+    },
+    {
+      "id": "settling",
+      "title": "Settling down",
+      "type": "happens",
+      "age": 40,
+      "chapter": true,
+      "scene": "a family home in the evening, a dinner table",
+      "outcomes": {
+        "good": {
+          "text": "The relatives move to another city.",
+          "scene": "a quiet house, a moving truck driving away"
+        },
+        "bad": {
+          "text": "The relatives move in.",
+          "scene": "a crowded house, suitcases in the hallway, extra beds"
+        },
+        "neutral": {
+          "text": "Life settles into a routine so steady you stop noticing the years.",
+          "scene": "a calendar on the wall, a steady clock, the same days"
+        }
+      },
+      "bridge": "Eight quiet years. Too quiet."
+    },
+    {
+      "id": "buried",
+      "title": "The buried layer",
+      "type": "chosen",
+      "age": 48,
+      "setup": "Something true about your life has been hidden all along. Now it comes out. Choose which.",
+      "scene": "an old box of papers opened on a table, dust in the light",
+      "cards": [
+        {
+          "name": "A financial scam",
+          "reveals": "The savings were never there.",
+          "target": "2 or more",
+          "scene": "an empty bank vault, papers scattered"
+        },
+        {
+          "name": "A rare disease",
+          "reveals": "Slow, and manageable, with a name nobody can pronounce.",
+          "target": "3 or more",
+          "scene": "a doctor's office, a long word on a chart"
+        },
+        {
+          "name": "Swapped at birth",
+          "reveals": "Your real family lives two streets away.",
+          "target": "4 or more",
+          "scene": "two houses two streets apart, a family at the window"
+        },
+        {
+          "name": "The degree",
+          "reveals": "Your university never existed.",
+          "target": "4 or more",
+          "scene": "an empty lot where a university should be"
+        },
+        {
+          "name": "A half-sibling",
+          "reveals": "They're at the door, with your nose.",
+          "target": "5 or more",
+          "scene": "a doorway, a stranger with a familiar face"
+        },
+        {
+          "name": "A small debt",
+          "reveals": "Your father owed a neighbour 400 rupees.",
+          "target": "a 6",
+          "scene": "a neighbour's door, a small envelope of money"
+        },
+        {
+          "name": "Nothing",
+          "reveals": "There was no secret.",
+          "target": "exactly 1",
+          "scene": "an empty box, nothing inside"
+        }
+      ],
+      "bridge": "You learn to live with it. One evening, it rains."
+    },
+    {
+      "id": "umbrella",
+      "title": "The umbrella",
+      "type": "fluke",
+      "age": 52,
+      "plant": true,
+      "text": "On a rainy evening, you lend your umbrella to a stranger at a bus stop. You never see it again.",
+      "scene": "a rainy bus stop at night, a stranger walking off under an umbrella",
+      "bridge": "Eight more years. The office orders a cake."
+    },
+    {
+      "id": "retirement",
+      "title": "Retirement",
+      "type": "chosen",
+      "age": 60,
+      "setup": "The office gives you a cake and a shawl. What will you mostly do now?",
+      "scene": "an office party, a cake and a folded shawl",
+      "cards": [
+        {
+          "name": "Mind the grandchildren",
+          "reveals": "Unpaid, full-time, no leave.",
+          "target": "2 or more",
+          "scene": "a living room full of toys and small children"
+        },
+        {
+          "name": "Go back to where you were born",
+          "reveals": "It's a mall now.",
+          "target": "3 or more",
+          "scene": "a shopping mall where an old house used to be"
+        },
+        {
+          "name": "Write the memoir",
+          "reveals": "Chapter one is 200 pages.",
+          "target": "4 or more",
+          "scene": "a desk with a huge stack of handwritten pages"
+        },
+        {
+          "name": "See the world",
+          "reveals": "Seven countries in twelve days, on a bus.",
+          "target": "5 or more",
+          "scene": "a tour bus in front of a famous monument"
+        },
+        {
+          "name": "Start a business, at last",
+          "reveals": "Your children are investors, reluctantly.",
+          "target": "a 6",
+          "scene": "a small new shop, a ribbon being cut"
+        },
+        {
+          "name": "Forward messages to everyone you know",
+          "reveals": "Good morning, with a sunflower.",
+          "target": "exactly 1",
+          "scene": "a phone screen full of good morning messages with sunflowers"
+        }
+      ],
+      "bridge": "Four years into the rest of it, something comes back."
+    },
+    {
+      "id": "umbrella-back",
+      "title": "The umbrella comes back",
+      "type": "happens",
+      "age": 64,
+      "reveals": "umbrella",
+      "scene": "a rainy street, a black umbrella",
+      "outcomes": {
+        "good": {
+          "text": "The stranger became a minister. He remembers the umbrella. Your pension file moves to the top of the pile.",
+          "scene": "a government office, a file moving to the top of a pile"
+        },
+        "bad": {
+          "text": "The umbrella, your name sewn inside, turns up as evidence in someone else's court case. You spend a year explaining you only lent it.",
+          "scene": "a courtroom, an umbrella in an evidence bag"
+        },
+        "neutral": {
+          "text": "You see the same umbrella in a shop window, for sale. You don't buy it back.",
+          "scene": "a shop window with an umbrella for sale"
+        }
+      },
+      "bridge": "The years get shorter. Then there is one left."
+    },
+    {
+      "id": "death",
+      "title": "Death",
+      "type": "chosen",
+      "age": 79,
+      "setup": "You get to choose how you go. Mostly.",
+      "scene": "a quiet room, evening light, an empty chair by a window",
+      "cards": [
+        {
+          "name": "Of something with a long name",
+          "reveals": "The doctors are excited. You are less so.",
+          "target": "2 or more",
+          "scene": "a hospital room, doctors gathered round a chart"
+        },
+        {
+          "name": "On the day the pension arrives",
+          "reveals": "The money clears. You don't.",
+          "target": "3 or more",
+          "scene": "a bank counter, a pension slip"
+        },
+        {
+          "name": "Laughing at your own joke",
+          "reveals": "Nobody else laughed.",
+          "target": "4 or more",
+          "scene": "a dinner table, one chair pushed back"
+        },
+        {
+          "name": "Mid-sentence, finally winning an argument",
+          "reveals": "The last word was yours. Half of it.",
+          "target": "5 or more",
+          "scene": "a living room, an argument left unfinished"
+        },
+        {
+          "name": "In your sleep, at 94",
+          "reveals": "Everyone's first choice.",
+          "target": "a 6",
+          "scene": "a bedroom at dawn, a peaceful bed",
+          "age": 94
+        },
+        {
+          "name": "A laddoo at a wedding",
+          "reveals": "Very festive.",
+          "target": "exactly 1",
+          "scene": "a wedding feast, a plate of sweets"
+        }
+      ],
+      "bridge": "That was a life."
+    }
+  ]
+}

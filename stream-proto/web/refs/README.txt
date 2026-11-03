@@ -1,1 +1,2 @@
-Optional style reference paintings, one per life phase (see PHASE_REFS at the top of storyline.js).
+Optional style reference paintings, one per life phase. Put the images here and list them in trajectory.json
+"phase_refs", e.g. ["refs/baseline.jpg", "refs/crust.jpg", "", "refs/later.jpg"]. Empty = no reference for that phase.

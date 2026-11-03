@@ -1,6 +1,6 @@
 # Live generation — webcam → fast diffusion, you and the background separately
 
-## First time only: download the models (on chance-gpu, ~6 GB, saved in ~/.cache/huggingface)
+## First time only: download the models (on the cloud machine, ~6 GB, saved in ~/.cache/huggingface)
 ```
 cd ~/stream-proto && source .venv/bin/activate && python download_models.py
 ```
@@ -8,7 +8,7 @@ If the download stops halfway, run it again: it carries on.
 
 ## Pages
 - http://localhost:8766/panel — the tuning panel (see below).
-- http://localhost:8766/game — the game: one life, eighteen moments, BASELINE → CRUST → ADULTHOOD → LATER LIFE → who you became (see "The storyline"). Space / Enter = the big button, keys 1–5 pick an option, F = full screen.
+- http://localhost:8766/game — the game: one life, 19 events, birth to death (see "The life"). Cards: hover, or ← → and Enter, or keys 1–9. R = roll on screen. F = full screen.
 - http://localhost:8766/dice.html — set up the physical die (see below).
 - http://localhost:8766 — the lab: type prompts and add references by hand to tune the look. References set here carry over into the game.
 
@@ -25,28 +25,28 @@ How: a picture of the EMPTY throwing area is remembered; after a throw, whatever
 - Open http://localhost:8766/dice.html → pick the DICE CAMERA and the AVATAR CAMERA → drag a box just inside the square → take the die out and press EMPTY TRAY → throw a few times (green = what changed, box = top face, red = dots) → SAVE FOR THE GAME.
 - Press EMPTY TRAY again whenever the camera moves or the light changes a lot.
 - Tuning: SENSITIVITY lower if parts of the die aren't green, higher if the table turns green. TOP FACE higher if side dots get counted, lower if dots are missed.
-- In the game, the DIE chip under the phases shows the die. Pick an option (click or keys 1–5), then throw. Between moments, a throw = the big button. Without a die, ROLL rolls one on screen.
+- In the game, the DIE chip under the picture says whose turn it is. Pick a card, then throw. A throw also starts a life. While the die rolls, the screen holds still. Without a die, ROLL (or R) rolls one on screen.
 - With no dice camera saved the game works as before.
 
 ## The game screen
 - The look is picked on the panel (/panel → STYLE), not in the game.
 - FULL SCREEN (button under the stage names, or the F key): the picture covers the whole screen edge to edge, the choices float over its bottom. Esc leaves it.
 
-## The storyline (stage one, from stage-one-storyline.md)
-One hardcoded life; chance decides how each moment goes. All the words, tables, targets, marks, modifiers, allotments and
-picture descriptions are in `web/storyline.js`; the rules are in `web/game.html`. Edit storyline.js and reload; no restart.
-- DEFAULT moments happen to you: random.org rolls a d6 on the moment's table (shown at the bottom), you watch.
-- CHOICES: options show their target ("a 6", "5 or more", "exactly 3"). Pick one, roll your die.
-  A miss: random.org rolls; 1–4 = the next easier option, 5–6 (or no easier option) = one entry from the allotment list.
-- FLUKES: something small; random.org rolls; a 6 leaves a hidden MARK (NAME, RADIO, PLATFORM, TYPO). HIDDEN, POOR and RICH come from the baseline.
-  Marks open exact-number options later and change some outcomes; modifiers move targets one step, never explained.
-- Never shown: odds, percentages, marks. The ending reveals them: who you became (third person), the astrologer's forecast, every fluke.
-- Each picture: the avatar at that age (body from the race, clothes from the outcome) + the world = the outcome's scene + place + year.
-- Optional: a style reference painting per life phase (PHASE_REFS in storyline.js, images in web/refs/), so the look ages with the life.
-- The look: stage one is paint only. The server starts on the "Painterly (game)" look; the panel can still switch it for tuning.
+## The life (trajectory.json, from H's "Life Trajectory v1")
+Everything the player reads is in `trajectory.json`: the 19 events, their cards (name, the line it reveals, the target as the
+player sees it: "3 or more", "a 6", "exactly 1"), the hidden Happen outcomes, the flukes, the bridge lines, the world scenes and
+the timings. Edit it and the next life uses it (no restart). The rules are in `web/game.html`.
+- CHOSEN: pick a card, it locks and shows its target, throw once. Hit = that card. Miss = random.org allots one of the other cards.
+  Birth gives 3 throws, then the override allots. Love allots nothing: a miss means you didn't meet anyone that day.
+- HAPPENS: random.org picks good, bad or neutral; only the one that happened is shown.
+- FLUKES: the first job (random.org picks which small thing finds you work), and the umbrella (planted at 52, quoted back at 64).
+- The unfolding: no hard cuts. Every world is painted FROM the last one (WORLD KEEPS on the panel) and crossfaded in; the
+  avatar is a blend of two age descriptions, so it ages continuously as the age counts up; one text window at a time, each fading
+  out fully before the next. Cards and throws wait for the player; everything else runs on the PACING timings (minimums).
+- The ending: after Death and a 10 s silence, the life read back as a list (age, event, what came, what was wanted).
 
 ## Run
-On the cloud machine (chance-gpu), see CLOUD.md for the full routine:
+On the cloud machine (chance-rtx), see CLOUD.md for the full routine:
 ```
 cd ~/stream-proto && source .venv/bin/activate && python stream_server.py
 ```
@@ -79,6 +79,9 @@ All painting settings live on the server, so the panel tunes the game and the la
 - READOUT: painter, avatar frames per second, ms per frame and WHERE IT GOES (shape, encode, painter, decode, jpeg, queued),
   NETWORK + BROWSER (the browser's round trip minus all of that), world time, GPU memory. If network + browser is bigger than the
   server's time, a bigger GPU won't help much.
+- PACING: every timing of the unfolding (arrive, settle, lock, land, miss, linger, the happen / fluke holds, chapter breath, final
+  silence) and how much of each world survives into the next. Saved straight into trajectory.json; the game takes changes in ~2 s.
+  It also shows roughly how long a life runs at those timings.
 - PRESETS: save / load all of the above by name (files in presets/ on the server).
 
 ## The painter

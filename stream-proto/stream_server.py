@@ -1,5 +1,5 @@
 """
-Live webcam -> diffusion. Runs on the cloud GPU (chance-gpu, NVIDIA L4); also works on a Mac (MPS), slowly.
+Live webcam -> diffusion. Runs on the cloud GPU (chance-rtx, RTX PRO 6000; first built on an L4); also works on a Mac (MPS), slowly.
 
 Two separate generations:
   WORLD (background)  made once per draw from its own prompt (a few steps, full-quality VAE).
@@ -70,6 +70,7 @@ BG_IMAGE_KEEP = 0.35              # background IMAGE reference: how much of the 
 HERE = os.path.dirname(os.path.abspath(__file__))
 LORA_DIR = os.path.join(HERE, "loras")
 PRESET_DIR = os.path.join(HERE, "presets")
+TRAJECTORY_FILE = os.path.join(HERE, "trajectory.json")   # the life: events, cards, bridge lines, timings (edit freely)
 STYLES_FILE = os.path.join(HERE, "styles.json")      # the looks on /panel (cartoon, caricature, pixel art, ...): edit freely
 
 # style LoRAs fetched on first start (all SD 1.5, none anime). file in loras/ <- (repo, file in repo or None = find it), trigger words
@@ -108,6 +109,7 @@ TUNE_DEFAULTS = {
 TUNE = dict(TUNE_DEFAULTS)
 LOOK_KEYS = {"style", "ref_mode", "world_steps", "lora_a", "lora_a_w", "lora_b", "lora_b_w", "ip_style", "style_prompt", "negative", "guidance"}
 look_version = 0              # goes up when the look changes, so the pages redraw the world
+pace_version = 0              # goes up when a timing in trajectory.json is changed from /panel
 tune_version = 0              # goes up on any change, so the pages send a fresh avatar frame
 
 app = FastAPI()
@@ -386,6 +388,15 @@ class Generator:
         return jpeg_bytes(Image.fromarray(y))
 
     # --- prompts and references ---
+    def embed_mix(self, prompt):
+        """A prompt, or (a, b, mix): the two encoded prompts blended, so the avatar can age smoothly between them."""
+        if isinstance(prompt, tuple):
+            a, b, mix = prompt
+            if b and mix > 0.001:
+                return self.embed(a) * (1 - mix) + self.embed(b) * mix
+            prompt = a
+        return self.embed(prompt)
+
     def embed(self, prompt):
         if prompt not in self.embeds:
             if len(self.embeds) > 32:
@@ -449,7 +460,7 @@ class Generator:
         x0 = lat if lat is not None else torch.zeros((1, 4, HEIGHT // 8, WIDTH // 8), device=self.device, dtype=self.dtype)
         g = float(TUNE["guidance"])
         cfg = g > 1.01
-        text = self.embed(prompt)
+        text = self.embed_mix(prompt)
         if cfg:
             neg = ", ".join(p for p in (TUNE["negative"], current_style().get("negative", "")) if p)
             text = torch.cat([self.embed(neg), text])
@@ -495,7 +506,7 @@ class Generator:
             lat = self.tiny_vae.encode(x).latents
             if self.prev_shape != TUNE["shape"]:
                 self.prev, self.prev_shape = None, TUNE["shape"]
-            same = self.prev is not None and self.prev_key == prompt and self.prev.shape == lat.shape
+            same = self.prev is not None and self.prev.shape == lat.shape     # also across prompt changes: an ageing face morphs
             # how much you moved since the last frame (in the tiny VAE's space; ~0.05 = still, 0.3+ = moving)
             motion = float((lat - self.prev_in).abs().mean()) if same and self.prev_in is not None else 1.0
             w = steady / (1 + motion * (2 + 18 * guard)) if same else 0.0
@@ -513,15 +524,20 @@ class Generator:
             self.lap("decode")
         return self.to_image(y)
 
-    def background(self, prompt, seed):
-        init = self.refs["background"]["image"]
+    last_world = None
+
+    def background(self, prompt, seed, keep=0.0):
+        """keep > 0: paint the new world FROM the last one (that much of it survives), so places change, not jump."""
+        init, k = self.refs["background"]["image"], BG_IMAGE_KEEP
+        if keep > 0 and self.last_world is not None:
+            init, k = self.last_world, keep
         sf = self.full_vae.config.scaling_factor
         n = max(1, min(4, int(TUNE["world_steps"])))
         with self.torch.no_grad():
-            if init is not None:                                 # start from the reference picture
+            if init is not None:                                 # start from the last world / the reference picture
                 img = ImageOps.fit(init, (WIDTH, HEIGHT))
                 lat = self.full_vae.encode(self.to_tensor(img)).latent_dist.mean * sf
-                t0 = int((1 - BG_IMAGE_KEEP) * 1000) - 1
+                t0 = int((1 - k) * 1000) - 1
                 ts = [int(t0 * (n - k) / n) for k in range(n)]
             else:                                                # start from pure noise
                 lat = None
@@ -530,7 +546,8 @@ class Generator:
             y = self.full_vae.decode(x0 / sf).sample
             if self.torch.isnan(y).any():                        # fp16 trouble: fall back to the tiny VAE
                 y = self.tiny_vae.decode(x0).sample
-        return self.to_image(y)
+        self.last_world = self.to_image(y)
+        return self.last_world
 
     def gpu_mb(self):
         if self.device != "cuda":
@@ -569,6 +586,10 @@ class MockGenerator:
 
     @staticmethod
     def tint(prompt):
+        if isinstance(prompt, tuple):                            # (a, b, mix): blend the two colours
+            a, b, m = prompt
+            ca, cb = MockGenerator.tint(a), MockGenerator.tint(b)
+            return tuple(int(x * (1 - m) + y * m) for x, y in zip(ca, cb))
         h = zlib.crc32(prompt.encode())
         return ((h >> 16) & 255, (h >> 8) & 255, h & 255)
 
@@ -592,7 +613,9 @@ class MockGenerator:
         g = ImageOps.colorize(ImageOps.grayscale(ImageOps.posterize(img, 3)), black=(20, 10, 40), white=c)
         return Image.blend(img, g, min(1.0, float(TUNE["change"])))
 
-    def background(self, prompt, seed):
+    last_world = None
+
+    def background(self, prompt, seed, keep=0.0):
         time.sleep(0.3)
         init = self.refs["background"]["image"]
         if init is not None:
@@ -605,6 +628,9 @@ class MockGenerator:
                 x, y, r = rnd.randrange(WIDTH), rnd.randrange(HEIGHT), rnd.randrange(10, 80)
                 d.ellipse((x - r, y - r, x + r, y + r), fill=tuple(min(255, max(0, v + rnd.randrange(-60, 60))) for v in c))
             img = img.filter(ImageFilter.GaussianBlur(6))
+        if keep > 0 and self.last_world is not None:            # grows out of the last world
+            img = Image.blend(img, self.last_world, keep)
+        self.last_world = img.copy()
         ImageDraw.Draw(img).text((12, HEIGHT - 24), "MOCK WORLD · " + prompt[:70], fill=(255, 255, 255))
         return img
 
@@ -633,14 +659,15 @@ def full_prompt(prompt):
     return ", ".join(p.strip() for p in parts if p and p.strip())
 
 
-def run_person(jpeg, prompt, pose=None):
+def run_person(jpeg, prompt, pose=None, to="", mix=0.0):
     t0 = time.perf_counter()
     gen.apply_loras(TUNE)
     img = Image.open(io.BytesIO(jpeg)).convert("RGB")
     if img.size != (WIDTH, HEIGHT):
         img = ImageOps.fit(img, (WIDTH, HEIGHT))
     t1 = time.perf_counter()
-    out = gen.person(img, full_prompt(prompt), pose)
+    p = (full_prompt(prompt), full_prompt(to), mix) if to and mix > 0.001 else full_prompt(prompt)
+    out = gen.person(img, p, pose)
     t2 = time.perf_counter()
     data = jpeg_bytes(out)
     t3 = time.perf_counter()
@@ -651,11 +678,11 @@ def run_person(jpeg, prompt, pose=None):
     return data, ms
 
 
-def run_background(prompt, seed):
+def run_background(prompt, seed, keep=0.0):
     global world_ms
     t0 = time.perf_counter()
     gen.apply_loras(TUNE)
-    out = gen.background(full_prompt(prompt), seed)
+    out = gen.background(full_prompt(prompt), seed, keep)
     world_ms = (time.perf_counter() - t0) * 1000
     return jpeg_bytes(out), world_ms
 
@@ -718,7 +745,7 @@ async def draw(n: int = 1, lo: int = 1, hi: int = 6):
 async def config():
     return {"width": WIDTH, "height": HEIGHT, "mock": MOCK, "engine": "mock" if MOCK else PAINTER,
             "references": True, "look": look_version, "tune": tune_version, "shape": TUNE["shape"],
-            "filter": current_style().get("filter", ""), "skip_still": TUNE["skip_still"]}
+            "filter": current_style().get("filter", ""), "skip_still": TUNE["skip_still"], "pace": pace_version}
 
 
 # ---------- tuning ----------
@@ -872,7 +899,7 @@ async def reference(request: Request, side: str, kind: str):
 
 
 @app.post("/frame")
-async def frame(request: Request, prompt: str = ""):
+async def frame(request: Request, prompt: str = "", to: str = "", mix: float = 0.0):
     """One camera frame in (JPEG), the person repainted out (JPEG). All tuning comes from /settings.
     (Older pages still send strength / steady / style in the address: they're ignored now.)"""
     jpeg = await request.body()
@@ -892,17 +919,61 @@ async def frame(request: Request, prompt: str = ""):
     arrived = time.perf_counter()
     async with lock:
         wait_log.append((time.perf_counter() - arrived) * 1000)   # the browser keeps two frames in flight: one waits here
-        out, ms = await asyncio.to_thread(run_person, jpeg, prompt, pose)
+        out, ms = await asyncio.to_thread(run_person, jpeg, prompt, pose, to.strip(), max(0.0, min(1.0, mix)))
     return Response(out, media_type="image/jpeg", headers={"X-Gen-Ms": str(round(ms)), "X-Look": str(look_version), "Cache-Control": "no-store"})
 
 
 @app.get("/background")
-async def background(prompt: str = ""):
-    """A fresh world for the prompt. A new random seed every time, so every draw is a new place."""
+async def background(prompt: str = "", keep: float = 0.0, fresh: int = 0):
+    """A world for the prompt (a new random seed every time). keep > 0: painted from the last world, so it grows
+    out of it (the game's unfolding). fresh=1: forget the last world first (a new life)."""
     prompt = prompt.strip() or "an empty landscape"
     async with lock:
-        out, ms = await asyncio.to_thread(run_background, prompt, random.randrange(1 << 30))
+        if fresh:
+            gen.last_world = None
+        out, ms = await asyncio.to_thread(run_background, prompt, random.randrange(1 << 30), max(0.0, min(0.95, keep)))
     return Response(out, media_type="image/jpeg", headers={"X-Gen-Ms": str(round(ms)), "X-Look": str(look_version), "Cache-Control": "no-store"})
+
+
+# ---------- the life (trajectory.json) ----------
+def read_trajectory():
+    with open(TRAJECTORY_FILE, encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+@app.get("/trajectory")
+async def trajectory():
+    """The whole life, read fresh from the file every time (so edits show up on the next life)."""
+    try:
+        return JSONResponse(read_trajectory(), headers={"Cache-Control": "no-store"})
+    except (OSError, ValueError) as e:
+        return JSONResponse({"error": f"trajectory.json: {e}"}, status_code=500)
+
+
+@app.post("/trajectory/pacing")
+async def save_pacing(request: Request):
+    """From /panel: {pacing: {name: seconds}, world: {keep, chapter_keep}} -> written into trajectory.json."""
+    global pace_version
+    body = await request.json()
+    doc = read_trajectory()
+    for k, v in (body.get("pacing") or {}).items():
+        if k in doc.get("pacing", {}):
+            try:
+                doc["pacing"][k] = round(max(0.0, min(60.0, float(v))), 2)
+            except (TypeError, ValueError):
+                pass
+    for k, v in (body.get("world") or {}).items():
+        if k in doc.get("world", {}):
+            try:
+                doc["world"][k] = round(max(0.0, min(0.95, float(v))), 2)
+            except (TypeError, ValueError):
+                pass
+    tmp = TRAJECTORY_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(doc, fh, indent=2, ensure_ascii=False)
+    os.replace(tmp, TRAJECTORY_FILE)
+    pace_version += 1
+    return {"pacing": doc["pacing"], "world": doc["world"], "pace": pace_version}
 
 
 # the pages (index.html = the lab, game.html, panel.html, live.js, stages.js); mounted last so the routes above win
