@@ -10,7 +10,7 @@
 :root {
   --ink: #141414; --dim: #8a8a8a; --line: #d6d6d6; --bg: #fff; --fade: 1.2s;
   --glass: rgba(255,255,255,0.52); --glass-hi: rgba(255,255,255,0.8); --edge: rgba(255,255,255,0.7);
-  --cw: clamp(104px, 10.5vw, 150px); --gap: calc(var(--cw) * 0.5);
+  --cw: clamp(78px, 7vw, 106px); --gap: calc(var(--cw) * 0.5);
   color-scheme: light;
 }
 html, body { height: 100%; }
@@ -60,29 +60,29 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: "Inter"
 .big span.on { opacity: 0.9; }
 
 /* ---- the deck: glass plaques fanned in depth; hover one and it turns to face you ---- */
-.deck { position: absolute; left: 50%; bottom: 7%; transform: translateX(-50%); height: calc(var(--cw) * 1.3 + 90px);
+.deck { position: absolute; left: 50%; bottom: 2.5%; transform: translateX(-50%); height: calc(var(--cw) * 1.22 + 64px);
         width: calc((var(--n) - 1) * var(--gap) + var(--cw)); perspective: 1100px; perspective-origin: 50% 20%; }
-.card { position: absolute; bottom: 30px; left: calc(var(--i) * var(--gap)); width: var(--cw); height: calc(var(--cw) * 1.3); box-sizing: border-box;
-        padding: 14px 13px; border-radius: 16px; background: var(--glass); border: 1px solid var(--edge);
+.card { position: absolute; bottom: 28px; left: calc(var(--i) * var(--gap)); width: var(--cw); height: calc(var(--cw) * 1.22); box-sizing: border-box;
+        padding: 10px 10px; border-radius: 13px; background: var(--glass); border: 1px solid var(--edge);
         backdrop-filter: blur(14px) saturate(1.2); -webkit-backdrop-filter: blur(14px) saturate(1.2);
         box-shadow: 0 14px 34px rgba(0,0,0,0.16), inset 0 1px 0 rgba(255,255,255,0.8);
-        display: flex; flex-direction: column; gap: 8px; text-align: left; font: inherit; color: var(--ink); cursor: pointer;
-        transform-origin: 50% 100%; transform: translateY(calc(var(--i) * -9px)) rotateX(6deg) rotateY(-34deg);
-        transition: transform 0.75s cubic-bezier(.2,.75,.2,1), opacity 0.6s ease, left 0.9s cubic-bezier(.2,.75,.2,1), background 0.4s; }
-.card .nm { font-size: 13px; font-weight: 650; line-height: 1.2; letter-spacing: -0.005em; max-width: calc(var(--gap) - 20px); }   /* resting: fits the strip you can see */
+        display: flex; flex-direction: column; gap: 6px; text-align: left; font: inherit; color: var(--ink); cursor: pointer;
+        transform-origin: 50% 100%; transform: translateY(calc(var(--i) * -6px)) rotateX(6deg) rotateY(-34deg);
+        transition: transform 0.75s cubic-bezier(.2,.75,.2,1), opacity 0.6s ease, left 0.9s cubic-bezier(.2,.75,.2,1), height 0.6s ease, background 0.4s; }
+.card .nm { font-size: 11.5px; font-weight: 650; line-height: 1.2; letter-spacing: -0.005em; max-width: calc(var(--gap) - 16px); }   /* resting: fits the strip you can see */
 .deck.open .card:hover .nm, .deck.open .card.focus .nm, .card.locked .nm { max-width: none; }
-.card .rv { font-size: 11.5px; line-height: 1.35; color: #3a3a3a; opacity: 0; transform: translateY(6px); transition: opacity 0.4s, transform 0.4s; }
-.card .tg { margin-top: auto; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; color: #222; opacity: 0; transition: opacity 0.6s; }
-.card .tg b { display: block; font-size: 20px; letter-spacing: -0.01em; font-weight: 600; }
-.card .hint { font-size: 10px; letter-spacing: 0.08em; color: #555; opacity: 0; transition: opacity 0.6s; }
-.card.pre { opacity: 0; transform: translateY(70px) rotateX(6deg) rotateY(-34deg); }
-.deck.open .card:hover, .deck.open .card.focus { transform: translateY(-26px) translateZ(70px) rotateY(0deg) scale(1.12); background: var(--glass-hi); z-index: 50 !important; }
+.card .rv { font-size: 10px; line-height: 1.3; color: #3a3a3a; opacity: 0; transform: translateY(6px); transition: opacity 0.4s, transform 0.4s; }
+.card .tg { margin-top: auto; font-size: 9.5px; font-weight: 600; letter-spacing: 0.06em; color: #222; opacity: 0; transition: opacity 0.6s; }
+.card .tg b { display: block; font-size: 15px; letter-spacing: -0.01em; font-weight: 600; }
+.card .hint { font-size: 9px; letter-spacing: 0.08em; color: #555; opacity: 0; transition: opacity 0.6s; }
+.card.pre { opacity: 0; transform: translateY(50px) rotateX(6deg) rotateY(-34deg); }
+.deck.open .card:hover, .deck.open .card.focus { transform: translateY(-12px) translateZ(40px) rotateY(0deg) scale(1.1); background: var(--glass-hi); z-index: 50 !important; }
 .deck.open .card:hover .rv, .deck.open .card.focus .rv { opacity: 1; transform: none; }
 .deck.open.hovering .card:not(:hover):not(.focus) { opacity: 0.5; }
-.card.locked { left: calc((var(--n) - 1) * var(--gap) / 2) !important; transform: translateY(-42%) scale(1.4); background: var(--glass-hi); z-index: 60 !important; cursor: default; }
+.card.locked { left: calc((var(--n) - 1) * var(--gap) / 2) !important; transform: translateY(-6px) scale(1.2); height: calc(var(--cw) * 1.6); background: var(--glass-hi); z-index: 60 !important; cursor: default; }
 .card.locked .rv { opacity: 1; transform: none; }
 .card.locked.show .tg, .card.locked.show .hint { opacity: 1; }
-.card.away { opacity: 0; transform: translateY(160px) rotateX(6deg) rotateY(-34deg); pointer-events: none; }
+.card.away { opacity: 0; transform: translateY(110px) rotateX(6deg) rotateY(-34deg); pointer-events: none; }
 .card.gone { opacity: 0; }
 .nav { position: absolute; left: 50%; bottom: 0; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; transition: opacity 0.6s; }
 .nav button { width: 22px; height: 22px; border-radius: 50%; border: 0; background: rgba(255,255,255,0.75); color: #333; font: inherit; font-size: 13px; line-height: 22px; padding: 0; cursor: pointer; }
@@ -91,15 +91,15 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: "Inter"
 .deck:not(.open) .nav { opacity: 0; pointer-events: none; }
 
 /* the allotted card, turning over */
-.flip { position: absolute; left: 50%; top: 50%; width: calc(var(--cw) * 1.4); height: calc(var(--cw) * 1.82); transform: translate(-50%, -55%); perspective: 900px; opacity: 0; transition: opacity 0.8s; pointer-events: none; }
+.flip { position: absolute; left: 50%; bottom: calc(2.5% + 34px); width: calc(var(--cw) * 1.3); height: calc(var(--cw) * 1.6); transform: translateX(-50%); perspective: 900px; opacity: 0; transition: opacity 0.8s; pointer-events: none; }
 .flip.on { opacity: 1; }
 .flip .in { position: absolute; inset: 0; transform-style: preserve-3d; transform: rotateY(180deg); transition: transform 1.8s cubic-bezier(.45,.05,.2,1); }
 .flip.turn .in { transform: rotateY(0deg); }
 .flip .face, .flip .back { position: absolute; inset: 0; box-sizing: border-box; border-radius: 18px; backface-visibility: hidden; -webkit-backface-visibility: hidden; border: 1px solid var(--edge); box-shadow: 0 14px 40px rgba(0,0,0,0.18); }
-.flip .face { padding: 18px; background: var(--glass-hi); display: flex; flex-direction: column; gap: 10px; text-align: left; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+.flip .face { padding: 12px; background: var(--glass-hi); display: flex; flex-direction: column; gap: 10px; text-align: left; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
 .flip .face small { font-size: 9px; font-weight: 600; letter-spacing: 0.18em; color: #777; }
-.flip .face b { font-size: 18px; line-height: 1.2; }
-.flip .face span { font-size: 13px; line-height: 1.4; color: #333; }
+.flip .face b { font-size: 14px; line-height: 1.2; }
+.flip .face span { font-size: 11px; line-height: 1.35; color: #333; }
 .flip .back { transform: rotateY(180deg); background: repeating-linear-gradient(45deg, rgba(255,255,255,0.55) 0 8px, rgba(255,255,255,0.3) 8px 16px); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
 
 /* the bar under the picture */
@@ -120,7 +120,7 @@ button:focus-visible { outline: 3px solid #888; outline-offset: 2px; }
 body.full .frame { padding: 0; gap: 0; grid-template-rows: minmax(0, 1fr); }
 body.full .gen { border-radius: 0; }
 body.full .bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; padding: 8px 18px; background: linear-gradient(transparent, rgba(255,255,255,0.55)); }
-body.full .deck { bottom: 70px; }
+body.full .deck, body.full .flip { bottom: 62px; }
 @media (max-width: 760px) { .bar { grid-template-columns: 1fr; } .go { width: 100%; } }
 @media (prefers-reduced-motion: reduce) { .card, .flip .in, .say { transition-duration: 0.01s !important; } }
 </style>
@@ -330,7 +330,7 @@ function deck(cards) {                                         // cards rise one
       <span class="nm">${esc(c.name)}</span><span class="rv">${esc(c.reveals)}</span><span class="tg"></span><span class="hint"></span></button>`).join("")
     + `<div class="nav"><button type="button" data-d="-1" aria-label="Previous">‹</button>${cards.map(() => "<i></i>").join("")}<button type="button" data-d="1" aria-label="Next">›</button></div>`;
   const els = [...deckEl.querySelectorAll(".card")], dots = [...deckEl.querySelectorAll(".nav i")];
-  const cw = els[0].offsetWidth, room = $("gen").clientWidth * 0.74;   // spread the deck so each name shows, within the screen
+  const cw = els[0].offsetWidth, room = $("gen").clientWidth * 0.6;   // spread the deck so each name shows, within the screen
   deckEl.style.setProperty("--gap", Math.round(Math.max(cw * 0.42, Math.min(cw * 0.8, (room - cw) / Math.max(1, cards.length - 1)))) + "px");
   return new Promise(async resolve => {
     for (const el of els) { el.classList.remove("pre"); await sleep(sec("card_rise")); }
