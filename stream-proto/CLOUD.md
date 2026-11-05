@@ -34,7 +34,8 @@ If it still doesn't after 15 minutes, run the installer line by hand with sudo, 
 ## Every session
 1. Start the machine:      gcloud compute instances start chance-rtx --zone=asia-south1-c
 2. Start the server:       gcloud compute ssh chance-rtx --zone=asia-south1-c
-                           cd ~/stream-proto && source .venv/bin/activate && python stream_server.py
+                           cd ~/stream-proto && source .venv/bin/activate && PAINTER=sdxl python stream_server.py
+                           (first time with SDXL: run  bash setup_sdxl.sh  once before this; see README)
 3. Open the tunnel (a NEW Mac Terminal window, leave it open):
                            gcloud compute ssh chance-rtx --zone=asia-south1-c -- -N -L 8766:localhost:8766
 4. On your Mac, open:      http://localhost:8766/game     (make sure the Mac server is NOT running)

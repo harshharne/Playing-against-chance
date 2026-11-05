@@ -53,10 +53,23 @@ from PIL import Image, ImageDraw, ImageFilter, ImageOps, ImageStat
 
 # ---------- settings you may want to tweak ----------
 PORT = 8766
-WIDTH, HEIGHT = 640, 384          # output size; both must be multiples of 64
+WIDTH, HEIGHT = 640, 384          # avatar size (set per painter below); both must be multiples of 64
 SEED = 7                          # noise used for the live person frames
 PAINTER = os.environ.get("PAINTER", "dmd")
 MOCK = os.environ.get("MOCK") == "1"
+DWPOSE_MODE = os.environ.get("DWPOSE_MODE", "lightweight")   # rtmlib whole-body detector: lightweight | balanced | performance
+
+
+def set_sizes(painter):
+    """Avatar, world and baby-portrait sizes. SDXL looks poor much below ~768 px, so it paints bigger."""
+    global WIDTH, HEIGHT, WORLD_W, WORLD_H, PORTRAIT
+    if painter == "sdxl":
+        WIDTH, HEIGHT, WORLD_W, WORLD_H, PORTRAIT = 768, 448, 1344, 768, 768
+    else:
+        WIDTH, HEIGHT, WORLD_W, WORLD_H, PORTRAIT = 640, 384, 640, 384, 512
+
+
+set_sizes(PAINTER)
 
 BASE_MODEL = "Lykon/dreamshaper-8"                          # text encoder, VAE, image encoder come from here
 DMD_UNET = "aaronb/dreamshaper-8-dmd-1kstep"                # the one-step painter (only the UNet changes)
@@ -65,6 +78,14 @@ IP_ADAPTER = ("h94/IP-Adapter", "models", "ip-adapter-plus_sd15.safetensors")
 TINY_VAE = "madebyollin/taesd"
 CONTROLNETS = {"depth": "lllyasviel/control_v11f1p_sd15_depth", "pose": "lllyasviel/control_v11p_sd15_openpose"}
 DEPTH_MODEL = "depth-anything/Depth-Anything-V2-Small-hf"
+# SDXL (PAINTER=sdxl): a one-step painter for the live avatar, a 4-step one for the worlds and the baby
+SDXL_LIVE = "stabilityai/sdxl-turbo"                         # 1 step, made for img2img at partial strength (non-commercial licence)
+SDXL_WORLD = "Lykon/dreamshaper-xl-lightning"                # 4 steps, CFG 2, painterly (openrail++)
+SDXL_VAE = "madebyollin/sdxl-vae-fp16-fix"
+SDXL_TINY = "madebyollin/taesdxl"
+SDXL_CONTROLNETS = {"depth": "diffusers/controlnet-depth-sdxl-1.0-small", "pose": "xinsir/controlnet-openpose-sdxl-1.0"}
+SDXL_IP = ("h94/IP-Adapter", "sdxl_models", "ip-adapter-plus_sdxl_vit-h.safetensors", "models/image_encoder")
+SDXL_WORLD_STEPS, SDXL_WORLD_CFG = 4, 2.0
 BG_IMAGE_KEEP = 0.35              # background IMAGE reference: how much of the picture survives (0.2–0.6)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -87,8 +108,10 @@ RANDOM_ORG_KEY = os.environ.get("RANDOM_ORG_KEY", "")
 # ---------- the tuning (changed live from /panel) ----------
 TUNE_DEFAULTS = {
     # structure
-    "shape": "depth",         # what holds the body: "depth", "pose" or "off"
+    "shape": "depth",         # what holds the body: "depth", "pose", "both" (depth + pose) or "off"
     "cn_strength": 0.8,       # how strongly ControlNet holds it
+    "child_until": 12.0,      # below this age: no depth (an adult's depth makes adult proportions); the pose is reshaped to a child's
+    "child_cn": 0.45,         # how hard the youngest avatar is held (x ControlNet strength), rising to 1 at CHILD UNTIL
     # change
     "change": 0.6,            # how much the avatar is repainted (1.0 = from pure noise: the painter's home ground)
     "world_steps": 2,         # world: painting steps (1 = what DMD is trained for; more = more detail, maybe worse)
@@ -105,6 +128,7 @@ TUNE_DEFAULTS = {
     "steady": 0.4,            # how much each frame leans on the last one (when you're still)
     "ghost_guard": 0.5,       # how quickly that leaning lets go when you move (0 = never: smooth but ghosty, 1 = at once)
     "skip_still": 1.5,        # browser: don't send a new frame unless the camera changed at least this much (0 = always send)
+    "parallax": 0.03,         # browser: how far the world shifts with your head (0 = flat)
 }
 TUNE = dict(TUNE_DEFAULTS)
 LOOK_KEYS = {"style", "ref_mode", "world_steps", "lora_a", "lora_a_w", "lora_b", "lora_b_w", "ip_style", "style_prompt", "negative", "guidance"}
@@ -187,8 +211,32 @@ OP_COLOURS = [(255, 0, 0), (255, 85, 0), (255, 170, 0), (255, 255, 0), (170, 255
               (170, 0, 255), (255, 0, 255), (255, 0, 170), (255, 0, 85)]
 
 
-def draw_openpose(points, w=WIDTH, h=HEIGHT):
+def child_scale(age):
+    """How much smaller than you the avatar's body is drawn at this age (1 = your own proportions)."""
+    if age is None or float(TUNE["child_until"]) <= 0 or age >= float(TUNE["child_until"]):
+        return 1.0
+    return 0.6 + 0.4 * max(0.0, age) / float(TUNE["child_until"])
+
+
+def reshape_child(kp, neck, nose, head_ids, s):
+    """Shrink the body towards the neck by s, keep the head its own size: a child's proportions on your pose."""
+    if s >= 0.999 or neck is None:
+        return kp
+    nn = (neck[0] + (nose[0] - neck[0]) * s, neck[1] + (nose[1] - neck[1]) * s) if nose else None
+    out = []
+    for i, p in enumerate(kp):
+        if p is None:
+            out.append(None)
+        elif i in head_ids and nose and nn:
+            out.append((p[0] + nn[0] - nose[0], p[1] + nn[1] - nose[1]))
+        else:
+            out.append((neck[0] + (p[0] - neck[0]) * s, neck[1] + (p[1] - neck[1]) * s))
+    return out
+
+
+def draw_openpose(points, w=None, h=None, age=None):
     """points: MediaPipe's 33 [x, y, visibility] (x, y from 0 to 1). Returns the skeleton on black, as OpenPose draws it."""
+    w, h = w or WIDTH, h or HEIGHT
     def mp(i):
         if i >= len(points):
             return None
@@ -197,6 +245,7 @@ def draw_openpose(points, w=WIDTH, h=HEIGHT):
     kp = [mp(i) if i is not None else None for i in OP_FROM_MP]
     if kp[2] and kp[5]:
         kp[1] = ((kp[2][0] + kp[5][0]) / 2, (kp[2][1] + kp[5][1]) / 2)
+    kp = reshape_child(kp, kp[1], kp[0], {0, 14, 15, 16, 17}, child_scale(age))
     img = Image.new("RGB", (w, h), (0, 0, 0))
     d = ImageDraw.Draw(img)
     stick, r = max(4, round(h * 8 / 512)), max(3, round(h * 4 / 512))
@@ -207,6 +256,53 @@ def draw_openpose(points, w=WIDTH, h=HEIGHT):
         if p:
             d.ellipse((p[0] - r, p[1] - r, p[0] + r, p[1] + r), fill=OP_COLOURS[i])
     return img
+
+
+# ---------- DWPose: body + hands + face (133 points), on the server (rtmlib, ONNX; on the GPU if onnxruntime-gpu works) ----------
+_wb = {"model": None, "tried": False, "error": None, "where": None}
+
+
+def dwpose():
+    if _wb["tried"]:
+        return _wb["model"]
+    _wb["tried"] = True
+    try:
+        from rtmlib import Wholebody
+        import onnxruntime as ort
+        cuda = "CUDAExecutionProvider" in ort.get_available_providers()
+        _wb["model"] = Wholebody(to_openpose=True, mode=DWPOSE_MODE, backend="onnxruntime", device="cuda" if cuda else "cpu")
+        _wb["where"] = ("GPU" if cuda else "CPU (onnxruntime-gpu not working)") + f", {DWPOSE_MODE}"
+        print(f"[pose] DWPose ready on {_wb['where']}")
+    except Exception as e:
+        _wb["error"] = str(e)[:300]
+        print("[pose] DWPose not available, using the browser's MediaPipe joints:", e)
+    return _wb["model"]
+
+
+def dwpose_skeleton(img, age=None):
+    """Camera frame (PIL) -> OpenPose-style whole-body skeleton (body, hands, face) on black, or None if DWPose isn't there."""
+    wb = dwpose()
+    if wb is None:
+        return None
+    import numpy as np
+    import cv2
+    from rtmlib import draw_skeleton
+    bgr = cv2.cvtColor(np.asarray(img.convert("RGB")), cv2.COLOR_RGB2BGR)
+    kps, scores = wb(bgr)
+    canvas = np.zeros_like(bgr)
+    if len(kps):
+        k = int(np.argmax([(p[:, 0].max() - p[:, 0].min()) * (p[:, 1].max() - p[:, 1].min()) for p in kps]))   # the biggest person
+        kp, sc = kps[k].copy(), scores[k].copy()
+        s = child_scale(age)
+        if s < 0.999 and len(kp) >= 134:                             # OpenPose order: 0 nose, 1 neck, 14-17 eyes/ears, 24-91 face
+            head = {0, 14, 15, 16, 17, *range(24, 92)}
+            pts = reshape_child([tuple(p) for p in kp], tuple(kp[1]), tuple(kp[0]), head, s)
+            kp = np.array(pts, dtype=kp.dtype)
+        try:
+            canvas = draw_skeleton(canvas, kp[None], sc[None], openpose_skeleton=True, kpt_thr=0.4)
+        except TypeError:
+            canvas = draw_skeleton(canvas, kp[None], sc[None], to_openpose=True, kpt_thr=0.4)
+    return Image.fromarray(cv2.cvtColor(canvas, cv2.COLOR_BGR2RGB))
 
 
 def fetch_structure(dtype=None):
@@ -297,11 +393,12 @@ class Generator:
         self.prev, self.prev_key = None, None
         self.refs = {s: {"style": None, "image": None} for s in ("person", "background")}
         self.ip = {"person": None, "background": None}
-        self.ip_scale = None
+        self.ip_scale = {}
         self.lora_key, self.lora_loaded, self.lora_errors = None, set(), {}
         self.cn, self.depth_model, self.depth_range = {}, None, None      # structure, loaded when first used
         self.shape_img, self.shape_ms, self.prev_shape = None, None, None
         self.prev_in, self.motion, self.lean, self.timing, self.t_lap = None, None, None, {}, 0.0
+        self.cur_img = None
         self.ip_zero = self.encode_images([Image.new("RGB", (224, 224), (128, 128, 128))]) * 0
         print(f"[gen] ready · prediction={self.prediction}")
 
@@ -346,7 +443,7 @@ class Generator:
             print(f"[shape] {kind} ControlNet loaded in {time.perf_counter() - t0:.1f} s")
         return self.cn[kind]
 
-    def depth_map(self, x):
+    def depth_map(self, x, size=None, smooth=True):
         """Camera frame (-1..1) -> depth map (0..1, near = white, 3 channels), the way the depth ControlNet wants it."""
         torch, F = self.torch, self.torch.nn.functional
         if self.depth_model is None:
@@ -355,31 +452,48 @@ class Generator:
             self.depth_mean = torch.tensor([0.485, 0.456, 0.406], device=self.device, dtype=self.dtype).view(1, 3, 1, 1)
             self.depth_std = torch.tensor([0.229, 0.224, 0.225], device=self.device, dtype=self.dtype).view(1, 3, 1, 1)
             print("[shape] depth reader loaded")
-        h, w = round(HEIGHT / 14) * 14, round(WIDTH / 14) * 14   # the model works in 14-pixel patches
+        oh, ow = size or (HEIGHT, WIDTH)
+        h, w = round(min(oh, 518) / 14) * 14, round(min(oh, 518) * ow / oh / 14) * 14   # the model works in 14-pixel patches
         inp = F.interpolate((x + 1) / 2, (h, w), mode="bilinear", align_corners=False)
         d = self.depth_model(pixel_values=(inp - self.depth_mean) / self.depth_std).predicted_depth
-        d = F.interpolate(d[:, None].float(), (HEIGHT, WIDTH), mode="bilinear", align_corners=False)
+        d = F.interpolate(d[:, None].float(), (oh, ow), mode="bilinear", align_corners=False)
         lo, hi = float(d.amin()), float(d.amax())
-        if self.depth_range:                                     # smooth the range, so the map doesn't pump
+        if smooth and self.depth_range:                          # smooth the range, so the map doesn't pump
             lo, hi = 0.8 * self.depth_range[0] + 0.2 * lo, 0.8 * self.depth_range[1] + 0.2 * hi
-        self.depth_range = (lo, hi)
+        if smooth:
+            self.depth_range = (lo, hi)
         d = ((d - lo) / max(1e-6, hi - lo)).clamp(0, 1)
         return d.repeat(1, 3, 1, 1).to(self.dtype)
 
-    def shape_for(self, x, pose):
-        kind = TUNE["shape"]
-        if kind == "off" or float(TUNE["cn_strength"]) <= 0:
+    def pose_cond(self, pose, age):
+        """The skeleton the pose ControlNet follows: DWPose on the server (body, hands, face) if it's there, else the
+        browser's MediaPipe joints. Reshaped to a child's proportions at young ages."""
+        sk = dwpose_skeleton(self.cur_img, age) if self.cur_img is not None else None
+        if sk is None:
+            sk = draw_openpose(pose or [], age=age)
+        return (self.torch.from_numpy(self.np.asarray(sk, dtype="float32") / 255).permute(2, 0, 1)[None]).to(self.device, self.dtype)
+
+    def shape_for(self, x, pose, age=None, ramp=1.0):
+        """[(controlnet, picture, strength), ...] or None. Young: pose only, reshaped, held loosely; the hold also
+        ramps up (RAMP 0 -> 1) while the kid emerges from the baby."""
+        kind, strength = TUNE["shape"], float(TUNE["cn_strength"])
+        if kind == "off" or strength <= 0:
             self.shape_img = None
             return None
         t0 = time.perf_counter()
-        if kind == "depth":
-            cond = self.depth_map(x)
-        else:
-            sk = draw_openpose(pose or [])
-            cond = (self.torch.from_numpy(self.np.asarray(sk, dtype="float32") / 255).permute(2, 0, 1)[None]).to(self.device, self.dtype)
-        self.shape_img = cond
+        cu = float(TUNE["child_until"])
+        if age is not None and age < cu:
+            kind = "pose"
+            strength *= float(TUNE["child_cn"]) + (1 - float(TUNE["child_cn"])) * max(0.0, age) / max(0.1, cu)
+        strength *= 0.25 + 0.75 * max(0.0, min(1.0, ramp))
+        out = []
+        if kind in ("depth", "both"):
+            out.append((self.controlnet("depth"), self.depth_map(x), strength))
+        if kind in ("pose", "both"):
+            out.append((self.controlnet("pose"), self.pose_cond(pose, age), strength))
+        self.shape_img = out[0][1] if len(out) == 1 else self.torch.maximum(out[0][1], out[1][1])
         self.shape_ms = (time.perf_counter() - t0) * 1000
-        return self.controlnet(kind), cond
+        return out
 
     def shape_jpeg(self):
         if self.shape_img is None:
@@ -425,20 +539,21 @@ class Generator:
     IP_BLOCKS = {"style": ("up_blocks.1.attentions.1",),
                  "layout": ("up_blocks.1.attentions.1", "down_blocks.2.attentions.1")}
 
-    def set_ip_scales(self, scale, mode):
-        for name, proc in self.unet.attn_processors.items():
+    def set_ip_scales(self, scale, mode, unet=None):
+        for name, proc in (unet or self.unet).attn_processors.items():
             if not hasattr(proc, "scale") or not isinstance(proc.scale, list):
                 continue                                         # not an IP-Adapter layer
             on = mode == "all" or any(name.startswith(b) for b in self.IP_BLOCKS.get(mode, ()))
             proc.scale = [scale if on else 0.0 for _ in proc.scale]
 
-    def image_embeds(self, side, batch2):
+    def image_embeds(self, side, batch2, unet=None):
         emb = self.ip[side]
         scale = TUNE["ip_style"] if emb is not None else 0.0
+        unet = unet or self.unet
         key = (scale, TUNE["ref_mode"])
-        if key != self.ip_scale:
-            self.set_ip_scales(*key)
-            self.ip_scale = key
+        if self.ip_scale.get(id(unet)) != key:                  # each painter (UNet) remembers its own setting
+            self.set_ip_scales(scale, TUNE["ref_mode"], unet)
+            self.ip_scale[id(unet)] = key
         e = emb if emb is not None else self.ip_zero
         return [self.torch.cat([self.ip_zero, e])] if batch2 else [e]
 
@@ -454,10 +569,11 @@ class Generator:
             self.noises[key] = torch.randn(shape, generator=g).to(self.device, self.dtype)
         return self.noises[key]
 
-    def denoise(self, lat, timesteps, prompt, side, seed=None, control=None):
+    def denoise(self, lat, timesteps, prompt, side, seed=None, control=None, size=None):
         """Noise up to t, predict the clean picture, repeat at a lower t. One timestep = one-step painting."""
         torch = self.torch
-        x0 = lat if lat is not None else torch.zeros((1, 4, HEIGHT // 8, WIDTH // 8), device=self.device, dtype=self.dtype)
+        h, w = size or (HEIGHT, WIDTH)
+        x0 = lat if lat is not None else torch.zeros((1, 4, h // 8, w // 8), device=self.device, dtype=self.dtype)
         g = float(TUNE["guidance"])
         cfg = g > 1.01
         text = self.embed_mix(prompt)
@@ -472,10 +588,13 @@ class Generator:
             inp = torch.cat([noisy, noisy]) if cfg else noisy
             tt = torch.tensor([t] * inp.shape[0], device=self.device)
             extra = {}
-            if control is not None:                              # ControlNet: the shape, added inside the painter
-                cn, cond = control
-                down, mid = cn(inp, tt, encoder_hidden_states=text, controlnet_cond=torch.cat([cond, cond]) if cfg else cond,
-                               conditioning_scale=float(TUNE["cn_strength"]), return_dict=False)
+            if control:                                          # ControlNet(s): the shape, added inside the painter
+                down = mid = None
+                for cn, cond, scale in control:
+                    d, m = cn(inp, tt, encoder_hidden_states=text, controlnet_cond=torch.cat([cond, cond]) if cfg else cond,
+                              conditioning_scale=scale, return_dict=False)
+                    down = d if down is None else [a + b for a, b in zip(down, d)]
+                    mid = m if mid is None else mid + m
                 extra = {"down_block_additional_residuals": down, "mid_block_additional_residual": mid}
             out = self.unet(inp, tt, encoder_hidden_states=text, **kw, **extra).sample
             if cfg:
@@ -492,7 +611,7 @@ class Generator:
         self.timing[name] = (now - self.t_lap) * 1000
         self.t_lap = now
 
-    def person(self, img, prompt, pose=None):
+    def person(self, img, prompt, pose=None, age=None, ramp=1.0):
         """One avatar frame. Steadiness (stage 4): the SAME noise every frame (so the style can't wander), and the
         frame leans on the previous one by STEADY when you're still, letting go as you move (GHOST GUARD)."""
         change, steady, guard = float(TUNE["change"]), float(TUNE["steady"]), float(TUNE["ghost_guard"])
@@ -501,7 +620,8 @@ class Generator:
         self.timing, self.t_lap = {}, time.perf_counter()
         with self.torch.no_grad():
             x = self.to_tensor(img)
-            control = self.shape_for(x, pose)
+            self.cur_img = img
+            control = self.shape_for(x, pose, age, ramp)
             self.lap("shape")
             lat = self.tiny_vae.encode(x).latents
             if self.prev_shape != TUNE["shape"]:
@@ -535,19 +655,40 @@ class Generator:
         n = max(1, min(4, int(TUNE["world_steps"])))
         with self.torch.no_grad():
             if init is not None:                                 # start from the last world / the reference picture
-                img = ImageOps.fit(init, (WIDTH, HEIGHT))
+                img = ImageOps.fit(init, (WORLD_W, WORLD_H))
                 lat = self.full_vae.encode(self.to_tensor(img)).latent_dist.mean * sf
                 t0 = int((1 - k) * 1000) - 1
                 ts = [int(t0 * (n - k) / n) for k in range(n)]
             else:                                                # start from pure noise
                 lat = None
                 ts = [int(999 * (n - k) / n) for k in range(n)]      # 1: [999]  2: [999, 499]  4: [999, 749, 499, 249]
-            x0 = self.denoise(lat, ts, prompt, "background", seed=seed)
+            x0 = self.denoise(lat, ts, prompt, "background", seed=seed, size=(WORLD_H, WORLD_W))
             y = self.full_vae.decode(x0 / sf).sample
             if self.torch.isnan(y).any():                        # fp16 trouble: fall back to the tiny VAE
                 y = self.tiny_vae.decode(x0).sample
         self.last_world = self.to_image(y)
         return self.last_world
+
+    def portrait(self, prompt, seed, init=None, strength=0.4):
+        """The baby: painted once (init None), then repainted lightly from the last one as each trait emerges."""
+        sf = self.full_vae.config.scaling_factor
+        n = max(1, min(4, int(TUNE["world_steps"])))
+        with self.torch.no_grad():
+            if init is not None:
+                lat = self.full_vae.encode(self.to_tensor(ImageOps.fit(init, (PORTRAIT, PORTRAIT)))).latent_dist.mean * sf
+                t0 = int(max(0.05, min(0.95, strength)) * 1000) - 1
+            else:
+                lat, t0 = None, 999
+            ts = [int(t0 * (n - k) / n) for k in range(n)]
+            x0 = self.denoise(lat, ts, prompt, "person", seed=seed, size=(PORTRAIT, PORTRAIT))
+            y = self.full_vae.decode(x0 / sf).sample
+        return self.to_image(y)
+
+    def world_depth(self, img):
+        """A depth map of a world picture (near = white), for the browser's parallax. Grey PNG, half size."""
+        with self.torch.no_grad():
+            d = self.depth_map(self.to_tensor(img), size=(img.height, img.width), smooth=False)
+        return depth_png((d[0, 0].float().clamp(0, 1) * 255).round().byte().cpu().numpy(), img.size)
 
     def gpu_mb(self):
         if self.device != "cuda":
@@ -561,6 +702,180 @@ class Generator:
     def to_image(self, y):
         y = ((y.clamp(-1, 1)[0].permute(1, 2, 0).float() + 1) * 127.5).round().byte().cpu().numpy()
         return Image.fromarray(y)
+
+
+# ---------- SDXL (PAINTER=sdxl) ----------
+def load_sdxl(device, dtype):
+    """Two SDXL painters sharing one VAE: SDXL-Turbo for the live avatar (1 step), DreamShaper XL Lightning for the worlds
+    and the baby (4 steps), plus the tiny SDXL decoder for live frames and IP-Adapter Plus (ViT-H) on both."""
+    from diffusers import AutoencoderKL, AutoencoderTiny, StableDiffusionXLPipeline
+    vae = AutoencoderKL.from_pretrained(SDXL_VAE, torch_dtype=dtype)
+
+    def get(repo):
+        try:
+            return StableDiffusionXLPipeline.from_pretrained(repo, torch_dtype=dtype, variant="fp16", vae=vae)
+        except Exception:
+            return StableDiffusionXLPipeline.from_pretrained(repo, torch_dtype=dtype, vae=vae)
+    print(f"[sdxl] live painter {SDXL_LIVE} ...")
+    live = get(SDXL_LIVE)
+    print(f"[sdxl] world painter {SDXL_WORLD} ...")
+    world = get(SDXL_WORLD)
+    print("[sdxl] IP-Adapter Plus (ViT-H) ...")
+    live.load_ip_adapter(SDXL_IP[0], subfolder=SDXL_IP[1], weight_name=SDXL_IP[2], image_encoder_folder=SDXL_IP[3])
+    world.load_ip_adapter(SDXL_IP[0], subfolder=SDXL_IP[1], weight_name=SDXL_IP[2], image_encoder_folder=None)
+    tiny = AutoencoderTiny.from_pretrained(SDXL_TINY, torch_dtype=dtype)
+    for x in (live, world, tiny):
+        x.to(device)
+    for x in (live, world):
+        x.set_progress_bar_config(disable=True)
+    return live, world, tiny
+
+
+def load_sdxl_controlnet(kind, dtype=None):
+    from diffusers import ControlNetModel
+    try:
+        return ControlNetModel.from_pretrained(SDXL_CONTROLNETS[kind], torch_dtype=dtype, variant="fp16")
+    except Exception:
+        return ControlNetModel.from_pretrained(SDXL_CONTROLNETS[kind], torch_dtype=dtype)
+
+
+class SDXLGenerator(Generator):
+    """The same avatar loop as the SD 1.5 painter (steadiness, ControlNet, references, ageing), on SDXL.
+    Avatar 768x448 with SDXL-Turbo in one step; worlds 1344x768 and the baby 768x768 with DreamShaper XL Lightning, 4 steps."""
+    IP_BLOCKS = {"style": ("up_blocks.0.attentions.1",),             # InstantStyle's own SDXL blocks
+                 "layout": ("up_blocks.0.attentions.1", "down_blocks.2.attentions.1")}
+
+    def __init__(self):
+        import numpy as np
+        import torch
+        self.np, self.torch = np, torch
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        if self.device != "cuda":
+            raise RuntimeError("SDXL needs the NVIDIA GPU")
+        self.dtype = torch.float16
+        live, world, self.tiny_vae = load_sdxl(self.device, self.dtype)
+        self.pipe, self.world_pipe = live, world
+        self.unet, self.world_unet, self.full_vae = live.unet, world.unet, live.vae
+        self.prediction = live.scheduler.config.get("prediction_type", "epsilon")
+        self.alphas = live.scheduler.alphas_cumprod.to(self.device, torch.float32)
+        self.has_ip = True
+        self.embeds, self.noises = {}, {}
+        self.prev, self.prev_key = None, None
+        self.refs = {sd: {"style": None, "image": None} for sd in ("person", "background")}
+        self.ip = {"person": None, "background": None}
+        self.ip_scale = {}
+        self.lora_key, self.lora_loaded, self.lora_errors = None, set(), {}
+        self.cn, self.depth_model, self.depth_range = {}, None, None
+        self.shape_img, self.shape_ms, self.prev_shape = None, None, None
+        self.prev_in, self.motion, self.lean, self.timing, self.t_lap = None, None, None, {}, 0.0
+        self.cur_img, self.last_world = None, None
+        self.ip_zero = self.encode_images([Image.new("RGB", (224, 224), (128, 128, 128))]) * 0
+        for kind in ("depth", "pose"):                              # loaded now, so the first frames don't stall
+            self.controlnet(kind)
+        print(f"[sdxl] ready · avatar {WIDTH}x{HEIGHT} · world {WORLD_W}x{WORLD_H}")
+
+    def apply_loras(self, t):                                       # the LoRAs in loras/ are SD 1.5: they don't fit SDXL
+        for f, w in ((t["lora_a"], t["lora_a_w"]), (t["lora_b"], t["lora_b_w"])):
+            if f and w > 0:
+                self.lora_errors[f] = "an SD 1.5 LoRA: it doesn't work with the SDXL painter (start the server without PAINTER=sdxl to use it)"
+
+    def controlnet(self, kind):
+        if kind not in self.cn:
+            t0 = time.perf_counter()
+            self.cn[kind] = load_sdxl_controlnet(kind, self.dtype).to(self.device).eval()
+            print(f"[shape] SDXL {kind} ControlNet loaded in {time.perf_counter() - t0:.1f} s")
+        return self.cn[kind]
+
+    def embed(self, prompt, which="live"):
+        key = (which, prompt)
+        if key not in self.embeds:
+            if len(self.embeds) > 48:
+                self.embeds.clear()
+            pipe = self.pipe if which == "live" else self.world_pipe
+            with self.torch.no_grad():
+                pe, _, pooled, _ = pipe.encode_prompt(prompt=prompt, device=self.device, num_images_per_prompt=1,
+                                                      do_classifier_free_guidance=False)
+            self.embeds[key] = (pe, pooled)
+        return self.embeds[key]
+
+    def embed_mix(self, prompt, which="live"):
+        if isinstance(prompt, tuple):
+            a, b, mix = prompt
+            if b and mix > 0.001:
+                (pa, qa), (pb, qb) = self.embed(a, which), self.embed(b, which)
+                return pa * (1 - mix) + pb * mix, qa * (1 - mix) + qb * mix
+            prompt = a
+        return self.embed(prompt, which)
+
+    def denoise(self, lat, timesteps, prompt, side, seed=None, control=None, size=None, unet=None, guidance=None, which="live"):
+        """SDXL, deterministic (DDIM): noise once up to the first t, then predict and step down. One timestep = one step."""
+        torch = self.torch
+        unet = unet or self.unet
+        h, w = (lat.shape[2] * 8, lat.shape[3] * 8) if lat is not None else (size or (HEIGHT, WIDTH))
+        x0 = lat if lat is not None else torch.zeros((1, 4, h // 8, w // 8), device=self.device, dtype=self.dtype)
+        g = float(TUNE["guidance"]) if guidance is None else guidance
+        cfg = g > 1.01
+        pe, pooled = self.embed_mix(prompt, which)
+        tid = torch.tensor([[h, w, 0, 0, h, w]], device=self.device, dtype=self.dtype)
+        if cfg:
+            neg = ", ".join(q for q in (TUNE["negative"], current_style().get("negative", "")) if q)
+            npe, npool = self.embed(neg, which)
+            pe, pooled, tid = torch.cat([npe, pe]), torch.cat([npool, pooled]), torch.cat([tid, tid])
+        added = {"text_embeds": pooled, "time_ids": tid, "image_embeds": self.image_embeds(side, cfg, unet)}
+        a = self.alphas[timesteps[0]]
+        x = a.sqrt().to(self.dtype) * x0 + (1 - a).sqrt().to(self.dtype) * self.noise(0, x0.shape, seed)
+        for i, t in enumerate(timesteps):
+            a = self.alphas[t]
+            sa, s1a = a.sqrt().to(self.dtype), (1 - a).sqrt().to(self.dtype)
+            inp = torch.cat([x, x]) if cfg else x
+            tt = torch.tensor([t] * inp.shape[0], device=self.device)
+            extra = {}
+            if control:
+                down = mid = None
+                for cn, cond, scale in control:
+                    d, m = cn(inp, tt, encoder_hidden_states=pe, controlnet_cond=torch.cat([cond, cond]) if cfg else cond,
+                              conditioning_scale=scale, added_cond_kwargs={"text_embeds": pooled, "time_ids": tid}, return_dict=False)
+                    down = d if down is None else [p + q for p, q in zip(down, d)]
+                    mid = m if mid is None else mid + m
+                extra = {"down_block_additional_residuals": down, "mid_block_additional_residual": mid}
+            out = unet(inp, tt, encoder_hidden_states=pe, added_cond_kwargs=added, **extra).sample
+            if cfg:
+                u, c = out.chunk(2)
+                out = u + g * (c - u)
+            if self.prediction == "v_prediction":
+                x0, eps = sa * x - s1a * out, s1a * x + sa * out
+            else:
+                x0, eps = (x - s1a * out) / sa, out
+            if i + 1 < len(timesteps):
+                a2 = self.alphas[timesteps[i + 1]]
+                x = a2.sqrt().to(self.dtype) * x0 + (1 - a2).sqrt().to(self.dtype) * eps
+        return x0
+
+    def paint_big(self, prompt, seed, init, k, size, side):
+        """A world or the baby: DreamShaper XL Lightning, 4 steps, CFG 2 (from init, keeping k of it, if given)."""
+        sf = self.full_vae.config.scaling_factor
+        n = SDXL_WORLD_STEPS
+        with self.torch.no_grad():
+            if init is not None:
+                img = ImageOps.fit(init.convert("RGB"), (size[1], size[0]))
+                lat = self.full_vae.encode(self.to_tensor(img)).latent_dist.mean * sf
+                t0 = int((1 - k) * 1000) - 1
+            else:
+                lat, t0 = None, 999
+            ts = [int(t0 * (n - j) / n) for j in range(n)]
+            x0 = self.denoise(lat, ts, prompt, side, seed=seed, size=size, unet=self.world_unet, guidance=SDXL_WORLD_CFG, which="world")
+            y = self.full_vae.decode(x0 / sf).sample
+        return self.to_image(y)
+
+    def background(self, prompt, seed, keep=0.0):
+        init, k = self.refs["background"]["image"], BG_IMAGE_KEEP
+        if keep > 0 and self.last_world is not None:
+            init, k = self.last_world, keep
+        self.last_world = self.paint_big(prompt, seed, init, k, (WORLD_H, WORLD_W), "background")
+        return self.last_world
+
+    def portrait(self, prompt, seed, init=None, strength=0.4):
+        return self.paint_big(prompt, seed, init, 1 - strength, (PORTRAIT, PORTRAIT), "person")
 
 
 class MockGenerator:
@@ -602,7 +917,7 @@ class MockGenerator:
             return fallback
         return tuple(int(v) for v in ImageStat.Stat(imgs[0].convert("RGB")).mean)
 
-    def person(self, img, prompt, pose=None):
+    def person(self, img, prompt, pose=None, age=None, ramp=1.0):
         time.sleep(0.05)
         kind = TUNE["shape"]
         self.shape_img = None if kind == "off" else (draw_openpose(pose or []) if kind == "pose" else
@@ -619,28 +934,60 @@ class MockGenerator:
         time.sleep(0.3)
         init = self.refs["background"]["image"]
         if init is not None:
-            img = ImageOps.fit(init.convert("RGB"), (WIDTH, HEIGHT)).filter(ImageFilter.GaussianBlur(3))
+            img = ImageOps.fit(init.convert("RGB"), (WORLD_W, WORLD_H)).filter(ImageFilter.GaussianBlur(3))
         else:
             rnd, c = random.Random(seed), self.ref_colour("background", self.tint(prompt))
-            img = Image.new("RGB", (WIDTH, HEIGHT), c)
+            img = Image.new("RGB", (WORLD_W, WORLD_H), c)
             d = ImageDraw.Draw(img)
             for _ in range(30):
-                x, y, r = rnd.randrange(WIDTH), rnd.randrange(HEIGHT), rnd.randrange(10, 80)
+                x, y, r = rnd.randrange(WORLD_W), rnd.randrange(WORLD_H), rnd.randrange(10, 80)
                 d.ellipse((x - r, y - r, x + r, y + r), fill=tuple(min(255, max(0, v + rnd.randrange(-60, 60))) for v in c))
             img = img.filter(ImageFilter.GaussianBlur(6))
         if keep > 0 and self.last_world is not None:            # grows out of the last world
             img = Image.blend(img, self.last_world, keep)
         self.last_world = img.copy()
-        ImageDraw.Draw(img).text((12, HEIGHT - 24), "MOCK WORLD · " + prompt[:70], fill=(255, 255, 255))
+        ImageDraw.Draw(img).text((12, WORLD_H - 24), "MOCK WORLD · " + prompt[:70], fill=(255, 255, 255))
         return img
+
+    def portrait(self, prompt, seed, init=None, strength=0.4):
+        """A drawn stand-in baby: a face with eyes, tinted by the prompt, so the page's animation has something to work on."""
+        time.sleep(0.25)
+        n, c = PORTRAIT, self.tint(prompt)
+        img = Image.new("RGB", (n, n), (235, 225, 215))
+        d = ImageDraw.Draw(img)
+        d.ellipse((n * 0.12, n * 0.62, n * 0.88, n * 1.2), fill=(240, 240, 250))              # blanket
+        d.ellipse((n * 0.28, n * 0.18, n * 0.72, n * 0.7), fill=(min(255, c[0] // 2 + 150), min(255, c[1] // 3 + 140), min(255, c[2] // 3 + 120)))
+        for ex in (0.41, 0.59):
+            d.ellipse((n * (ex - 0.04), n * 0.4, n * (ex + 0.04), n * 0.45), fill=(255, 255, 255))
+            d.ellipse((n * (ex - 0.018), n * 0.405, n * (ex + 0.018), n * 0.445), fill=(60, 40, 30))
+        d.text((10, n - 20), "MOCK BABY · " + prompt[-60:], fill=(80, 80, 80))
+        if init is not None:
+            img = Image.blend(ImageOps.fit(init, (n, n)), img, max(0.2, strength))
+        return img
+
+    def world_depth(self, img):
+        """Mock depth: lower = nearer, plus a little of the picture's brightness."""
+        import numpy as np
+        h, w = img.height, img.width
+        grad = np.linspace(40, 230, h)[:, None].repeat(w, 1)
+        lum = np.asarray(ImageOps.grayscale(img), dtype="float32")
+        return depth_png(np.clip(grad * 0.8 + lum * 0.2, 0, 255).astype("uint8"), img.size)
 
 
 gen = None
+painter_note = ""
 lock = asyncio.Lock()
 frame_log = collections.deque(maxlen=60)          # (time, ms, {part: ms}) of recent avatar frames, for the readout
 rtt_log = collections.deque(maxlen=30)            # the browser's measured round trip per frame (ms)
 wait_log = collections.deque(maxlen=30)           # how long each frame queued behind the previous one on the server (ms)
 world_ms = None
+
+
+def depth_png(arr, size):
+    g = Image.fromarray(arr, "L").resize((max(2, size[0] // 2), max(2, size[1] // 2)))
+    buf = io.BytesIO()
+    g.save(buf, "PNG")
+    return buf.getvalue()
 
 
 def jpeg_bytes(img):
@@ -659,7 +1006,7 @@ def full_prompt(prompt):
     return ", ".join(p.strip() for p in parts if p and p.strip())
 
 
-def run_person(jpeg, prompt, pose=None, to="", mix=0.0):
+def run_person(jpeg, prompt, pose=None, to="", mix=0.0, age=None, ramp=1.0):
     t0 = time.perf_counter()
     gen.apply_loras(TUNE)
     img = Image.open(io.BytesIO(jpeg)).convert("RGB")
@@ -667,7 +1014,7 @@ def run_person(jpeg, prompt, pose=None, to="", mix=0.0):
         img = ImageOps.fit(img, (WIDTH, HEIGHT))
     t1 = time.perf_counter()
     p = (full_prompt(prompt), full_prompt(to), mix) if to and mix > 0.001 else full_prompt(prompt)
-    out = gen.person(img, p, pose)
+    out = gen.person(img, p, pose, age, ramp)
     t2 = time.perf_counter()
     data = jpeg_bytes(out)
     t3 = time.perf_counter()
@@ -678,13 +1025,36 @@ def run_person(jpeg, prompt, pose=None, to="", mix=0.0):
     return data, ms
 
 
+world_seq, world_last = 0, {"id": 0, "img": None, "depth": None}
+
+
 def run_background(prompt, seed, keep=0.0):
-    global world_ms
+    global world_ms, world_seq
     t0 = time.perf_counter()
     gen.apply_loras(TUNE)
     out = gen.background(full_prompt(prompt), seed, keep)
     world_ms = (time.perf_counter() - t0) * 1000
+    world_seq += 1
+    world_last.update(id=world_seq, img=out, depth=None)          # its depth is made when the page asks (GET /world_depth)
     return jpeg_bytes(out), world_ms
+
+
+def run_world_depth(wid):
+    if wid != world_last["id"] or world_last["img"] is None:
+        return None
+    if world_last["depth"] is None:
+        world_last["depth"] = gen.world_depth(world_last["img"])
+    return world_last["depth"]
+
+
+portrait_last = {"img": None}
+
+
+def run_portrait(prompt, seed, base, strength):
+    init = portrait_last["img"] if base else None
+    out = gen.portrait(full_prompt(prompt), seed, init, strength)
+    portrait_last["img"] = out
+    return jpeg_bytes(out)
 
 
 # ---------- web ----------
@@ -693,7 +1063,24 @@ async def load():
     global gen
     if not MOCK:
         await asyncio.to_thread(download_loras)
-    gen = await asyncio.to_thread(MockGenerator if MOCK else Generator)
+    global PAINTER, painter_note
+    if MOCK:
+        gen = MockGenerator()
+    elif PAINTER == "sdxl":
+        try:
+            gen = await asyncio.to_thread(SDXLGenerator)
+        except Exception as e:                                       # don't lose the session: fall back to the SD 1.5 painter
+            import traceback
+            traceback.print_exc()
+            painter_note = f"SDXL didn't load ({str(e)[:160]}); running the SD 1.5 DMD painter instead"
+            print("[sdxl] " + painter_note)
+            PAINTER = "dmd"
+            set_sizes(PAINTER)
+            gen = await asyncio.to_thread(Generator)
+    else:
+        gen = await asyncio.to_thread(Generator)
+    if not MOCK:
+        await asyncio.to_thread(dwpose)
     if not MOCK:   # warm up so the first real frames aren't slow
         await asyncio.to_thread(run_background, "warm up", 0)
         await asyncio.to_thread(run_person, jpeg_bytes(Image.new("RGB", (WIDTH, HEIGHT), (128, 128, 128))), "warm up")
@@ -745,7 +1132,9 @@ async def draw(n: int = 1, lo: int = 1, hi: int = 6):
 async def config():
     return {"width": WIDTH, "height": HEIGHT, "mock": MOCK, "engine": "mock" if MOCK else PAINTER,
             "references": True, "look": look_version, "tune": tune_version, "shape": TUNE["shape"],
-            "filter": current_style().get("filter", ""), "skip_still": TUNE["skip_still"], "pace": pace_version}
+            "filter": current_style().get("filter", ""), "skip_still": TUNE["skip_still"], "pace": pace_version,
+            "out_scale": 2, "world_w": WORLD_W, "world_h": WORLD_H, "parallax": TUNE["parallax"],
+            "server_pose": bool(_wb["model"]) or MOCK}
 
 
 # ---------- tuning ----------
@@ -754,7 +1143,7 @@ def clean_tune(d):
     out = {}
     rng = {"change": (0.1, 1.0), "world_steps": (1, 4), "lora_a_w": (0, 2), "lora_b_w": (0, 2),
            "ip_style": (0, 1.5), "guidance": (1, 4), "steady": (0, 0.9), "cn_strength": (0, 1.5),
-           "ghost_guard": (0, 1), "skip_still": (0, 10)}
+           "ghost_guard": (0, 1), "skip_still": (0, 10), "child_until": (0, 20), "child_cn": (0, 1), "parallax": (0, 0.1)}
     for k, v in d.items():
         if k not in TUNE_DEFAULTS:
             continue
@@ -769,7 +1158,7 @@ def clean_tune(d):
             v = str(v)[:400]
             if k in ("lora_a", "lora_b") and v and v not in list_loras():
                 v = ""
-            if k == "shape" and v not in ("depth", "pose", "off"):
+            if k == "shape" and v not in ("depth", "pose", "both", "off"):
                 continue
             if k == "style" and v not in load_styles():
                 continue
@@ -802,6 +1191,8 @@ def settings_view():
         "loras": [{"file": f, "trigger": trigger_words(f), "error": (gen.lora_errors.get(f) if gen else None)} for f in list_loras()],
         "readout": {
             "painter": "mock" if MOCK else PAINTER,
+            "painter_note": painter_note,
+            "detection": ("DWPose on " + _wb["where"]) if _wb["model"] else ("browser MediaPipe" + (f" (DWPose: {_wb['error']})" if _wb["error"] else "")),
             "fps": round(fps, 1),
             "ms": round(sum(ms for _, ms in recent) / len(recent)) if recent else None,
             "world_ms": round(world_ms) if world_ms else None,
@@ -910,6 +1301,11 @@ async def frame(request: Request, prompt: str = "", to: str = "", mix: float = 0
             rtt_log.append(rtt)
     except ValueError:
         pass
+    try:                                                         # the game: the avatar's age (for its proportions) and the takeover ramp
+        age = float(request.headers["X-Age"]) if "X-Age" in request.headers else None
+        ramp = max(0.0, min(1.0, float(request.headers.get("X-Ramp", "1"))))
+    except ValueError:
+        age, ramp = None, 1.0
     pose = None
     try:                                                         # pose mode: the browser sends the joints along
         raw = request.headers.get("X-Pose")
@@ -919,7 +1315,7 @@ async def frame(request: Request, prompt: str = "", to: str = "", mix: float = 0
     arrived = time.perf_counter()
     async with lock:
         wait_log.append((time.perf_counter() - arrived) * 1000)   # the browser keeps two frames in flight: one waits here
-        out, ms = await asyncio.to_thread(run_person, jpeg, prompt, pose, to.strip(), max(0.0, min(1.0, mix)))
+        out, ms = await asyncio.to_thread(run_person, jpeg, prompt, pose, to.strip(), max(0.0, min(1.0, mix)), age, ramp)
     return Response(out, media_type="image/jpeg", headers={"X-Gen-Ms": str(round(ms)), "X-Look": str(look_version), "Cache-Control": "no-store"})
 
 
@@ -932,7 +1328,28 @@ async def background(prompt: str = "", keep: float = 0.0, fresh: int = 0):
         if fresh:
             gen.last_world = None
         out, ms = await asyncio.to_thread(run_background, prompt, random.randrange(1 << 30), max(0.0, min(0.95, keep)))
-    return Response(out, media_type="image/jpeg", headers={"X-Gen-Ms": str(round(ms)), "X-Look": str(look_version), "Cache-Control": "no-store"})
+        wid = world_seq
+    return Response(out, media_type="image/jpeg", headers={"X-Gen-Ms": str(round(ms)), "X-Look": str(look_version), "X-World": str(wid),
+                                                           "Cache-Control": "no-store"})
+
+
+@app.get("/world_depth")
+async def world_depth(id: int = 0):
+    """The depth of the last world (grey PNG, near = white), for the page's parallax."""
+    async with lock:
+        data = await asyncio.to_thread(run_world_depth, id)
+    if not data:
+        return Response(status_code=204)
+    return Response(data, media_type="image/png", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/portrait")
+async def portrait(prompt: str = "", base: int = 0, strength: float = 0.4, seed: int = 0):
+    """The baby (Body). base=0: painted fresh; base=1: repainted lightly from the last one (a trait emerging)."""
+    prompt = prompt.strip() or "a newborn baby"
+    async with lock:
+        out = await asyncio.to_thread(run_portrait, prompt, seed or random.randrange(1 << 30), base, max(0.05, min(0.95, strength)))
+    return Response(out, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 
 # ---------- the life (trajectory.json) ----------

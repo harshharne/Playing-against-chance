@@ -9,14 +9,21 @@
 //   await live.setBackground("a village") // null = your real room
 //   await live.setBackground(p, { keep: 0.5, fade: 2500 })   // painted FROM the last world, crossfaded in over 2.5 s
 //   live.hold(true)                       // freeze the screen (while the die rolls); hold(false) lets go
+//   live.setReal(false)                   // never show the raw camera (the game: only the painted avatar, or nobody)
+//   live.setPersonAlpha(a)                // fade the painted avatar in / out (the kid emerging from the baby)
+//   live.setControl({ age, ramp })        // sent with every frame: the avatar's age (its proportions) and the takeover ramp
+//   live.where() / live.skinTone()        // where you are in the camera (0..1); your skin colour [r, g, b], from the camera
+// The output canvas is drawn at OUT_SCALE x the painting size (from /config), so big worlds keep their detail,
+// and the world gets a little depth (parallax.js) when the server sends its depth map.
 //   live.setScene(fn)                     // draw your own scene instead (fn(ctx, W, H, now)); null = back to live
 //   live.stat                             // fps, timings, notes for a status line
 
-import { findCamera, builtInCamera } from "./cameras.js";
+import { findCamera, builtInCamera, listCameras, saveCamera } from "./cameras.js";
+import { createParallax } from "./parallax.js";
 
 export function createLive({ out, video, params }) {
   const octx = out.getContext("2d");
-  let W = 640, H = 384;
+  let W = 640, H = 384, S = 2;                              // painting size, and how much bigger the screen canvas is
   const mk = () => { const c = document.createElement("canvas"); c.width = W; c.height = H; return c; };
   let grab, mask, personMask, fg, send, prevCut, gen;      // working canvases, sized once the server tells us W x H
   const tiny = Object.assign(document.createElement("canvas"), { width: 32, height: 20 });       // "has anything moved?"
@@ -24,25 +31,48 @@ export function createLive({ out, video, params }) {
 
   let online = false, fgPrompt = null, fgTo = "", fgMix = 0, bgPrompt = null, flying = 0, seq = 0, shownSeq = 0;
   let bgImg = null, oldBg = null, bgAt = 0, bgFade = 600, person = null, personAt = 0, fade = 150, lastSig = null, held = false;
+  let bgDepth = null, oldPair = null, showReal = true, personAlpha = 1, control = null, serverPose = false;
+  const px = createParallax(); let par = [0, 0], parallax = 0.03;
   let personPose = null, prevPose = null, livePose = null;
   let segmenter = null, segImage = null, segOk = false, camCover = 0, scene = null;
   const stat = { ms: 0, bgMs: 0, times: [], note: "", seg: "", online: false, engine: "", references: true, fps: "–" };
 
   function sizeCanvases() {
-    out.width = W; out.height = H;
+    out.width = W * S; out.height = H * S;
     [grab, mask, personMask, fg, send, prevCut, gen] = [mk(), mk(), mk(), mk(), mk(), mk(), mk()];
   }
   sizeCanvases();
 
   // ---------- camera ----------
-  async function startCamera() {
-    let cam = "";                                           // the avatar camera chosen on /dice.html, if any
-    try { cam = (await findCamera("pac-avatar-cam")) || (await builtInCamera()); } catch (e) {}   // else the Mac's own camera
+  async function openCamera(id) {
     const want = { width: 1280, height: 720 };
-    try { video.srcObject = await navigator.mediaDevices.getUserMedia({ video: cam ? { ...want, deviceId: { exact: cam } } : want, audio: false }); }
-    catch (e) { video.srcObject = await navigator.mediaDevices.getUserMedia({ video: want, audio: false }); }   // that camera is gone: use the default
+    if (video.srcObject) video.srcObject.getTracks().forEach(t => t.stop());
+    try { video.srcObject = await navigator.mediaDevices.getUserMedia({ video: id ? { ...want, deviceId: { exact: id } } : want, audio: false }); stat.camNote = ""; }
+    catch (e) {                                             // that camera is gone or busy: use the default, and say so (debug line, D)
+      stat.camNote = `the chosen camera didn't open (${e.name}), using the default`;
+      video.srcObject = await navigator.mediaDevices.getUserMedia({ video: want, audio: false });
+    }
+    const tr = video.srcObject.getVideoTracks()[0];
+    stat.camera = tr ? tr.label : "";
     await video.play();
+  }
+  async function startCamera() {
+    let cam = "";                                           // the avatar camera chosen on /dice.html (or with C in the game), if any
+    try { cam = (await findCamera("pac-avatar-cam")) || (await builtInCamera()); } catch (e) {}   // else the Mac's own camera
+    await openCamera(cam);
     requestAnimationFrame(render);
+  }
+  // the next camera in the list becomes the avatar camera, and is remembered (the game's C key)
+  async function nextCamera() {
+    const cams = await listCameras();
+    if (!cams.length) return "";
+    const tr = video.srcObject && video.srcObject.getVideoTracks()[0];
+    const now = tr ? tr.getSettings().deviceId : "";
+    const next = cams[(cams.findIndex(c => c.deviceId === now) + 1) % cams.length];
+    saveCamera("pac-avatar-cam", next);
+    await openCamera(next.deviceId);
+    refresh();
+    return stat.camera || next.label;
   }
   // the middle of the camera, cropped to the generation shape and mirrored like a mirror
   function capture() {
@@ -91,7 +121,8 @@ export function createLive({ out, video, params }) {
   }
   let poseT = 0;
   function joints() {                                     // MediaPipe's 33 points as [x, y, visibility], or null
-    if (shapeMode !== "pose") return null;
+    if (shapeMode !== "pose" && shapeMode !== "both") return null;
+    if (serverPose) return null;                            // the server reads the whole body itself (DWPose, on the GPU)
     if (!poser) { startPoser(); return null; }
     try {
       poseT = Math.max(poseT + 1, performance.now());
@@ -144,29 +175,41 @@ export function createLive({ out, video, params }) {
 
   // ---------- the screen ----------
   function drawBackground(g) {
-    if (!bgImg) { g.drawImage(grab, 0, 0); return; }         // no background: your room stays
+    if (!bgImg) { if (showReal) g.drawImage(grab, 0, 0); else { g.fillStyle = "#fff"; g.fillRect(0, 0, W, H); } return; }   // no background: your room stays
     let k = Math.min(1, (performance.now() - bgAt) / bgFade);
     k = k * k * (3 - 2 * k);                                  // ease in and out: a slow paint-over, no visible start or stop
+    if (g === octx && px && parallax > 0) {                    // the screen: the world with a little depth, following you
+      const p = livePose ? [-(livePose.cx / W - 0.5), -(livePose.cy / H - 0.5) * 0.6] : [0, 0];
+      const drift = [Math.sin(performance.now() / 5200) * 0.12, Math.cos(performance.now() / 7300) * 0.06];
+      par = [par[0] + ((p[0] + drift[0]) * parallax - par[0]) * 0.06, par[1] + ((p[1] + drift[1]) * parallax - par[1]) * 0.06];
+      const o = oldPair && k < 1 ? oldPair : null;
+      g.drawImage(px.render(W * S, H * S, o ? o.img : bgImg, o ? o.depth : bgDepth, bgImg, bgDepth, o ? k : 1, par[0], par[1]), 0, 0, W, H);
+      return;
+    }
     if (oldBg && k < 1) { g.globalAlpha = 1; g.drawImage(oldBg, 0, 0, W, H); g.globalAlpha = k; }
     g.drawImage(bgImg, 0, 0, W, H);
     g.globalAlpha = 1;
   }
   function render(now) {
     if (held) { requestAnimationFrame(render); return; }      // everything holds still (the die is rolling)
+    octx.setTransform(S, 0, 0, S, 0, 0);                       // draw in painting units on the bigger screen canvas
     if (capture()) {
       segment();
       if (scene) scene(octx, W, H, now);                                     // a drawn scene (e.g. birth)
-      else if (!fgPrompt && !bgPrompt) octx.drawImage(grab, 0, 0);           // nothing set: just you
+      else if (!fgPrompt && !bgPrompt) { if (showReal) octx.drawImage(grab, 0, 0); else { octx.fillStyle = "#fff"; octx.fillRect(0, 0, W, H); } }   // nothing set: just you
       else {
         drawBackground(octx);
-        if (fgPrompt && person) {                                            // the re-imagined you
-          livePose = smoothPose(livePose, poseOf(mask));
+        livePose = smoothPose(livePose, poseOf(mask));
+        if (fgPrompt && person && personAlpha > 0.003) {                     // the re-imagined you
+          octx.globalAlpha = personAlpha;
           follow(octx, personPose, () => octx.drawImage(cutout(person, personMask), 0, 0));
           const k = Math.min(1, (performance.now() - personAt) / fade);
-          if (k < 1) { octx.globalAlpha = 1 - k; follow(octx, prevPose, () => octx.drawImage(prevCut, 0, 0)); octx.globalAlpha = 1; }
-        } else if (bgImg) octx.drawImage(cutout(grab, mask), 0, 0);          // the real you, on the new background
+          if (k < 1) { octx.globalAlpha = (1 - k) * personAlpha; follow(octx, prevPose, () => octx.drawImage(prevCut, 0, 0)); }
+          octx.globalAlpha = 1;
+        } else if (bgImg && showReal && !fgPrompt) octx.drawImage(cutout(grab, mask), 0, 0);   // the real you, on the new background
       }
       applyLook(params().look ?? stat.filter, now);                          // the look's filter (from /panel), on everything
+      octx.setTransform(1, 0, 0, 1, 0, 0);
     }
     const t = stat.times;
     stat.fps = t.length > 1 ? ((t.length - 1) / ((t[t.length - 1] - t[0]) / 1000)).toFixed(1) : "–";
@@ -277,7 +320,7 @@ export function createLive({ out, video, params }) {
     const s = Math.max(0.85, Math.min(1.18, livePose.h / Math.max(1, from.h)));
     let tx = livePose.cx - s * from.cx, ty = livePose.cy - s * from.cy;
     const lim = W * 0.2; tx = Math.max(-lim, Math.min(lim, tx)); ty = Math.max(-lim, Math.min(lim, ty));
-    g.save(); g.setTransform(s, 0, 0, s, tx, ty); draw(); g.restore();
+    g.save(); g.translate(tx, ty); g.scale(s, s); draw(); g.restore();   // (on top of the screen's own scale)
   }
 
   // ---------- server ----------
@@ -285,7 +328,8 @@ export function createLive({ out, video, params }) {
   async function connect() {
     try {
       const m = await (await fetch("/config", { cache: "no-store" })).json();
-      if (m.width !== W || m.height !== H) { W = m.width; H = m.height; sizeCanvases(); }
+      if (m.width !== W || m.height !== H || (m.out_scale || 2) !== S) { W = m.width; H = m.height; S = m.out_scale || 2; sizeCanvases(); }
+      serverPose = !!m.server_pose; parallax = m.parallax ?? parallax;
       stat.engine = m.engine; stat.references = m.references;
       if (lookSeen === null) { lookSeen = m.look; tuneSeen = m.tune; }
       stat.filter = m.filter || ""; stat.skip = m.skip_still;
@@ -304,7 +348,8 @@ export function createLive({ out, video, params }) {
       if (tuneSeen !== null && m.tune !== tuneSeen) refresh();                       // any setting: a fresh avatar frame
       if (lookSeen !== null && m.look !== lookSeen && bgPrompt) setBackground(bgPrompt);   // the look: a fresh world too
       lookSeen = m.look; tuneSeen = m.tune; shapeMode = m.shape || "depth"; stat.filter = m.filter || ""; stat.skip = m.skip_still;
-      if (shapeMode === "pose") startPoser();
+      serverPose = !!m.server_pose; parallax = m.parallax ?? parallax;
+      if ((shapeMode === "pose" || shapeMode === "both") && !serverPose) startPoser();
     } catch (e) {}
   }, 1000);
 
@@ -336,6 +381,7 @@ export function createLive({ out, video, params }) {
       const headers = { "Content-Type": "image/jpeg" };
       if (pts) headers["X-Pose"] = JSON.stringify(pts);
       if (stat.rtt) headers["X-RTT"] = String(Math.round(stat.rtt));   // so the panel can show where the time goes
+      if (control) { if (control.age != null) headers["X-Age"] = (+control.age).toFixed(2); if (control.ramp != null) headers["X-Ramp"] = (+control.ramp).toFixed(3); }
       const sent = performance.now();
       const res = await fetch("/frame?" + q, { method: "POST", body: jpeg, headers });
       if (!res.ok) throw new Error("status " + res.status);
@@ -384,7 +430,14 @@ export function createLive({ out, video, params }) {
       stat.bgMs = +res.headers.get("X-Gen-Ms") || 0;
       const img = await createImageBitmap(await res.blob());
       if (ask !== bgAsk) { img.close(); return; }          // a newer background was asked for meanwhile
-      oldBg = snapshotBg(); bgImg = img; bgAt = performance.now(); bgFade = Math.max(1, fade); refresh();
+      let depth = null;                                     // its depth, for the parallax (made on the server, once per world)
+      const wid = res.headers.get("X-World");
+      if (wid && px && parallax > 0) {
+        try { const d = await fetch(`/world_depth?id=${wid}`, { cache: "no-store" }); if (d.status === 200) depth = await createImageBitmap(await d.blob()); } catch (e) {}
+      }
+      if (ask !== bgAsk) { img.close(); return; }
+      oldBg = snapshotBg(); oldPair = bgImg ? { img: bgImg, depth: bgDepth } : null;
+      bgImg = img; bgDepth = depth; bgAt = performance.now(); bgFade = Math.max(1, fade); refresh();
       stat.note = "";
     } catch (e) { stat.note = ""; offline(); }
   }
@@ -403,13 +456,28 @@ export function createLive({ out, video, params }) {
     pump();
   }
   function hold(on) { held = !!on; if (!held) { refresh(); pump(); } }
+  function setReal(on) { showReal = !!on; }
+  function setPersonAlpha(a) { personAlpha = Math.max(0, Math.min(1, a)); }
+  function setControl(c) { control = c ? { ...control, ...c } : null; }
+  function where() { return livePose ? { x: livePose.cx / W, y: livePose.cy / H } : null; }
+  // your skin colour, read from the camera inside the top part of your outline (your face), averaged
+  function skinTone() {
+    const b = poseOf(mask); if (!b) return null;
+    const g = grab.getContext("2d", { willReadFrequently: true }), m = mask.getContext("2d", { willReadFrequently: true });
+    const x0 = Math.max(0, Math.round(b.cx - b.h * 0.12)), y0 = Math.max(0, Math.round(b.cy - b.h * 0.95)), w = Math.round(b.h * 0.24), h = Math.round(b.h * 0.25);
+    if (w < 4 || h < 4) return null;
+    const d = g.getImageData(x0, y0, w, h).data, a = m.getImageData(x0, y0, w, h).data;
+    let r = 0, gg = 0, bb = 0, n = 0;
+    for (let i = 0; i < d.length; i += 4) if (a[i + 3] > 180) { r += d[i]; gg += d[i + 1]; bb += d[i + 2]; n++; }
+    return n > 20 ? [r / n, gg / n, bb / n] : null;
+  }
   function setScene(fn) { scene = fn || null; refresh(); if (!scene) pump(); }
 
   startSegmenter();
   const camera = startCamera();
   connect();
   return {
-    stat, setPerson, setBackground, setScene, refresh, camera, hold,
+    stat, setPerson, setBackground, setScene, refresh, camera, hold, setReal, setPersonAlpha, setControl, where, skinTone, nextCamera,
     whenReady: () => online ? Promise.resolve() : new Promise(r => ready.push(r)),
     get size() { return { W, H }; },
     reconnect: offline,

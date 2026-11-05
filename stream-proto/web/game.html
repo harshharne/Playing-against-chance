@@ -5,50 +5,51 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Playing Against Chance</title>
 <style>
-/* One life, unfolding. The painted world fills the screen; text sits in soft translucent windows, one at a time;
-   the options are a fanned deck of glass cards at the bottom (after H's reference). Minimal, a clean sans. */
+/* One life, unfolding. The painted world fills the whole window, edge to edge; the only text is one soft
+   narrative window at the bottom and the option cards, spread evenly across the bottom. Minimal, a clean sans.
+   F = real fullscreen (the camera window hides there). D = a hidden debug line (die, fps). */
 :root {
-  --ink: #141414; --dim: #8a8a8a; --line: #d6d6d6; --bg: #fff; --fade: 1.2s;
-  --glass: rgba(255,255,255,0.52); --glass-hi: rgba(255,255,255,0.8); --edge: rgba(255,255,255,0.7);
-  --cw: clamp(78px, 7vw, 106px); --gap: calc(var(--cw) * 0.5);
+  --ink: #141414; --dim: #8a8a8a; --bg: #fff; --fade: 1.2s;
+  --glass: rgba(255,255,255,0.52); --glass-hi: rgba(255,255,255,0.82); --edge: rgba(255,255,255,0.7);
+  --cw: clamp(92px, 9.5vw, 138px); --ch: calc(var(--cw) * 1.22); --deck-h: calc(var(--ch) + 40px);
   color-scheme: light;
 }
-html, body { height: 100%; }
-body { margin: 0; background: var(--bg); color: var(--ink); font-family: "Inter", ui-sans-serif, system-ui, -apple-system, "Helvetica Neue", sans-serif; -webkit-font-smoothing: antialiased; }
-.frame { box-sizing: border-box; height: 100%; padding: 14px 16px; display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: 10px; }
-.gen { position: relative; min-height: 0; border-radius: 10px; overflow: hidden; display: grid; place-items: center; background: #eceae6; }
+html, body { height: 100%; margin: 0; overflow: hidden; }
+body { background: var(--bg); color: var(--ink); font-family: "Inter", ui-sans-serif, system-ui, -apple-system, "Helvetica Neue", sans-serif; -webkit-font-smoothing: antialiased; }
+.gen { position: fixed; inset: 0; overflow: hidden; background: #eceae6; }
 .gen canvas { width: 100%; height: 100%; object-fit: cover; display: block; }
-.pip { position: absolute; top: 14px; right: 14px; width: clamp(96px, 12%, 170px); aspect-ratio: 16 / 9; object-fit: cover; transform: scaleX(-1); border-radius: 8px; opacity: 0.85; background: #ddd; }
-.status { position: absolute; left: 14px; bottom: 10px; font-size: 10px; letter-spacing: 0.04em; color: rgba(255,255,255,0.75); text-shadow: 0 1px 3px rgba(0,0,0,0.4); }
-.status b { font-weight: 600; }
+.gen canvas.birth, .gen canvas.baby { position: absolute; inset: 0; opacity: 0; pointer-events: none; }   /* drawn scenes and the baby, over the live picture */
+.pip { position: absolute; top: 14px; right: 14px; width: clamp(96px, 12%, 170px); aspect-ratio: 16 / 9; object-fit: cover; transform: scaleX(-1); border-radius: 8px; opacity: 0.85; background: #ddd; transition: opacity 0.4s; }
+body.full .pip { opacity: 0; pointer-events: none; }        /* fullscreen: no camera window (the camera still runs) */
+.debug { position: absolute; left: 12px; top: 10px; font: 11px/1.4 ui-monospace, Menlo, monospace; color: #111; background: rgba(255,255,255,0.8); padding: 4px 8px; border-radius: 6px; }
+.debug[hidden] { display: none; }
 
-/* the age, counting up quietly */
-.age { position: absolute; top: 16px; left: 20px; display: flex; flex-direction: column; color: #fff; text-shadow: 0 1px 10px rgba(0,0,0,0.35); transition: opacity var(--fade); }
-.age small { font-size: 9px; font-weight: 600; letter-spacing: 0.2em; opacity: 0.8; }
-.age span { font-size: 34px; font-weight: 250; line-height: 1; font-variant-numeric: tabular-nums; }
-.age.off { opacity: 0; }
-
-/* the one soft window */
-.say { position: absolute; left: 50%; top: 9%; transform: translate(-50%, 8px); box-sizing: border-box; width: max-content; max-width: min(640px, calc(100% - 40px));
-       padding: 18px 26px; border-radius: 18px; background: var(--glass); border: 1px solid var(--edge);
+/* the one soft window, at the bottom; it lifts above the cards while they're up */
+.say { position: absolute; left: 50%; bottom: 5%; transform: translate(-50%, 8px); box-sizing: border-box; width: max-content; max-width: min(680px, calc(100% - 40px));
+       padding: 16px 26px; border-radius: 18px; background: var(--glass); border: 1px solid var(--edge);
        backdrop-filter: blur(16px) saturate(1.15); -webkit-backdrop-filter: blur(16px) saturate(1.15); box-shadow: 0 10px 40px rgba(0,0,0,0.10);
        text-align: center; display: flex; flex-direction: column; gap: 6px; opacity: 0; pointer-events: none;
-       transition: opacity var(--fade) ease, transform var(--fade) ease; }
+       transition: opacity var(--fade) ease, transform var(--fade) ease, bottom 0.7s cubic-bezier(.2,.75,.2,1); }
 .say.on { opacity: 1; transform: translate(-50%, 0); }
+body.cards .say { bottom: calc(var(--deck-h) + 4% + 14px); }
 .say .k { font-size: 9.5px; font-weight: 600; letter-spacing: 0.18em; color: #6d6d6d; text-transform: uppercase; }
 .say .t { font-size: 22px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.2; text-wrap: balance; }
 .say .s { font-size: 14.5px; line-height: 1.45; color: #333; text-wrap: balance; }
-.say.bridge { top: 40%; padding: 20px 30px; background: rgba(255,255,255,0.36); }
+.say .go { pointer-events: auto; }
+.say.bridge { padding: 18px 30px; background: rgba(255,255,255,0.4); }
 .say.bridge .s { font-size: 19px; font-weight: 400; color: #1b1b1b; }
-.say.small { top: auto; bottom: 14%; padding: 10px 18px; border-radius: 12px; background: rgba(255,255,255,0.3); box-shadow: none; }
+.say.small { padding: 10px 18px; border-radius: 12px; background: rgba(255,255,255,0.3); box-shadow: none; }
 .say.small .s { font-size: 12.5px; color: #333; }
 .say.quote .s { font-size: 18px; font-style: italic; }
-.say.end { top: 6%; text-align: left; width: min(640px, calc(100% - 40px)); max-height: 80%; overflow: auto; pointer-events: auto; gap: 10px; }
+.say.end { text-align: left; width: min(640px, calc(100% - 40px)); max-height: 78%; overflow: auto; pointer-events: auto; gap: 10px; }
 .say.end table { border-collapse: collapse; font-size: 13px; line-height: 1.4; }
 .say.end td { padding: 3px 14px 3px 0; vertical-align: top; }
 .say.end td:first-child { color: var(--dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .say.end td:nth-child(2) { color: #555; white-space: nowrap; }
 .say.end i { color: #777; font-style: normal; }
+.go { align-self: center; margin-top: 6px; font: inherit; font-size: 12px; font-weight: 600; letter-spacing: 0.14em; padding: 11px 26px; border: 0; border-radius: 30px; background: var(--ink); color: #fff; cursor: pointer; }
+.say.end .go { align-self: flex-start; }
+button:focus-visible { outline: 3px solid #888; outline-offset: 2px; }
 
 /* the die, landed: big and alone */
 .big { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; opacity: 0; transition: opacity var(--fade); }
@@ -59,39 +60,33 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: "Inter"
 .big span { font-size: 12px; font-weight: 600; letter-spacing: 0.3em; text-transform: uppercase; color: #444; opacity: 0; transition: opacity 0.6s; }
 .big span.on { opacity: 0.9; }
 
-/* ---- the deck: glass plaques fanned in depth; hover one and it turns to face you ---- */
-.deck { position: absolute; left: 50%; bottom: 2.5%; transform: translateX(-50%); height: calc(var(--cw) * 1.22 + 64px);
-        width: calc((var(--n) - 1) * var(--gap) + var(--cw)); perspective: 1100px; perspective-origin: 50% 20%; }
-.card { position: absolute; bottom: 28px; left: calc(var(--i) * var(--gap)); width: var(--cw); height: calc(var(--cw) * 1.22); box-sizing: border-box;
-        padding: 10px 10px; border-radius: 13px; background: var(--glass); border: 1px solid var(--edge);
+/* ---- the cards: glass plaques spread evenly across the full width of the bottom ---- */
+.deck { position: absolute; left: 3%; right: 3%; bottom: 4%; height: var(--deck-h); display: flex; justify-content: space-evenly; align-items: flex-end; }
+.deck[hidden] { display: none; }
+.card { position: relative; flex: none; width: var(--cw); height: var(--ch); box-sizing: border-box;
+        padding: 11px 11px; border-radius: 14px; background: var(--glass); border: 1px solid var(--edge);
         backdrop-filter: blur(14px) saturate(1.2); -webkit-backdrop-filter: blur(14px) saturate(1.2);
-        box-shadow: 0 14px 34px rgba(0,0,0,0.16), inset 0 1px 0 rgba(255,255,255,0.8);
+        box-shadow: 0 14px 34px rgba(0,0,0,0.14), inset 0 1px 0 rgba(255,255,255,0.8);
         display: flex; flex-direction: column; gap: 6px; text-align: left; font: inherit; color: var(--ink); cursor: pointer;
-        transform-origin: 50% 100%; transform: translateY(calc(var(--i) * -6px)) rotateX(6deg) rotateY(-34deg);
-        transition: transform 0.75s cubic-bezier(.2,.75,.2,1), opacity 0.6s ease, left 0.9s cubic-bezier(.2,.75,.2,1), height 0.6s ease, background 0.4s; }
-.card .nm { font-size: 11.5px; font-weight: 650; line-height: 1.2; letter-spacing: -0.005em; max-width: calc(var(--gap) - 16px); }   /* resting: fits the strip you can see */
-.deck.open .card:hover .nm, .deck.open .card.focus .nm, .card.locked .nm { max-width: none; }
-.card .rv { font-size: 10px; line-height: 1.3; color: #3a3a3a; opacity: 0; transform: translateY(6px); transition: opacity 0.4s, transform 0.4s; }
+        transform-origin: 50% 100%;
+        transition: transform 0.8s cubic-bezier(.2,.75,.2,1), opacity 0.6s ease, height 0.6s ease, background 0.4s; }
+.card .nm { font-size: 12px; font-weight: 650; line-height: 1.2; letter-spacing: -0.005em; }
+.card .rv { font-size: 10.5px; line-height: 1.32; color: #3a3a3a; opacity: 0; transform: translateY(6px); transition: opacity 0.4s, transform 0.4s; }
 .card .tg { margin-top: auto; font-size: 9.5px; font-weight: 600; letter-spacing: 0.06em; color: #222; opacity: 0; transition: opacity 0.6s; }
 .card .tg b { display: block; font-size: 15px; letter-spacing: -0.01em; font-weight: 600; }
 .card .hint { font-size: 9px; letter-spacing: 0.08em; color: #555; opacity: 0; transition: opacity 0.6s; }
-.card.pre { opacity: 0; transform: translateY(50px) rotateX(6deg) rotateY(-34deg); }
-.deck.open .card:hover, .deck.open .card.focus { transform: translateY(-12px) translateZ(40px) rotateY(0deg) scale(1.1); background: var(--glass-hi); z-index: 50 !important; }
+.card.pre { opacity: 0; transform: translateY(60px); }
+.deck.open .card:hover, .deck.open .card.focus { transform: translateY(-14px) scale(1.08); background: var(--glass-hi); z-index: 5; }
 .deck.open .card:hover .rv, .deck.open .card.focus .rv { opacity: 1; transform: none; }
-.deck.open.hovering .card:not(:hover):not(.focus) { opacity: 0.5; }
-.card.locked { left: calc((var(--n) - 1) * var(--gap) / 2) !important; transform: translateY(-6px) scale(1.2); height: calc(var(--cw) * 1.6); background: var(--glass-hi); z-index: 60 !important; cursor: default; }
+.deck.open.hovering .card:not(:hover):not(.focus) { opacity: 0.55; }
+.card.locked { transform: translate(var(--dx, 0px), -8px) scale(1.2); height: calc(var(--cw) * 1.6); background: var(--glass-hi); z-index: 6; cursor: default; }
 .card.locked .rv { opacity: 1; transform: none; }
 .card.locked.show .tg, .card.locked.show .hint { opacity: 1; }
-.card.away { opacity: 0; transform: translateY(110px) rotateX(6deg) rotateY(-34deg); pointer-events: none; }
-.card.gone { opacity: 0; }
-.nav { position: absolute; left: 50%; bottom: 0; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; transition: opacity 0.6s; }
-.nav button { width: 22px; height: 22px; border-radius: 50%; border: 0; background: rgba(255,255,255,0.75); color: #333; font: inherit; font-size: 13px; line-height: 22px; padding: 0; cursor: pointer; }
-.nav i { width: 5px; height: 5px; border-radius: 3px; background: rgba(255,255,255,0.7); transition: width 0.3s, background 0.3s; }
-.nav i.on { width: 16px; background: #333; }
-.deck:not(.open) .nav { opacity: 0; pointer-events: none; }
+.card.away { opacity: 0; transform: translateY(120px); pointer-events: none; }
+.card.locked.gone { opacity: 0; }
 
-/* the allotted card, turning over */
-.flip { position: absolute; left: 50%; bottom: calc(2.5% + 34px); width: calc(var(--cw) * 1.3); height: calc(var(--cw) * 1.6); transform: translateX(-50%); perspective: 900px; opacity: 0; transition: opacity 0.8s; pointer-events: none; }
+/* the allotted card, turning over, where your card was locked */
+.flip { position: absolute; left: 50%; bottom: calc(4% + 8px); width: calc(var(--cw) * 1.3); height: calc(var(--cw) * 1.6); transform: translateX(-50%); perspective: 900px; opacity: 0; transition: opacity 0.8s; pointer-events: none; }
 .flip.on { opacity: 1; }
 .flip .in { position: absolute; inset: 0; transform-style: preserve-3d; transform: rotateY(180deg); transition: transform 1.8s cubic-bezier(.45,.05,.2,1); }
 .flip.turn .in { transform: rotateY(0deg); }
@@ -101,50 +96,22 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: "Inter"
 .flip .face b { font-size: 14px; line-height: 1.2; }
 .flip .face span { font-size: 11px; line-height: 1.35; color: #333; }
 .flip .back { transform: rotateY(180deg); background: repeating-linear-gradient(45deg, rgba(255,255,255,0.55) 0 8px, rgba(255,255,255,0.3) 8px 16px); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
-
-/* the bar under the picture */
-.bar { display: grid; grid-template-columns: 1fr auto; gap: 18px; align-items: center; min-height: 52px; }
-.left { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
-.steps { display: flex; gap: 6px; align-items: center; font-size: 10px; font-weight: 600; letter-spacing: 0.14em; color: #bbb; }
-.steps span.now { color: var(--ink); }
-.steps span.done { color: var(--dim); }
-.steps i { width: 16px; height: 1px; background: var(--line); }
-.fs { font: inherit; font-size: 10px; font-weight: 600; letter-spacing: 0.1em; padding: 6px 11px; border: 1px solid #bbb; border-radius: 20px; background: #fff; color: var(--ink); cursor: pointer; }
-.dicestat { font-size: 10px; font-weight: 600; letter-spacing: 0.1em; color: var(--dim); }
-.dicestat b { color: var(--ink); }
-.dicestat a { color: var(--ink); }
-.go { font: inherit; font-size: 13px; font-weight: 600; letter-spacing: 0.1em; min-width: 150px; padding: 13px 22px; border: 0; border-radius: 30px; background: var(--ink); color: #fff; cursor: pointer; transition: opacity 0.4s; }
-.go:disabled { opacity: 0; pointer-events: none; }
-button:focus-visible { outline: 3px solid #888; outline-offset: 2px; }
-
-body.full .frame { padding: 0; gap: 0; grid-template-rows: minmax(0, 1fr); }
-body.full .gen { border-radius: 0; }
-body.full .bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; padding: 8px 18px; background: linear-gradient(transparent, rgba(255,255,255,0.55)); }
-body.full .deck, body.full .flip { bottom: 62px; }
-@media (max-width: 760px) { .bar { grid-template-columns: 1fr; } .go { width: 100%; } }
 @media (prefers-reduced-motion: reduce) { .card, .flip .in, .say { transition-duration: 0.01s !important; } }
 </style>
 </head>
 <body>
-<div class="frame">
-  <div class="gen" id="gen">
-    <canvas id="out" width="640" height="384" aria-label="The life"></canvas>
-    <video id="pip" class="pip" muted playsinline aria-label="Your camera"></video>
-    <div class="age off" id="age" aria-live="off"><small>AGE</small><span id="ageN">0</span></div>
-    <div class="say" id="say" aria-live="polite"></div>
-    <div class="big" id="big" aria-live="polite"><div class="disc"><b id="bigN"></b><span id="bigW"></span></div></div>
-    <div class="deck" id="deck" role="group" aria-label="Your options" hidden></div>
-    <div class="flip" id="flip" aria-live="polite"><div class="in"><div class="face" id="flipFace"></div><div class="back"></div></div></div>
-    <div class="status" id="status">connecting…</div>
-  </div>
-  <div class="bar">
-    <div class="left">
-      <div class="steps" id="steps"></div>
-      <button class="fs" id="fs" title="Full screen (F). Esc leaves it.">FULL SCREEN</button>
-      <div class="dicestat" id="dice" aria-live="polite">DIE · …</div>
-    </div>
-    <button class="go" id="go" disabled>…</button>
-  </div>
+<div class="gen" id="gen">
+  <canvas id="out" width="640" height="384" aria-label="The life"></canvas>
+  <canvas id="baby" class="baby" aria-hidden="true"></canvas>
+  <canvas id="birth" class="birth" aria-hidden="true"></canvas>
+  <canvas id="map" class="birth" aria-hidden="true"></canvas>
+  <canvas id="house" class="birth" aria-hidden="true"></canvas>
+  <video id="pip" class="pip" muted playsinline aria-label="Your camera"></video>
+  <div class="say" id="say" aria-live="polite"></div>
+  <div class="big" id="big" aria-live="polite"><div class="disc"><b id="bigN"></b><span id="bigW"></span></div></div>
+  <div class="deck" id="deck" role="group" aria-label="Your options" hidden></div>
+  <div class="flip" id="flip" aria-live="polite"><div class="in"><div class="face" id="flipFace"></div><div class="back"></div></div></div>
+  <div class="debug" id="debug" hidden></div>
 </div>
 
 <script type="module">
@@ -164,15 +131,33 @@ import { createLive } from "./live.js";
 import { createDiceReader } from "./dice.js";
 import { createDiceReader as createRemoteReader } from "./dice-remote.js";
 import { findCamera } from "./cameras.js";
+import { createBirth } from "./birth.js";
+import { createWorldMap } from "./worldmap.js";
+import { createHouse } from "./house.js";
+import { createBaby } from "./baby.js";
 
 const $ = (id) => document.getElementById(id);
-const sayEl = $("say"), bigEl = $("big"), deckEl = $("deck"), flipEl = $("flip"), go = $("go"), statusEl = $("status");
+const sayEl = $("say"), bigEl = $("big"), deckEl = $("deck"), flipEl = $("flip"), debugEl = $("debug");
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const up = (s) => String(s).toUpperCase();
 const nextFrame = () => new Promise(r => requestAnimationFrame(() => r()));
 
 const live = createLive({ out: $("out"), video: $("pip"), params: () => ({}) });
+const birth = createBirth($("birth"));                         // the egg and the sperm (Birth: "drawn": "egg")
+const worldmap = createWorldMap($("map"));                     // Where: the world map ("map")
+const house = createHouse($("house"));                         // Whom: the home being built ("house")
+const baby = createBaby($("baby"), live);                      // Body: the baby, then the live kid takes over ("baby")
+const SCENES = { egg: birth, map: worldmap, house };
+let scene = null;                                              // the drawn scene on screen now
+function holdAll(on) { live.hold(on); for (const x of [birth, worldmap, house, baby]) x.hold(on); }   // while the die rolls, everything holds still
+async function toScene(name) {                                 // crossfade from one drawn scene to the next (or to the painted world)
+  const next = SCENES[name] || null;
+  if (next === scene) return;
+  if (scene) scene.hide(sec("world_fade") * 1.4);
+  scene = next;
+  if (next) await next.show(sec("world_fade"));
+}
 
 // ---------- the life and its timings (trajectory.json; the timings change live from /panel) ----------
 let T = null, P = {}, WK = { keep: 0.5, chapter_keep: 0.25 };
@@ -211,10 +196,12 @@ async function unsay() {
   sayOn = false; sayEl.classList.remove("on");
   await sleep(sec("fade"));
 }
-async function say({ k = "", t = "", s = "", cls = "" }) {
+async function say({ k = "", t = "", s = "", cls = "", begin = false }) {
   await unsay();
   sayEl.className = "say " + cls;
-  sayEl.innerHTML = (k ? `<span class="k">${k}</span>` : "") + (t ? `<span class="t">${t}</span>` : "") + (s ? `<span class="s">${s}</span>` : "");
+  sayEl.innerHTML = (k ? `<span class="k">${k}</span>` : "") + (t ? `<span class="t">${t}</span>` : "") + (s ? `<span class="s">${s}</span>` : "")
+    + (begin ? `<button type="button" class="go" id="begin">BEGIN</button>` : "");           // the only button there is
+  if (begin) $("begin").addEventListener("click", () => beginAction && beginAction());
   await nextFrame(); await nextFrame();
   sayEl.classList.add("on"); sayOn = true;
   await sleep(sec("fade"));
@@ -224,7 +211,7 @@ const kickAge = () => `AGE ${Math.floor(S.ageF)}`;                           // 
 
 // ---------- the age, the avatar, the world ----------
 let S;                                                         // this life
-function freshLife() { return { ageF: 0, gender: null, place: "", wear: "", ledger: [], planted: {}, phase: 0 }; }
+function freshLife() { return { ageF: 0, gender: null, place: "", wear: "", ledger: [], planted: {}, phase: 0, avatar: false, life: [], baby: "" }; }
 const AGES = [                                                 // the avatar between these: blended, so it ages continuously
   [0, "a newborn baby wrapped in a soft blanket"], [2, "a toddler"], [6, "a small {child}"], [11, "a {child}"],
   [15, "a teenage {kid}"], [19, "a young {adult}, late teens"], [25, "a young {adult} in their twenties"],
@@ -238,16 +225,19 @@ function who(desc, age) {
   let d = desc.replace(/\{(\w+)\}/g, (_, k) => w[k]);
   if (g === "nb" && age >= 2) d += ", androgynous";
   if (S.wear && age >= 2) d += `, in ${S.wear}`;
+  if (S.life.length) d += ", " + S.life.join(", ");             // what the Body throw gave: eyes, a birthmark, your skin
   return d + ", painterly portrait";
 }
 function avatarAt(age) {
+  live.setControl({ age });
+  if (!S.avatar) return;                                       // no live avatar until the kid takes over from the baby
   let i = 0;
   while (i < AGES.length - 2 && age >= AGES[i + 1][0]) i++;
   const [a0, d0] = AGES[i], [a1, d1] = AGES[i + 1];
   const mix = Math.max(0, Math.min(1, (age - a0) / (a1 - a0)));
   live.setPerson(who(d0, age), who(d1, age), mix);
 }
-function showAge() { $("ageN").textContent = Math.floor(S.ageF); }
+function showAge() {}                                          // the age isn't shown: it lives in the avatar and the bridge lines
 async function ageTo(to, ms) {                                 // the age runs on; the avatar ages with it
   const from = S.ageF, t0 = performance.now();
   if (to <= from) { avatarAt(S.ageF); return; }
@@ -267,16 +257,16 @@ function world(scene, keep, fresh = false) {                   // the next world
 
 // ---------- the die (dice_reader.py, the browser reader, or ROLL on screen) ----------
 let diceOn = false, diceSrc = "", rollWaiter = null, sawThrow = false;
-const diceEl = $("dice");
-const chip = (html) => { diceEl.innerHTML = `DIE${diceSrc ? ` (${diceSrc})` : ""} · ${html}`; };
+let dieText = "not connected (R rolls on screen)";              // shown only in the hidden debug line (D)
+const chip = (html) => { dieText = html.replace(/<[^>]+>/g, ""); };
 let turn = "watch";
 const TURN = { watch: "not your turn: watch", pick: "pick a card", throw: "<b>throw it</b>", begin: "<b>throw to begin</b>" };
-function setTurn(t) { turn = t; if (diceOn) chip(TURN[t]); if (t !== "throw") live.hold(false); }
+function setTurn(t) { turn = t; if (diceOn) chip(TURN[t]); if (t !== "throw") holdAll(false); }
 const READING = { rolling: "rolling…", settling: "landing…", reading: "reading…", unclear: "can't read it, throw again" };
 const diceEvents = {
   onState: (s) => {
-    if (s === "rolling") { sawThrow = true; if (turn === "throw") live.hold(true); }   // while it rolls, everything holds still
-    if (s === "unclear") live.hold(false);
+    if (s === "rolling") { sawThrow = true; if (turn === "throw") holdAll(true); }   // while it rolls, everything holds still
+    if (s === "unclear") holdAll(false);
     if (!diceOn) return;
     if (s === "needs empty tray") chip('<a href="/dice.html">set up the empty tray</a>');
     else if (READING[s] && (turn === "throw" || turn === "begin")) chip(`<b>${READING[s]}</b>`);
@@ -300,51 +290,44 @@ async function tryPython() {
   const look = setInterval(async () => { if (await tryPython()) clearInterval(look); }, 3000);
   let cam = "";
   try { cam = await findCamera("pac-dice-cam"); } catch (e) {}
-  if (!cam) { diceEl.innerHTML = 'DIE · <a href="/dice.html">start dice_reader.py, or set up</a> · R rolls on screen'; return; }
+  if (!cam) { dieText = "none: start dice_reader.py, or set one up on /dice.html (R rolls on screen)"; return; }
   const dice = createDiceReader({ video: Object.assign(document.createElement("video"), { muted: true, playsInline: true }), ...diceEvents });
   try { await dice.start(cam); if (diceSrc !== "python") { browserDice = dice; diceReady("browser"); } else dice.stop(); }
-  catch (e) { if (!diceOn) diceEl.innerHTML = 'DIE · <a href="/dice.html">camera not found</a>'; }
+  catch (e) { if (!diceOn) dieText = "dice camera not found (R rolls on screen)"; }
 })();
 
-// one throw: the physical die, or ROLL / R on screen (random.org) when there's no die
+// one throw: the physical die, or R / Space on screen (random.org) when there's no die. "begin": also BEGIN.
 function waitThrow(kind = "throw") {
   setTurn(kind); sawThrow = false;
   return new Promise(resolve => {
-    const done = (n, die) => { rollWaiter = null; screenRoll = null; go.disabled = true; resolve({ n, die }); };
+    const done = (n, die) => { rollWaiter = null; screenRoll = null; beginAction = null; resolve({ n, die }); };
     rollWaiter = done;
-    screenRoll = async () => { screenRoll = null; go.disabled = true; live.hold(true); await sleep(500); done(await draw(1, 6), false); };
-    if (kind === "begin") button(diceOn ? null : "BEGIN", () => { screenRoll = null; done(0, false); });
-    else button(diceOn ? null : "ROLL", () => screenRoll && screenRoll());
+    screenRoll = async () => { screenRoll = null; holdAll(true); await sleep(500); done(await draw(1, 6), false); };
+    if (kind === "begin") beginAction = () => done(0, false);
   });
 }
-let screenRoll = null, goAction = null;
-function button(label, fn) { go.textContent = label || "…"; go.disabled = !label; goAction = label ? fn : null; }
-go.addEventListener("click", () => { if (!go.disabled && goAction) goAction(); });
+let screenRoll = null, beginAction = null;
 
 // ---------- the deck ----------
 let deckKeys = null;
-function deck(cards) {                                         // cards rise one by one; resolves with the one you pick
+function deck(cards, onHover = null) {                         // cards rise one by one; resolves with the one you pick
   deckEl.hidden = false; deckEl.className = "deck";
-  deckEl.style.setProperty("--n", cards.length);
-  deckEl.innerHTML = cards.map((c, i) => `<button type="button" class="card pre" style="--i:${i};z-index:${i + 1}" aria-label="${esc(c.name)}: ${esc(c.reveals)}">
-      <span class="nm">${esc(c.name)}</span><span class="rv">${esc(c.reveals)}</span><span class="tg"></span><span class="hint"></span></button>`).join("")
-    + `<div class="nav"><button type="button" data-d="-1" aria-label="Previous">‹</button>${cards.map(() => "<i></i>").join("")}<button type="button" data-d="1" aria-label="Next">›</button></div>`;
-  const els = [...deckEl.querySelectorAll(".card")], dots = [...deckEl.querySelectorAll(".nav i")];
-  const cw = els[0].offsetWidth, room = $("gen").clientWidth * 0.6;   // spread the deck so each name shows, within the screen
-  deckEl.style.setProperty("--gap", Math.round(Math.max(cw * 0.42, Math.min(cw * 0.8, (room - cw) / Math.max(1, cards.length - 1)))) + "px");
+  document.body.classList.add("cards");                         // the narrative box lifts above the row
+  deckEl.innerHTML = cards.map((c) => `<button type="button" class="card pre" aria-label="${esc(c.name)}: ${esc(c.reveals)}">
+      <span class="nm">${esc(c.name)}</span><span class="rv">${esc(c.reveals)}</span><span class="tg"></span><span class="hint"></span></button>`).join("");
+  const els = [...deckEl.querySelectorAll(".card")];
   return new Promise(async resolve => {
     for (const el of els) { el.classList.remove("pre"); await sleep(sec("card_rise")); }
     await sleep(500);
     deckEl.classList.add("open"); setTurn("pick");
     let focus = -1;
-    const setFocus = (i) => { focus = (i + els.length) % els.length; els.forEach((e, k) => e.classList.toggle("focus", k === focus)); dots.forEach((d, k) => d.classList.toggle("on", k === focus)); deckEl.classList.add("hovering"); };
-    const pick = (i) => { if (!deckEl.classList.contains("open")) return; deckEl.classList.remove("open", "hovering"); deckKeys = null; resolve({ i, els }); };
+    const setFocus = (i) => { focus = (i + els.length) % els.length; els.forEach((e, k) => e.classList.toggle("focus", k === focus)); deckEl.classList.add("hovering"); onHover && onHover(focus); };
+    const pick = (i) => { if (!deckEl.classList.contains("open")) return; deckEl.classList.remove("open", "hovering"); deckKeys = null; onHover && onHover(-1); resolve({ i, els }); };
     els.forEach((el, i) => {
       el.addEventListener("click", () => pick(i));
-      el.addEventListener("mouseenter", () => { els.forEach(e => e.classList.remove("focus")); dots.forEach((d, k) => d.classList.toggle("on", k === i)); focus = i; deckEl.classList.add("hovering"); });
-      el.addEventListener("mouseleave", () => deckEl.classList.remove("hovering"));
+      el.addEventListener("mouseenter", () => { els.forEach(e => e.classList.remove("focus")); focus = i; deckEl.classList.add("hovering"); onHover && onHover(i); });
+      el.addEventListener("mouseleave", () => { deckEl.classList.remove("hovering"); onHover && onHover(-1); });
     });
-    deckEl.querySelectorAll(".nav button").forEach(b => b.addEventListener("click", () => setFocus(focus + +b.dataset.d)));
     deckKeys = (key) => {
       if (key === "ArrowRight") setFocus(focus + 1);
       else if (key === "ArrowLeft") setFocus(focus - 1);
@@ -354,14 +337,17 @@ function deck(cards) {                                         // cards rise one
   });
 }
 async function lock(els, i, label) {                           // your card glides to the centre; the others sink away
+  const d = deckEl.getBoundingClientRect(), r = els[i].getBoundingClientRect();
+  els[i].style.setProperty("--dx", Math.round(d.left + d.width / 2 - (r.left + r.width / 2)) + "px");
   els.forEach((e, k) => { e.classList.remove("focus"); e.classList.toggle("locked", k === i); e.classList.toggle("away", k !== i); });
   await sleep(sec("lock"));
   els[i].querySelector(".tg").innerHTML = `throw<b>${esc(label)}</b>`;
+  if (!diceOn) cardHint(els[i], "press R to roll");
   els[i].classList.add("show");
   await sleep(700);
 }
 const cardHint = (el, html) => { el.querySelector(".hint").innerHTML = html; };
-function deckGone() { deckEl.hidden = true; deckEl.innerHTML = ""; }
+function deckGone() { deckEl.hidden = true; deckEl.innerHTML = ""; document.body.classList.remove("cards"); }
 
 // "3 or more" · "a 6" · "exactly 1": the target is written the way the player sees it
 function target(text) {
@@ -400,20 +386,24 @@ async function linger(key, extraAge) {                         // what happened 
 }
 
 async function chosen(ev) {
+  if (ev.drawn && SCENES[ev.drawn]) toScene(ev.drawn);
+  if (ev.drawn === "baby") await babyArrives();
   await say({ k: kickAge(), t: esc(ev.title), s: esc(ev.setup) });
   await sleep(sec("settle"));
-  const { i, els } = await deck(ev.cards);
+  const { i, els } = await deck(ev.cards, ev.drawn === "map" ? (k) => worldmap.hover(k >= 0 ? ev.cards[k].name : null) : null);
   const c = ev.cards[i], tg = target(c.target);
   await Promise.all([unsay(), lock(els, i, tg.label)]);
   const tries = Math.max(1, ev.tries || 1);
   let hit = false, n = 0, t = 1;
   for (; t <= tries; t++) {
-    if (tries > 1) cardHint(els[i], t === 1 ? `${tries} throws` : `${tries - t + 1} ${tries - t + 1 === 1 ? "throw" : "throws"} left`);
+    if (tries > 1) cardHint(els[i], (t === 1 ? `${tries} throws` : `${tries - t + 1} ${tries - t + 1 === 1 ? "throw" : "throws"} left`) + (diceOn ? "" : " · press R"));
+    if (ev.drawn === "egg") birth.ready(true);
     ({ n } = await waitThrow());
-    setTurn("watch"); live.hold(false);
+    setTurn("watch"); holdAll(false);
     els[i].classList.add("gone"); await sleep(500);
     hit = tg.hit(n);
     await land(n, hit);
+    if (ev.drawn === "egg") await birth.attempt(hit);           // one reaches the egg, or they all fall short
     if (hit || t === tries) break;
     els[i].classList.remove("gone"); await sleep(600);
   }
@@ -427,20 +417,68 @@ async function chosen(ev) {
       got = others[(await draw(1, others.length)) - 1];
       how = tries > 1 ? "override" : "allotted";
       await turnOver(got, how === "override" ? "THE OVERRIDE" : "ALLOTTED");
+      if (ev.drawn === "egg") await birth.win();                // chance's override: one makes it anyway
     }
   }
+  if (ev.drawn === "map" && how !== "none") await worldmap.reveal(got.name, how !== "hit");   // the region fills in on the map
   if (how === "none") {
     world(ev.miss.scene, WK.keep);
     S.ledger.push([S.ageF, ev.title, `${ev.miss.text.replace(/\.$/, "")}`, `went to: ${c.name}`]);
     await say({ k: kick(ev), t: esc(ev.miss.text) });
   } else {
-    apply(got); world(got.scene, WK.keep);
+    apply(got); if (got.scene) world(got.scene, WK.keep);
+    if (ev.drawn === "house") house.build(got.name, sec("linger") * 0.9);                  // the home, built while it lingers
     const note = how === "hit" ? "" : how === "override" ? `${tries} throws, then the override.` : `You went for ${esc(c.name)}. Chance allotted this.`;
     S.ledger.push([S.ageF, ev.title, got.name, how === "hit" ? "" : how === "override" ? `went for ${c.name}; ${tries} throws, then the override` : `went for ${c.name}`]);
     await say({ k: kick(ev), t: esc(got.name), s: esc(got.reveals) + (note ? `<br><span style="color:#777;font-size:12px">${note}</span>` : "") });
   }
   avatarAt(S.ageF);                                           // a new outfit / gender: the avatar morphs to it
+  if (ev.drawn === "baby") { await sleep(sec("settle")); await emerge(ev, got); return; }
   await linger("linger", how !== "none" && got.age);
+}
+
+// ---------- Body: the baby, painted once, its traits emerging one by one ----------
+async function portrait(prompt, base, strength = 0.38) {
+  try {
+    const r = await fetch(`/portrait?prompt=${encodeURIComponent(prompt)}&base=${base ? 1 : 0}&strength=${strength}`, { cache: "no-store" });
+    return r.ok ? await createImageBitmap(await r.blob()) : null;
+  } catch (e) { return null; }
+}
+function skinWords(rgb) {                                       // your own skin, from the camera; never chosen, never ranked
+  if (!rgb) return "skin like the player's own";
+  const L = 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2];
+  return L > 205 ? "very fair skin" : L > 175 ? "fair skin" : L > 145 ? "light brown skin" : L > 115 ? "brown skin" : L > 85 ? "dark brown skin" : "deep brown skin";
+}
+async function babyArrives() {                                  // the painted home is underneath; the baby fades in over it
+  const g = S.gender, who = g === "boy" ? "baby boy" : g === "girl" ? "baby girl" : "baby";
+  S.baby = `a newborn ${who} lying in a cot, wrapped in a soft blanket, eyes open looking up, tiny hands near the face, close-up portrait, soft window light`;
+  const bmp = await portrait(S.baby, false);
+  if (bmp) await baby.show(bmp, sec("world_fade"));
+}
+async function emerge(ev, got) {
+  const genes = [{ label: "Your skin", words: skinWords(live.skinTone()), life: true }, ...(got.genes || [])];
+  let words = S.baby;
+  for (const gn of genes) {
+    words += ", " + gn.words;
+    const next = portrait(words, true);
+    await say({ k: kick(ev), t: esc(gn.label) + "." });
+    const bmp = await next;
+    if (bmp) await baby.update(bmp, 1200);
+    if (gn.life) S.life.push(gn.words);
+    await sleep(sec("gene"));
+  }
+}
+async function takeover(ms) {                                   // the live kid emerges from the baby: the avatar fades in while
+  S.avatar = true;                                              // its generation strength ramps up from loose to full
+  live.setPersonAlpha(0); live.setControl({ age: S.ageF, ramp: 0 }); avatarAt(S.ageF);
+  const t0 = performance.now();
+  for (;;) {
+    const k = Math.min(1, (performance.now() - t0) / Math.max(1, ms)), e = k * k * (3 - 2 * k);
+    live.setPersonAlpha(e); baby.alpha(1 - e); live.setControl({ ramp: e });
+    if (k >= 1) break;
+    await sleep(60);
+  }
+  baby.hide(400);
 }
 
 async function happens(ev) {
@@ -482,12 +520,8 @@ async function fluke(ev) {                                     // deliberately u
 }
 
 // ---------- the run ----------
-const PHASES = ["BASELINE", "CRUST", "ADULTHOOD", "LATER LIFE"];
-$("steps").innerHTML = PHASES.map(p => `<span>${p}</span>`).join("<i></i>");
-function setPhase(i) {
-  [...$("steps").querySelectorAll("span")].forEach((s, k) => { s.className = k < i ? "done" : k === i ? "now" : ""; });
-  phaseRef(i);
-}
+const PHASES = ["BASELINE", "CRUST", "ADULTHOOD", "LATER LIFE"];   // not shown on screen; they still pick the phase references
+function setPhase(i) { phaseRef(i); }
 async function phaseRef(i) {                                   // optional: a style reference painting per phase (trajectory.json phase_refs)
   const url = T && T.phase_refs && T.phase_refs[i];
   if (!url) return;
@@ -503,9 +537,12 @@ async function arrive(ev, prev) {                              // the bridge, th
   const chapter = !!(prev && prev.chapter);
   if (chapter) { S.phase = Math.min(PHASES.length - 1, S.phase + 1); setPhase(S.phase); }
   const dur = sec(chapter ? "chapter" : "arrive");
+  let handover = null;
+  if (prev && prev.drawn === "baby") handover = takeover(sec("takeover"));     // the baby becomes the live kid
+  else if ((ev.drawn || null) !== (prev && prev.drawn || null)) toScene(ev.drawn === "baby" ? null : ev.drawn);   // drawn scene -> the next one, or the painted world
   if (prev && prev.bridge) await say({ s: esc(prev.bridge), cls: "bridge" });
   const w = world(ev.scene, chapter ? WK.chapter_keep : WK.keep);
-  await Promise.all([ageTo(ev.age, dur * 0.85), sleep(dur), w]);
+  await Promise.all([ageTo(ev.age, dur * 0.85), sleep(dur), w, handover]);
   await unsay();
 }
 
@@ -513,15 +550,16 @@ async function life() {
   if (!T) await loadLife();
   S = freshLife(); setPhase(0);
   deckGone(); bigEl.classList.remove("on");
-  $("age").classList.add("off"); showAge();
-  live.setPerson(null);
+  live.setPerson(null); live.setReal(false); live.setPersonAlpha(1); live.setControl({ age: 0, ramp: 1 });
+  baby.hide(0); worldmap.reset(); house.reset(); if (scene) scene.hide(0); scene = null;
+  worldmap.load().catch(() => {}); baby.preload();
   await live.whenReady();
   world(T.events[0].scene, 0, true);                           // a new life: a fresh world
-  await say({ k: "PLAYING AGAINST CHANCE", t: `One life. ${T.events.length} moments.`, s: diceOn ? "Throw the die to begin." : "Press BEGIN." });
+  if (T.events[0].drawn === "egg") { birth.reset(); toScene("egg"); }
+  await say({ k: "PLAYING AGAINST CHANCE", t: `One life. ${T.events.length} moments.`, s: diceOn ? "Throw the die to begin." : "", begin: true });
   await waitThrow("begin");
-  setTurn("watch"); live.hold(false);
+  setTurn("watch"); holdAll(false);
   await unsay();
-  $("age").classList.remove("off");
   avatarAt(0);
   await sleep(sec("arrive") * 0.6);
   let prev = null;
@@ -545,33 +583,41 @@ async function life() {
 async function ending() {                                       // the life, read back
   setPhase(PHASES.length);
   const rows = S.ledger.map(([a, t, what, note]) => `<tr><td>${Math.floor(a)}</td><td>${esc(t)}</td><td>${esc(what)}${note ? ` <i>(${esc(note)})</i>` : ""}</td></tr>`).join("");
-  await say({ k: "A LIFE", t: "", s: `<table>${rows}</table>`, cls: "end" });
-  sayEl.querySelector(".s").insertAdjacentHTML("afterend", `<span class="k">${diceOn ? "THROW THE DIE FOR ANOTHER LIFE" : "PRESS BEGIN FOR ANOTHER LIFE"}</span>`);
+  await say({ k: "A LIFE", t: "", s: `<table>${rows}</table>` + (diceOn ? `<br><span style="color:#777;font-size:12px">Throw the die for another life.</span>` : ""), cls: "end", begin: true });
 }
 
-// ---------- keys: cards = ← → Enter or 1–9 · R = roll on screen · Space/Enter = the button · F = full screen ----------
+// ---------- keys: cards = ← → Enter or 1–9 · R / Space = roll on screen · Space / Enter = BEGIN · F = fullscreen · D = debug · C = next camera ----------
 document.addEventListener("keydown", (e) => {
   if (e.repeat || e.target instanceof HTMLInputElement) return;
-  if (e.key === "f" || e.key === "F") { setFull(!document.body.classList.contains("full")); return; }
+  if (e.key === "f" || e.key === "F") { setFull(!document.fullscreenElement); return; }
+  if (e.key === "d" || e.key === "D") { debugEl.hidden = !debugEl.hidden; return; }
+  if (e.key === "c" || e.key === "C") { switchCamera(); return; }
   if (deckKeys && (e.key.startsWith("Arrow") || e.key === "Enter" || e.key === " " || /^[1-9]$/.test(e.key))) { e.preventDefault(); deckKeys(e.key); return; }
-  if ((e.key === "r" || e.key === "R") && screenRoll) { screenRoll(); return; }
-  if ((e.key === " " || e.key === "Enter") && !(e.target instanceof HTMLButtonElement)) { e.preventDefault(); go.click(); }
+  if ((e.key === " " || e.key === "Enter") && beginAction && !(e.target instanceof HTMLButtonElement)) { e.preventDefault(); beginAction(); return; }
+  if ((e.key === "r" || e.key === "R" || e.key === " ") && screenRoll && turn === "throw") { e.preventDefault(); screenRoll(); return; }
 });
 
 // ---------- full screen ----------
-function setFull(on) {
+function setFull(on) {                                          // real browser fullscreen; the camera window hides there
   if (on && !document.fullscreenElement) document.documentElement.requestFullscreen?.().catch(() => {});
   if (!on && document.fullscreenElement) document.exitFullscreen?.();
-  document.body.classList.toggle("full", on);
-  $("fs").textContent = on ? "EXIT FULL SCREEN" : "FULL SCREEN";
 }
-$("fs").addEventListener("click", () => setFull(!document.body.classList.contains("full")));
-document.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement) setFull(false); });
+document.addEventListener("fullscreenchange", () => document.body.classList.toggle("full", !!document.fullscreenElement));
 
-function status() {
-  const st = live.stat;
-  statusEl.innerHTML = !st.online ? "<b>server offline</b>" : [`<b>${st.fps}</b> fps`, source && `chance <b>${source}</b>`, st.note, st.seg].filter(Boolean).join(" · ");
-  requestAnimationFrame(status);
+// C: the next camera becomes the avatar camera (remembered). Its name shows for a few seconds in the debug line.
+let camFlash = 0;
+async function switchCamera() {
+  const name = await live.nextCamera();
+  camFlash = performance.now() + 4000; debugEl.hidden = false; debugEl.dataset.flash = "1";
+  debugEl.textContent = "avatar camera: " + (name || "?");
+}
+function status() {                                             // the hidden debug line (D): never on screen otherwise
+  if (debugEl.dataset.flash && performance.now() > camFlash) { delete debugEl.dataset.flash; debugEl.hidden = true; }
+  if (!debugEl.hidden) {
+    const st = live.stat;
+    if (!debugEl.dataset.flash) debugEl.textContent = !st.online ? "server offline" : [`${st.fps} fps`, source && `chance ${source}`, `camera: ${st.camera || "?"}`, st.camNote, `die${diceSrc ? ` (${diceSrc})` : ""}: ${dieText}`, `turn: ${turn}`, st.note, st.seg].filter(Boolean).join(" · ");
+  }
+  setTimeout(status, 250);
 }
 status();
 live.camera.catch(e => say({ k: "NO CAMERA", s: esc(e.message || e.name) }));

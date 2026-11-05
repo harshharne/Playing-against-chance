@@ -4,6 +4,8 @@
     "target: write it the way the player sees it: '3 or more', 'a 6', 'exactly 1'.",
     "scene: what the world shows (painted from the previous world). place (Where cards) is added to every scene after it. wear (Whom cards) dresses the avatar.",
     "chapter: true = a longer breath after this event. tries: throws allowed (Birth = 3). allot: false = a miss allots nothing (Love).",
+    "drawn: this event is drawn instead of painted: \"egg\" (birth.js), \"map\" (worldmap.js), \"house\" (house.js), \"baby\" (baby.js: the baby, then the live kid takes over).",
+    "genes (Body cards): what emerges on the baby, one by one. life: true = it stays on the avatar for life (eyes, a birthmark). Skin always comes first and is taken from the player's own camera, never from a card.",
     "pacing: seconds, all minimums. They're also sliders on /panel (PACING), which save back into this file. world.keep: how much of the last world survives into the next (0-1).",
     "phase_refs: optional style reference paintings, one per phase (BASELINE, CRUST, ADULTHOOD, LATER LIFE), e.g. \"refs/crust.jpg\" in web/refs/. Empty = none."
   ],
@@ -23,7 +25,9 @@
     "fluke_linger": 6.0,
     "reveal": 5.0,
     "chapter": 9.0,
-    "final_silence": 10.0
+    "final_silence": 10.0,
+    "gene": 3.0,
+    "takeover": 6.0
   },
   "world": {
     "keep": 0.5,
@@ -40,6 +44,7 @@
       "id": "birth",
       "title": "Birth",
       "type": "chosen",
+      "drawn": "egg",
       "age": 0,
       "tries": 3,
       "setup": "Before anything else, the form needs a box ticked.",
@@ -134,14 +139,14 @@
           "place": "north america, wide suburbs, highways, big skies"
         }
       ],
-      "bridge": "The place is decided. Now, whose house."
+      "bridge": "The place is decided. Now, whose house.",
+      "drawn": "map"
     },
     {
       "id": "whom",
       "title": "Whom",
       "type": "chosen",
       "age": 0,
-      "chapter": true,
       "setup": "The household decides most of what comes next, and you don't get a vote.",
       "scene": "the front door of a home, seen from a cot",
       "cards": [
@@ -193,6 +198,196 @@
           "target": "exactly 1",
           "scene": "a large house with posters and garlands, a crowd at the gate, cameras",
           "wear": "crisp white formal clothes"
+        }
+      ],
+      "bridge": "The house is ready. The body is still being decided.",
+      "drawn": "house"
+    },
+    {
+      "id": "body",
+      "title": "Body",
+      "type": "chosen",
+      "drawn": "baby",
+      "age": 0,
+      "chapter": true,
+      "setup": "The genes are dealt before you arrive. You may ask for a hand.",
+      "scene": "inside the home, a cot by the window, soft morning light",
+      "cards": [
+        {
+          "name": "Average in every way",
+          "reveals": "The doctor writes \"normal\" and doesn't look up.",
+          "target": "2 or more",
+          "genes": [
+            {
+              "label": "Brown eyes",
+              "words": "warm brown eyes",
+              "life": true
+            },
+            {
+              "label": "Dark hair",
+              "words": "a little dark hair",
+              "life": false
+            },
+            {
+              "label": "An ordinary build",
+              "words": "an ordinary healthy build",
+              "life": false
+            }
+          ]
+        },
+        {
+          "name": "Built like a wrestler",
+          "reveals": "You'll carry the suitcases at every wedding.",
+          "target": "3 or more",
+          "genes": [
+            {
+              "label": "A sturdy build",
+              "words": "a sturdy chubby build, strong little arms",
+              "life": false
+            },
+            {
+              "label": "Thick dark hair",
+              "words": "thick dark hair",
+              "life": false
+            },
+            {
+              "label": "Round cheeks",
+              "words": "round rosy cheeks",
+              "life": false
+            }
+          ]
+        },
+        {
+          "name": "Your mother's eyes",
+          "reveals": "Everyone says so. Your father's side says it twice.",
+          "target": "3 or more",
+          "genes": [
+            {
+              "label": "Large light-brown eyes",
+              "words": "large light-brown eyes",
+              "life": true
+            },
+            {
+              "label": "Long lashes",
+              "words": "long dark eyelashes",
+              "life": true
+            },
+            {
+              "label": "Fine hair",
+              "words": "fine soft hair",
+              "life": false
+            }
+          ]
+        },
+        {
+          "name": "A full head of hair",
+          "reveals": "The nurses take photos.",
+          "target": "4 or more",
+          "genes": [
+            {
+              "label": "A full head of hair",
+              "words": "a full head of thick black curly hair",
+              "life": false
+            },
+            {
+              "label": "Dark eyes",
+              "words": "dark eyes",
+              "life": true
+            },
+            {
+              "label": "Strong brows",
+              "words": "strong dark eyebrows",
+              "life": true
+            }
+          ]
+        },
+        {
+          "name": "Quick with numbers",
+          "reveals": "You'll count everything, including who didn't visit.",
+          "target": "4 or more",
+          "genes": [
+            {
+              "label": "Alert eyes",
+              "words": "bright, alert, curious eyes",
+              "life": true
+            },
+            {
+              "label": "A high forehead",
+              "words": "a high forehead",
+              "life": true
+            },
+            {
+              "label": "Fine hair",
+              "words": "a little fine hair",
+              "life": false
+            }
+          ]
+        },
+        {
+          "name": "Green eyes from nowhere",
+          "reveals": "Nobody in the family has them. Nobody asks. Everyone wonders.",
+          "target": "5 or more",
+          "genes": [
+            {
+              "label": "Green eyes",
+              "words": "striking green eyes",
+              "life": true
+            },
+            {
+              "label": "Light hair",
+              "words": "light brown hair",
+              "life": false
+            },
+            {
+              "label": "Faint freckles",
+              "words": "a few faint freckles",
+              "life": true
+            }
+          ]
+        },
+        {
+          "name": "Never ill a day",
+          "reveals": "The rarest gene there is.",
+          "target": "a 6",
+          "genes": [
+            {
+              "label": "A healthy glow",
+              "words": "a healthy rosy glow",
+              "life": true
+            },
+            {
+              "label": "Clear bright eyes",
+              "words": "clear bright eyes",
+              "life": true
+            },
+            {
+              "label": "Strong lungs",
+              "words": "a strong, healthy, loud baby",
+              "life": false
+            }
+          ]
+        },
+        {
+          "name": "A birthmark shaped like a country",
+          "reveals": "The astrologer charges extra.",
+          "target": "exactly 1",
+          "genes": [
+            {
+              "label": "A birthmark",
+              "words": "a small birthmark on the cheek",
+              "life": true
+            },
+            {
+              "label": "Dark eyes",
+              "words": "dark eyes",
+              "life": true
+            },
+            {
+              "label": "Soft dark hair",
+              "words": "soft dark hair",
+              "life": false
+            }
+          ]
         }
       ],
       "bridge": "You learn to walk, then to wait. Eight years pass."

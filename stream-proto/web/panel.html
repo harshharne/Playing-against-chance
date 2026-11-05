@@ -70,10 +70,13 @@ button.ghost { background: #fff; color: var(--ink); }
       <h2>STRUCTURE</h2>
       <label class="txt">SHAPE (what holds your body)<select id="shape">
         <option value="depth">DEPTH (Depth Anything V2 → depth ControlNet)</option>
-        <option value="pose">POSE (your joints → OpenPose ControlNet)</option>
+        <option value="pose">POSE (your whole body: DWPose on the GPU, or MediaPipe → OpenPose ControlNet)</option>
+        <option value="both">BOTH (depth + pose together; costs a little more per frame)</option>
         <option value="off">OFF (only CHANGE keeps your shape)</option>
       </select></label>
       <label class="ctl">CONTROLNET STRENGTH <span class="v" id="cn_strengthV"></span><input id="cn_strength" type="range" min="0" max="1.5" step="0.05"><small>How hard the shape is held. Too high = stiff and photo-like edges; too low = melting. With a shape on, try CHANGE 0.8–1.0.</small></label>
+      <label class="ctl">CHILD UNTIL (age) <span class="v" id="child_untilV"></span><input id="child_until" type="range" min="0" max="20" step="1"><small>Below this age the avatar ignores depth (an adult's depth forces adult proportions) and follows a pose reshaped to a child's: smaller body, same-size head.</small></label>
+      <label class="ctl">YOUNGEST HOLD <span class="v" id="child_cnV"></span><input id="child_cn" type="range" min="0" max="1" step="0.05"><small>How hard the youngest avatar is held (× ControlNet strength), rising to full by CHILD UNTIL. Lower = looser, more painted, fewer broken shapes.</small></label>
       <div class="shapebox"><img id="shapeImg" alt="The shape the painter is following" hidden><span id="shapeNone">no shape yet (open the game or the lab, stand in front of the camera)</span></div>
       <p class="note">Depth: near = white. Pose: OpenPose's coloured skeleton; the first switch to pose loads its ControlNet (a few seconds).</p>
     </section>
@@ -120,6 +123,7 @@ button.ghost { background: #fff; color: var(--ink); }
       <h2>CHANGE</h2>
       <label class="ctl">CHANGE (avatar) <span class="v" id="changeV"></span><input id="change" type="range" min="0.1" max="1" step="0.05"><small>How much of you is repainted. 1.0 = from pure noise, where the one-step painter is at its best; with a SHAPE on, the shape keeps your body. With SHAPE off, high CHANGE melts you.</small></label>
       <label class="ctl">WORLD STEPS <span class="v" id="world_stepsV"></span><input id="world_steps" type="range" min="1" max="4" step="1"><small>The background. 1 = what the one-step painter is trained for. More = a second look at the details; may help or hurt, compare.</small></label>
+      <label class="ctl">PARALLAX <span class="v" id="parallaxV"></span><input id="parallax" type="range" min="0" max="0.08" step="0.005"><small>How far the world shifts with your head, so the painting reads in depth (its depth map is made once per world). 0 = flat.</small></label>
       <button class="ghost" id="redraw">REDRAW THE WORLD</button>
     </section>
 
@@ -135,6 +139,7 @@ button.ghost { background: #fff; color: var(--ink); }
       <h2>READOUT</h2>
       <dl class="read">
         <dt>PAINTER</dt><dd id="r_painter">–</dd>
+        <dt>DETECTION</dt><dd id="r_detect">–</dd>
         <dt>AVATAR</dt><dd id="r_fps">–</dd>
         <dt>PER FRAME</dt><dd id="r_ms">–</dd>
         <dt>WHERE IT GOES</dt><dd id="r_parts">–</dd>
@@ -165,9 +170,9 @@ button.ghost { background: #fff; color: var(--ink); }
 
 <script>
 const $ = (id) => document.getElementById(id);
-const SLIDERS = ["cn_strength", "lora_a_w", "lora_b_w", "ip_style", "guidance", "change", "world_steps", "steady", "ghost_guard", "skip_still"];
+const SLIDERS = ["cn_strength", "lora_a_w", "lora_b_w", "ip_style", "guidance", "change", "world_steps", "steady", "ghost_guard", "skip_still", "child_until", "child_cn", "parallax"];
 const TEXTS = ["style_prompt", "negative"];
-const fmt = (k, v) => k === "world_steps" ? String(Math.round(v)) : (+v).toFixed(2);
+const fmt = (k, v) => k === "world_steps" || k === "child_until" ? String(Math.round(v)) : k === "parallax" ? (+v).toFixed(3) : (+v).toFixed(2);
 let state = null, defaults = null;
 
 // ---------- sending ----------
@@ -229,7 +234,8 @@ function show(s, controls) {
   }
   fillLoras(s.loras);
   const r = s.readout;
-  $("r_painter").textContent = r.ready ? r.painter.toUpperCase() : r.painter + " (loading…)";
+  $("r_painter").textContent = (r.ready ? r.painter.toUpperCase() : r.painter + " (loading…)") + (r.painter_note ? " · " + r.painter_note : "");
+  $("r_detect").textContent = r.detection || "–";
   $("r_fps").textContent = r.fps ? `${r.fps} frames/s served` : "idle (no frames in the last 3 s)";
   $("r_ms").textContent = r.ms ? `${r.ms} ms on the server` : "–";
   $("r_shape").textContent = s.tune.shape === "off" ? "off" : r.shape_ms ? `${r.shape_ms} ms (${s.tune.shape})` : "–";
@@ -335,6 +341,9 @@ const PACE = [
   ["fluke_linger", "FLUKE: LINGER", 1, 12, 0.5, "the job it led to"],
   ["reveal", "FLUKE COMES BACK", 1, 12, 0.5, "the quote, word for word"],
   ["final_silence", "FINAL SILENCE", 0, 20, 0.5, "after Death, before anything else"],
+  ["BODY", null],
+  ["gene", "EACH TRAIT", 0.5, 8, 0.5, "how long each trait stays named as it emerges on the baby"],
+  ["takeover", "THE KID EMERGES", 1, 15, 0.5, "the baby fading into the live avatar, its generation ramping up"],
   ["WORLD", null],
   ["w:keep", "WORLD KEEPS", 0, 0.9, 0.05, "how much of the last world survives into the next (0 = a new place each time)"],
   ["w:chapter_keep", "AT A CHAPTER", 0, 0.9, 0.05, "the same, between phases (lower = repaints more)"],

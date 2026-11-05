@@ -8,7 +8,7 @@ ZONE="asia-south1-c"
 cd "$(dirname "$0")"
 
 # which Python files changed since the last push? (those need a server restart; web files don't)
-SUMS=$(shasum stream_server.py download_models.py 2>/dev/null)
+SUMS=$(shasum stream_server.py download_models.py bench.py 2>/dev/null)
 LAST="$HOME/.stream-proto-last-push"           # kept outside the folder, so replacing the folder doesn't lose it
 OLD=$(cat "$LAST" 2>/dev/null || true)
 
@@ -29,7 +29,7 @@ fi
 
 echo "sending code to $VM ..."
 gcloud compute scp --zone="$ZONE" --recurse \
-  web stream_server.py download_models.py styles.json trajectory.json setup_cloud.sh CLOUD.md README.md \
+  web stream_server.py download_models.py bench.py setup_sdxl.sh styles.json trajectory.json setup_cloud.sh CLOUD.md README.md \
   "$VM":~/stream-proto/ --quiet
 
 if [ "$1" = "loras" ]; then

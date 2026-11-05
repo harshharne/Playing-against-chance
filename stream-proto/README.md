@@ -8,7 +8,7 @@ If the download stops halfway, run it again: it carries on.
 
 ## Pages
 - http://localhost:8766/panel — the tuning panel (see below).
-- http://localhost:8766/game — the game: one life, 19 events, birth to death (see "The life"). Cards: hover, or ← → and Enter, or keys 1–9. R = roll on screen. F = full screen.
+- http://localhost:8766/game — the game: one life, 19 events, birth to death (see "The life"). Edge to edge, no bars: only the narrative box (bottom) and the cards. F = real fullscreen (the camera window hides there). Cards: hover / click, or ← → and Enter, or 1–9. No die: R or Space rolls on screen. D = a hidden debug line (die state, fps).
 - http://localhost:8766/dice.html — set up the physical die (see below).
 - http://localhost:8766 — the lab: type prompts and add references by hand to tune the look. References set here carry over into the game.
 
@@ -45,11 +45,34 @@ the timings. Edit it and the next life uses it (no restart). The rules are in `w
   out fully before the next. Cards and throws wait for the player; everything else runs on the PACING timings (minimums).
 - The ending: after Death and a 10 s silence, the life read back as a list (age, event, what came, what was wanted).
 
+## The opening (Birth → Where → Whom → Body)
+- Birth: the egg and sperm (web/birth.js). Where: a world map in pencil (web/worldmap.js, web/worldmap.json from Natural Earth);
+  hovering a card warms its region, the drawn one fills in, an allotted one is found by a light running across the regions.
+  Whom: the home built stroke by stroke, one drawing per household (web/house.js).
+- Body: a Chosen event like the others (cards in trajectory.json, each with its "genes"). The baby is painted once
+  (GET /portrait), then each trait emerges on it one by one (your skin first, taken from your camera; never a card),
+  each repainted lightly from the last. The browser animates it (web/baby.js): breathing, blinks, eyes that follow you,
+  hands and blanket moving. Then the live kid takes over: the avatar fades in while its generation ramps up (X-Ramp).
+- The avatar's proportions follow its age (X-Age): below CHILD UNTIL on the panel it ignores depth and follows a pose
+  reshaped to a child's, held loosely (YOUNGEST HOLD), tightening with age.
+
+## SDXL + whole-body detection (PAINTER=sdxl)
+- Live avatar: SDXL-Turbo, one step, 768x448. Worlds (1344x768) and the baby: DreamShaper XL Lightning, 4 steps.
+  IP-Adapter Plus SDXL (style only uses InstantStyle's own SDXL blocks), SDXL depth + OpenPose ControlNets, TAESDXL.
+- Detection: DWPose (rtmlib) on the server: body, hands and face, 133 points, feeding the OpenPose ControlNet.
+  The browser keeps only its fast MediaPipe mask, to keep the avatar on you between painted frames.
+- Parallax: each world gets a depth map (GET /world_depth); the page shifts near parts more than far ones as you move.
+- If SDXL fails to load, the server falls back to the SD 1.5 painter by itself (the panel says why).
+- The SD 1.5 LoRAs in loras/ don't work with SDXL (the panel says so if one is picked).
+- One-time setup on the cloud machine: `bash setup_sdxl.sh` (installs DWPose, downloads ~20 GB, runs bench.py).
+- `PAINTER=sdxl python bench.py`: time per avatar frame, world and portrait, without the browser.
+
 ## Run
 On the cloud machine (chance-rtx), see CLOUD.md for the full routine:
 ```
-cd ~/stream-proto && source .venv/bin/activate && python stream_server.py
+cd ~/stream-proto && source .venv/bin/activate && PAINTER=sdxl python stream_server.py
 ```
+(Leave out PAINTER=sdxl for the SD 1.5 painter.)
 Then on the Mac, through the tunnel: http://localhost:8766/game (the game), http://localhost:8766 (the lab), http://localhost:8766/panel (tuning).
 
 ## The lab (http://localhost:8766)
