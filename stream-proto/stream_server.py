@@ -35,6 +35,7 @@ Without model:  MOCK=1 python stream_server.py  (fake effect, to test the pages)
 
 import asyncio
 import collections
+import contextlib
 import io
 import json
 import os
@@ -546,8 +547,11 @@ class Generator:
             if len(self.embeds) > 32:
                 self.embeds.clear()
             with self.torch.no_grad():
-                self.embeds[prompt], _ = self.pipe.encode_prompt(prompt, self.device, 1, False)
-        return self.embeds[prompt]
+                e, _ = self.pipe.encode_prompt(prompt, self.device, 1, False)
+            self.embeds[prompt] = e
+            return e
+        e = self.embeds.get(prompt)
+        return e if e is not None else self.embed(prompt)
 
     def set_reference(self, side, kind, img):
         self.refs[side][kind] = img
@@ -828,7 +832,8 @@ class SDXLGenerator(Generator):
                 pe, _, pooled, _ = pipe.encode_prompt(prompt=prompt, device=self.device, num_images_per_prompt=1,
                                                       do_classifier_free_guidance=False)
             self.embeds[key] = (pe, pooled)
-        return self.embeds[key]
+            return pe, pooled
+        return self.embeds.get(key) or self.embed(prompt, which)
 
     def embed_mix(self, prompt, which="live"):
         if isinstance(prompt, tuple):
@@ -1012,7 +1017,20 @@ class MockGenerator:
 
 gen = None
 painter_note = ""
-lock = asyncio.Lock()
+lock = asyncio.Lock()                              # the live avatar (and anything that changes what it uses)
+world_lock = asyncio.Lock()                        # worlds and portraits: their own painter, so they don't stall the avatar
+lora_lock = threading.Lock()                       # LoRAs go on both painters: changed by one thread at a time
+
+
+@contextlib.asynccontextmanager
+async def both_locks():
+    """For changes that touch the avatar and the worlds alike (references)."""
+    async with lock:
+        if world_lock is lock:
+            yield
+        else:
+            async with world_lock:
+                yield
 frame_log = collections.deque(maxlen=60)          # (time, ms, {part: ms}) of recent avatar frames, for the readout
 rtt_log = collections.deque(maxlen=30)            # the browser's measured round trip per frame (ms)
 wait_log = collections.deque(maxlen=30)           # how long each frame queued behind the previous one on the server (ms)
@@ -1044,7 +1062,8 @@ def full_prompt(prompt):
 
 def run_person(jpeg, prompt, pose=None, to="", mix=0.0, age=None, ramp=1.0):
     t0 = time.perf_counter()
-    gen.apply_loras(TUNE)
+    with lora_lock:
+        gen.apply_loras(TUNE)
     img = Image.open(io.BytesIO(jpeg)).convert("RGB")
     if img.size != (WIDTH, HEIGHT):
         img = ImageOps.fit(img, (WIDTH, HEIGHT))
@@ -1080,7 +1099,8 @@ def run_background(prompt, seed, keep=0.0, to="", mix=0.0, from_anchor=False, an
     of this event's own world (its slow breathing). anchor: this world is the event's own world from now on."""
     global world_ms, world_seq, world_change, world_error
     t0 = time.perf_counter()
-    gen.apply_loras(TUNE)
+    with lora_lock:
+        gen.apply_loras(TUNE)
     p = (full_prompt(prompt), full_prompt(to), mix) if to and mix > 0.001 else full_prompt(prompt)
     base = world_last["anchor"] if from_anchor else None
     before = world_last["img"]
@@ -1144,6 +1164,9 @@ async def load():
             gen = await asyncio.to_thread(Generator)
     else:
         gen = await asyncio.to_thread(Generator)
+    global world_lock
+    if not isinstance(gen, (SDXLGenerator, MockGenerator)):         # the SD 1.5 painter paints worlds with the avatar's own UNet
+        world_lock = lock
     if not MOCK:
         await asyncio.to_thread(dwpose)
     if not MOCK:   # warm up so the first real frames aren't slow
@@ -1352,7 +1375,7 @@ async def reference(request: Request, side: str, kind: str):
         return Response(status_code=400)
     body = await request.body()
     img = Image.open(io.BytesIO(body)).convert("RGB") if body else None
-    async with lock:
+    async with both_locks():
         await asyncio.to_thread(gen.set_reference, side, kind, img)
     return {"ok": True, "works": True}
 
@@ -1400,7 +1423,7 @@ async def background(prompt: str = "", keep: float = 0.0, fresh: int = 0, to: st
     base=anchor: a variation of this event's own world (the world breathing). anchor=1: this world becomes the
     event's own world."""
     prompt = prompt.strip() or "an empty landscape"
-    async with lock:
+    async with world_lock:
         if fresh:
             gen.last_world = None
             world_last.update(img=None, anchor=None)
@@ -1417,7 +1440,7 @@ async def background(prompt: str = "", keep: float = 0.0, fresh: int = 0, to: st
 @app.get("/world_depth")
 async def world_depth(id: int = 0):
     """The depth of the last world (grey PNG, near = white), for the page's parallax."""
-    async with lock:
+    async with world_lock:
         data = await asyncio.to_thread(run_world_depth, id)
     if not data:
         return Response(status_code=204)
@@ -1428,7 +1451,7 @@ async def world_depth(id: int = 0):
 async def portrait(prompt: str = "", base: int = 0, strength: float = 0.4, seed: int = 0):
     """The baby (Body). base=0: painted fresh; base=1: repainted lightly from the last one (a trait emerging)."""
     prompt = prompt.strip() or "a newborn baby"
-    async with lock:
+    async with world_lock:
         out = await asyncio.to_thread(run_portrait, prompt, seed or random.randrange(1 << 30), base, max(0.05, min(0.95, strength)))
     return Response(out, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
@@ -1488,7 +1511,7 @@ async def portrait_from(request: Request, prompt: str = "", strength: float = 0.
     except Exception:
         return JSONResponse({"error": "that isn't an image"}, status_code=400)
     prompt = prompt.strip() or "a portrait"
-    async with lock:
+    async with world_lock:
         out, found = await asyncio.to_thread(run_portrait_from, img, prompt, seed or random.randrange(1 << 30),
                                              max(0.05, min(0.95, strength)))
     return Response(out, media_type="image/jpeg", headers={"Cache-Control": "no-store", "X-Face": "1" if found else "0"})
