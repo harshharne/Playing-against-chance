@@ -49,6 +49,16 @@ It clones LivePortrait to ~/LivePortrait, downloads its weights (~0.6 GB) and ru
 The server then loads the animator by itself after the painter (ANIMATE=0 turns it off).
 Test page, through the tunnel: http://localhost:8766/animate.html
 
+## Training the style LoRA
+1. On the Mac, put 20-40 images in ONE look in a folder (e.g. ~/style). Only images you have the right to use.
+   Optional: a .txt beside an image saying what's in it; otherwise BLIP describes each one.
+2. Send the folder up (Mac):   gcloud compute scp --recurse ~/style chance-rtx:~/style --zone=asia-south1-c
+3. Train (cloud, in ~/stream-proto with the venv on):
+       pip install -q peft && python train_style_lora.py ~/style --name mylook
+   About 20-30 min (+ a ~7 GB download the first time). It prints the loss and the minutes left.
+   It can run while the server runs (both fit on the GPU), in its own ssh window.
+4. On /panel: LORA A = mylook (or mylook-early), weight about 0.8. It works on worlds, portraits and the live avatar.
+
 ## Updating the code later
 Edit on the Mac as usual, then from the stream-proto folder on the Mac:
     ./push.sh

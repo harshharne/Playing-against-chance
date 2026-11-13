@@ -273,6 +273,7 @@ def draw_openpose(points, w=None, h=None, age=None):
 
 # ---------- DWPose: body + hands + face (133 points), on the server (rtmlib, ONNX; on the GPU if onnxruntime-gpu works) ----------
 _wb = {"model": None, "tried": False, "error": None, "where": None}
+head_seen = {"x": 0.5, "y": 0.4, "at": 0.0, "by": ""}       # where the player's head is in the camera (0-1), found on this machine
 
 
 def dwpose():
@@ -306,6 +307,8 @@ def dwpose_skeleton(img, age=None):
     if len(kps):
         k = int(np.argmax([(p[:, 0].max() - p[:, 0].min()) * (p[:, 1].max() - p[:, 1].min()) for p in kps]))   # the biggest person
         kp, sc = kps[k].copy(), scores[k].copy()
+        if sc[0] > 0.3:                                              # the nose: where the head is, for the parallax
+            head_seen.update(x=float(kp[0][0]) / bgr.shape[1], y=float(kp[0][1]) / bgr.shape[0], at=time.time(), by="DWPose")
         s = child_scale(age)
         if s < 0.999 and len(kp) >= 134:                             # OpenPose order: 0 nose, 1 neck, 14-17 eyes/ears, 24-91 face
             head = {0, 14, 15, 16, 17, *range(24, 92)}
@@ -1381,7 +1384,11 @@ async def frame(request: Request, prompt: str = "", to: str = "", mix: float = 0
     async with lock:
         wait_log.append((time.perf_counter() - arrived) * 1000)   # the browser keeps two frames in flight: one waits here
         out, ms = await asyncio.to_thread(run_person, jpeg, prompt, pose, to.strip(), max(0.0, min(1.0, mix)), age, ramp)
-    return Response(out, media_type="image/jpeg", headers={"X-Gen-Ms": str(round(ms)), "X-Look": str(look_version), "Cache-Control": "no-store"})
+    hd = {"X-Gen-Ms": str(round(ms)), "X-Look": str(look_version), "Cache-Control": "no-store"}
+    h = current_head()
+    if h:
+        hd["X-Head"] = f"{h['x']:.3f},{h['y']:.3f}"
+    return Response(out, media_type="image/jpeg", headers=hd)
 
 
 @app.get("/background")
@@ -1424,6 +1431,22 @@ async def portrait(prompt: str = "", base: int = 0, strength: float = 0.4, seed:
     async with lock:
         out = await asyncio.to_thread(run_portrait, prompt, seed or random.randrange(1 << 30), base, max(0.05, min(0.95, strength)))
     return Response(out, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
+
+def current_head():
+    """The head position found on this machine in the last half second (the animator's face detection, or DWPose)."""
+    now = time.time()
+    if animator is not None and getattr(animator, "last_head", None) and now - getattr(animator, "head_at", 0) < 0.5:
+        return animator.last_head
+    if now - head_seen["at"] < 0.5:
+        return head_seen
+    return None
+
+
+@app.get("/head")
+async def head():
+    """Where the player's head is (0-1 across and down the camera picture), or null: for the parallax and presence."""
+    return {"head": current_head()}
 
 
 def portrait_crop(img):

@@ -176,7 +176,7 @@ class Animator:
         img = self.paste_back(face, s["M_c2o"], s["img"], s["mask"])
         t["paste"] = (time.perf_counter() - t3) * 1000
         head = _head_info(lmk, rgb.shape[1], rgb.shape[0], x_d["yaw"].item(), x_d["pitch"].item(), x_d["roll"].item())
-        self.last_head = head
+        self.last_head, self.head_at = head, time.time()
         return img, {"face": True, "head": head, "ms": t}
 
     def drive_jpeg(self, jpeg):

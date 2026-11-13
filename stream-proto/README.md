@@ -137,3 +137,23 @@ A painted portrait, moved live by your face: LivePortrait warps the painting the
 - Server: WebSocket /animate (frames in, [4-byte length][json][jpeg] out), POST /animate/source, GET /animate/status.
 - Setup on the cloud machine: `bash setup_liveportrait.sh` (see CLOUD.md). Speed alone: `python bench_animate.py`.
 - On the Mac with MOCK=1 the portrait just sways (no model); it needs `pip install "uvicorn[standard]"` for the WebSocket.
+
+## The living world
+- Between two events the world MORPHS in steps (panel: MORPH STEPS): each step is painted from the one before with
+  the words moving from the old scene to the new one; the last step is the new scene and becomes the event's world.
+- Inside an event it BREATHES: every few seconds (WORLD BREATHES EVERY) a new variation of the event's own world
+  fades in (EACH BREATH KEEPS = how much survives). Never while the die rolls, never under the egg, map or house.
+- The server prints one line per world: how long it took, what kind it was and how much it CHANGED (0 = the same
+  picture, ~100 = completely different). The panel's WORLD line shows the same, or the error if a world failed;
+  so does the game's hidden debug line (D).
+- The parallax follows your head as found on the GPU machine (DWPose's nose in pose/both shape modes, or the
+  animator's face detection), falling back to the browser's outline. GET /head says where it is.
+
+## Portraits from the player (gate 2)
+POST /portrait/from (a photo in the body, ?prompt=&strength=): the face is found, framed head and shoulders, and
+repainted for the prompt. On animate.html: TAKE MY PHOTO, then PAINT ME AT 8 AGES (4 to 75); REPAINT sets how much
+changes (children get a bit more). Each age can be moved live like any portrait.
+
+## Style LoRA
+train_style_lora.py trains an SDXL style LoRA on the GPU machine from a folder of images (see CLOUD.md). The SDXL
+painters load LoRAs from loras/ onto both pipelines (worlds + portraits, and the live avatar).

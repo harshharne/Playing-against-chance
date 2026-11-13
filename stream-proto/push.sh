@@ -29,7 +29,7 @@ fi
 
 echo "sending code to $VM ..."
 gcloud compute scp --zone="$ZONE" --recurse \
-  web stream_server.py animate.py download_models.py bench.py bench_animate.py setup_sdxl.sh setup_liveportrait.sh \
+  web stream_server.py animate.py download_models.py bench.py bench_animate.py train_style_lora.py setup_sdxl.sh setup_liveportrait.sh \
   styles.json trajectory.json setup_cloud.sh CLOUD.md README.md \
   "$VM":~/stream-proto/ --quiet
 

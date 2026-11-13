@@ -32,7 +32,7 @@ export function createLive({ out, video, params }) {
   let online = false, fgPrompt = null, fgTo = "", fgMix = 0, bgPrompt = null, flying = 0, seq = 0, shownSeq = 0;
   let bgImg = null, oldBg = null, bgAt = 0, bgFade = 600, person = null, personAt = 0, fade = 150, lastSig = null, held = false;
   let bgDepth = null, oldPair = null, showReal = true, personAlpha = 1, control = null, serverPose = false;
-  const px = createParallax(); let par = [0, 0], parallax = 0.03;
+  const px = createParallax(); let par = [0, 0], parallax = 0.03, serverHead = null;
   let personPose = null, prevPose = null, livePose = null;
   let segmenter = null, segImage = null, segOk = false, camCover = 0, scene = null;
   const stat = { ms: 0, bgMs: 0, times: [], note: "", seg: "", online: false, engine: "", references: true, fps: "–" };
@@ -179,7 +179,9 @@ export function createLive({ out, video, params }) {
     let k = Math.min(1, (performance.now() - bgAt) / bgFade);
     k = k * k * (3 - 2 * k);                                  // ease in and out: a slow paint-over, no visible start or stop
     if (g === octx && px && parallax > 0) {                    // the screen: the world with a little depth, following you
-      const p = livePose ? [-(livePose.cx / W - 0.5), -(livePose.cy / H - 0.5) * 0.6] : [0, 0];
+      // your head, as found on the GPU machine (X-Head on each frame); the browser's own outline when it hasn't sent one
+      const sh = serverHead && performance.now() - serverHead.at < 800 ? serverHead : null;
+      const p = sh ? [-(sh.x - 0.5), -(sh.y - 0.45) * 0.6] : livePose ? [-(livePose.cx / W - 0.5), -(livePose.cy / H - 0.5) * 0.6] : [0, 0];
       const drift = [Math.sin(performance.now() / 5200) * 0.12, Math.cos(performance.now() / 7300) * 0.06];
       par = [par[0] + ((p[0] + drift[0]) * parallax - par[0]) * 0.06, par[1] + ((p[1] + drift[1]) * parallax - par[1]) * 0.06];
       const o = oldPair && k < 1 ? oldPair : null;
@@ -386,6 +388,8 @@ export function createLive({ out, video, params }) {
       const res = await fetch("/frame?" + q, { method: "POST", body: jpeg, headers });
       if (!res.ok) throw new Error("status " + res.status);
       stat.ms = +res.headers.get("X-Gen-Ms") || 0;
+      const hh = res.headers.get("X-Head");
+      if (hh) { const [hx, hy] = hh.split(",").map(Number); serverHead = { x: hx, y: hy, at: performance.now() }; stat.headBy = "server"; }
       const bmp = await createImageBitmap(await res.blob());
       stat.rtt = performance.now() - sent;                 // camera frame out -> painted frame back, as the browser sees it
       flying--;
