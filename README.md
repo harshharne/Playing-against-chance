@@ -10,3 +10,8 @@ avatar from the camera, and worlds generated from each life event.
 - `docs/`         the storyline and the life trajectory the game is built from
 
 See `stream-proto/README.md` to run it. Every saved version is a commit, oldest first.
+
+## The random.org key
+
+The key is not in the repository. On the Mac, put it in `stream-proto/random_org.key` (one line, nothing else).
+`push.sh` sends it to the cloud machine; git ignores it. Without it the game uses the computer's own randomness.

@@ -32,6 +32,10 @@ gcloud compute scp --zone="$ZONE" --recurse \
   web stream_server.py download_models.py bench.py setup_sdxl.sh styles.json trajectory.json setup_cloud.sh CLOUD.md README.md \
   "$VM":~/stream-proto/ --quiet
 
+if [ -f random_org.key ]; then
+  gcloud compute scp --zone="$ZONE" random_org.key "$VM":~/stream-proto/ --quiet
+fi
+
 if [ "$1" = "loras" ]; then
   echo "sending LoRAs ..."
   gcloud compute scp --zone="$ZONE" --recurse loras "$VM":~/stream-proto/ --quiet

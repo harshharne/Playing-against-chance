@@ -103,7 +103,18 @@ DEFAULT_LORAS = {
 }
 
 # chance: random.org (true randomness). Falls back to the computer's own randomness if it can't be reached.
-RANDOM_ORG_KEY = os.environ.get("RANDOM_ORG_KEY", "")
+def _read_key_file():
+    """the key lives in random_org.key next to this file (kept out of git), or in the RANDOM_ORG_KEY variable"""
+    try:
+        with open(os.path.join(HERE, "random_org.key")) as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+RANDOM_ORG_KEY = os.environ.get("RANDOM_ORG_KEY") or _read_key_file()
+if not RANDOM_ORG_KEY:
+    print("[chance] no random.org key (random_org.key or RANDOM_ORG_KEY): using local randomness")
 
 # ---------- the tuning (changed live from /panel) ----------
 TUNE_DEFAULTS = {
