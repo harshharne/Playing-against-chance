@@ -42,6 +42,13 @@ If it still doesn't after 15 minutes, run the installer line by hand with sudo, 
 5. When done, STOP it:     gcloud compute instances stop chance-rtx --zone=asia-south1-c
    A stopped machine costs only its disk (cents a month). A running one ~US$0.74 an hour from your credit.
 
+## The animation layer (LivePortrait): once
+On the cloud machine, after setup_sdxl.sh:
+    cd ~/stream-proto && source .venv/bin/activate && bash setup_liveportrait.sh
+It clones LivePortrait to ~/LivePortrait, downloads its weights (~0.6 GB) and runs the speed check (bench_animate.py).
+The server then loads the animator by itself after the painter (ANIMATE=0 turns it off).
+Test page, through the tunnel: http://localhost:8766/animate.html
+
 ## Updating the code later
 Edit on the Mac as usual, then from the stream-proto folder on the Mac:
     ./push.sh

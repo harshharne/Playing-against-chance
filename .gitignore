@@ -17,3 +17,6 @@ venv/
 models/
 stream-proto/web/refs/*
 !stream-proto/web/refs/README.txt
+
+# speed-check output
+stream-proto/bench_animate.jpg

@@ -42,11 +42,13 @@ import random
 import re
 import secrets
 import shutil
+import struct
+import threading
 import time
 import urllib.request
 import zlib
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageDraw, ImageFilter, ImageOps, ImageStat
@@ -1096,6 +1098,8 @@ async def load():
         await asyncio.to_thread(run_background, "warm up", 0)
         await asyncio.to_thread(run_person, jpeg_bytes(Image.new("RGB", (WIDTH, HEIGHT), (128, 128, 128))), "warm up")
         frame_log.clear()
+    if ANIMATE:
+        asyncio.get_running_loop().run_in_executor(None, load_animator)
     print(f"open http://localhost:{PORT}   (tuning: http://localhost:{PORT}/panel)" + ("   (MOCK mode)" if MOCK else ""))
 
 
@@ -1402,6 +1406,95 @@ async def save_pacing(request: Request):
     os.replace(tmp, TRAJECTORY_FILE)
     pace_version += 1
     return {"pacing": doc["pacing"], "world": doc["world"], "pace": pace_version}
+
+
+# ---------- the animation layer (LivePortrait: a painted portrait moved by your face) ----------
+ANIMATE = os.environ.get("ANIMATE", "1") != "0"
+animator, animator_note = None, "loading"
+
+
+def load_animator():
+    global animator, animator_note
+    t0 = time.perf_counter()
+    try:
+        if MOCK:
+            from animate import MockAnimator
+            animator = MockAnimator()
+        else:
+            from animate import Animator
+            animator = Animator()
+        animator_note = ""
+        print(f"[animate] ready in {time.perf_counter() - t0:.1f} s" + (" (mock)" if MOCK else ""))
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        animator_note = f"LivePortrait didn't load: {str(e)[:200]}"
+        print("[animate] " + animator_note)
+
+
+@app.get("/animate/status")
+async def animate_status():
+    return {"ready": animator is not None, "note": animator_note if ANIMATE else "off (ANIMATE=0)",
+            "source": bool(animator is not None and animator.src is not None), "mock": MOCK,
+            "opts": animator.opts if animator else None, "head": animator.last_head if animator else None}
+
+
+@app.post("/animate/source")
+async def animate_source(request: Request):
+    """The portrait to move: an image (jpeg/png) in the body."""
+    if animator is None:
+        return JSONResponse({"ok": False, "note": animator_note or "not loaded"}, status_code=503)
+    import numpy as np
+    try:
+        img = Image.open(io.BytesIO(await request.body())).convert("RGB")
+    except Exception:
+        return JSONResponse({"ok": False, "note": "that isn't an image"}, status_code=400)
+    t0 = time.perf_counter()
+    ok = await asyncio.to_thread(animator.set_source, np.asarray(img))
+    return {"ok": ok, "ms": round((time.perf_counter() - t0) * 1000), "size": img.size,
+            "note": "" if ok else "no face found in that picture: try one where the face is clear and facing forward"}
+
+
+def ws_pack(info, jpeg=b""):
+    j = json.dumps(info).encode()
+    return struct.pack(">I", len(j)) + j + jpeg
+
+
+@app.websocket("/animate")
+async def animate_ws(ws: WebSocket):
+    """Camera frames in (binary jpeg), animated portrait out: [4-byte length][json info][jpeg].
+    Text messages are commands: {"cmd":"reset"} or {"cmd":"opts", "multiplier":..., "smooth":..., "quality":...}."""
+    await ws.accept()
+    try:
+        while True:
+            msg = await ws.receive()
+            if msg.get("type") == "websocket.disconnect":
+                break
+            if msg.get("text"):
+                try:
+                    cmd = json.loads(msg["text"])
+                except ValueError:
+                    continue
+                if animator is not None and cmd.get("cmd") == "reset":
+                    animator.reset()
+                elif animator is not None and cmd.get("cmd") == "opts":
+                    for k in ("multiplier", "smooth", "redetect", "quality"):
+                        if k in cmd:
+                            try:
+                                animator.opts[k] = float(cmd[k])
+                            except (TypeError, ValueError):
+                                pass
+                continue
+            data = msg.get("bytes")
+            if not data:
+                continue
+            if animator is None:
+                await ws.send_bytes(ws_pack({"note": animator_note or "loading"}))
+                continue
+            jpeg, info = await asyncio.to_thread(animator.drive_jpeg, data)
+            await ws.send_bytes(ws_pack(info, jpeg))
+    except WebSocketDisconnect:
+        pass
 
 
 # the pages (index.html = the lab, game.html, panel.html, live.js, stages.js); mounted last so the routes above win

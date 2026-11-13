@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Animator Test</title>
+<style>
+/* Gate 1: a painted portrait moved live by your face (LivePortrait on chance-rtx). Same white, framed look as the lab.
+   Big picture = the animated portrait; small window = your camera. Underneath: portraits to try, controls, the readout. */
+:root { --ink: #111; --line: #d6d6d6; --dim: #8a8a8a; --bg: #fff; --bad: #c0392b; --good: #2e7d4f; color-scheme: light; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: ui-sans-serif, system-ui, -apple-system, "Helvetica Neue", sans-serif; }
+.frame { box-sizing: border-box; height: 100%; max-width: 1240px; margin: 0 auto; padding: 20px 24px; display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: 14px; }
+.gen { position: relative; min-height: 0; border: 1.5px solid var(--ink); border-radius: 4px; overflow: hidden; display: grid; place-items: center; background: #f5f5f5; }
+.gen img.out { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
+.status { position: absolute; top: 12px; left: 14px; font-size: 12px; letter-spacing: 0.04em; color: var(--dim); background: rgba(255,255,255,0.9); padding: 4px 8px; border-radius: 3px; max-width: 60%; }
+.status b { font-weight: 600; color: var(--ink); }
+.status.off b { color: var(--bad); }
+.pip { position: absolute; top: 12px; right: 12px; width: clamp(120px, 20%, 240px); aspect-ratio: 4 / 3; object-fit: cover; border: 1.5px solid var(--ink); border-radius: 3px; background: #ddd; }
+.pip.mirror { transform: scaleX(-1); }
+.hint { position: absolute; inset: 0; display: grid; place-items: center; font-size: 15px; color: var(--dim); text-align: center; padding: 24px; line-height: 1.5; }
+.hint[hidden] { display: none; }
+.readout { position: absolute; left: 12px; bottom: 12px; font: 11px/1.55 ui-monospace, "SF Mono", Menlo, monospace; background: rgba(255,255,255,0.92); border: 1px solid var(--line); border-radius: 3px; padding: 8px 10px; min-width: 250px; }
+.readout b { font-weight: 600; }
+.readout .big { font-size: 14px; }
+
+.bar { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto; gap: 14px; align-items: start; }
+.group { border: 1.5px solid var(--ink); border-radius: 4px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.group > span { font-size: 10px; font-weight: 600; letter-spacing: 0.1em; color: var(--dim); }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+button, select, label.file { font: inherit; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; padding: 8px 11px; border: 1.5px solid var(--ink); border-radius: 4px; background: #fff; color: var(--ink); cursor: pointer; }
+button:hover, label.file:hover { background: #f2f2f2; }
+button:disabled { opacity: 0.4; cursor: default; }
+button.main { background: var(--ink); color: #fff; }
+label.file input { display: none; }
+select { letter-spacing: 0; font-weight: 400; max-width: 100%; }
+.thumbs { display: flex; gap: 6px; flex-wrap: wrap; min-height: 56px; }
+.thumbs img { width: 56px; height: 56px; object-fit: cover; border: 1.5px solid var(--line); border-radius: 3px; cursor: pointer; }
+.thumbs img.on { border-color: var(--ink); box-shadow: 0 0 0 2px var(--ink); }
+.slider { display: grid; grid-template-columns: 92px 1fr 40px; gap: 8px; align-items: center; font-size: 10px; font-weight: 600; letter-spacing: 0.08em; color: var(--dim); }
+.slider output { font: 11px ui-monospace, Menlo, monospace; color: var(--ink); text-align: right; }
+.gate { font-size: 12px; line-height: 1.6; max-width: 260px; }
+.gate ol { margin: 4px 0 0; padding-left: 18px; }
+kbd { font: 10px ui-monospace, Menlo, monospace; border: 1px solid #bbb; border-bottom-width: 2px; border-radius: 3px; padding: 0 4px; }
+</style>
+</head>
+<body>
+<div class="frame">
+  <div class="gen">
+    <img class="out" id="out" alt="">
+    <div class="hint" id="hint">Paint a portrait below (or upload one), then look at the camera.<br>Your face moves the painting.</div>
+    <div class="status" id="status">connecting…</div>
+    <video class="pip mirror" id="cam" autoplay muted playsinline></video>
+    <div class="readout" id="readout">—</div>
+  </div>
+
+  <div class="bar">
+    <div class="group">
+      <span>PORTRAIT TO MOVE</span>
+      <div class="row">
+        <button data-age="child">PAINT · CHILD 8</button>
+        <button data-age="adult">PAINT · ADULT 30</button>
+        <button data-age="old">PAINT · OLD 70</button>
+        <label class="file">UPLOAD<input type="file" id="file" accept="image/*"></label>
+      </div>
+      <div class="thumbs" id="thumbs"></div>
+    </div>
+
+    <div class="group">
+      <span>MOVEMENT</span>
+      <label class="slider">MOVEMENT<input type="range" id="multiplier" min="0.3" max="1.6" step="0.05" value="1"><output id="multiplierV">1.00</output></label>
+      <label class="slider">SMOOTHING<input type="range" id="smooth" min="0" max="0.9" step="0.05" value="0.3"><output id="smoothV">0.30</output></label>
+      <label class="slider">SEND WIDTH<input type="range" id="sendw" min="240" max="640" step="80" value="480"><output id="sendwV">480</output></label>
+      <label class="slider">JPEG QUALITY<input type="range" id="quality" min="40" max="95" step="5" value="80"><output id="qualityV">80</output></label>
+      <div class="row">
+        <button class="main" id="reset">RESET NEUTRAL <kbd>R</kbd></button>
+        <button id="mirror">MIRROR: ON</button>
+        <select id="camSel" title="Camera"></select>
+      </div>
+    </div>
+
+    <div class="group gate">
+      <span>GATE 1 · DECIDE TONIGHT</span>
+      <ol>
+        <li>Does it still look <b>painted</b>?</li>
+        <li>Does it feel like <b>you</b> moving it?</li>
+        <li>Does it feel <b>live</b>? (round trip under about 150 ms)</li>
+      </ol>
+      <p style="margin:0">Turn, nod, blink, talk, smile. Try all three ages. <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> switch portraits.</p>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { listCameras, findCamera, builtInCamera, saveCamera } from "./cameras.js";
+
+const $ = (id) => document.getElementById(id);
+const out = $("out"), cam = $("cam"), statusEl = $("status"), hint = $("hint"), readout = $("readout");
+const grab = document.createElement("canvas"), gctx = grab.getContext("2d");
+
+const PROMPTS = {
+  child: "head and shoulders portrait of an 8-year-old child, looking straight at the viewer, calm face, mouth closed, soft plain background",
+  adult: "head and shoulders portrait of a 30-year-old person, looking straight at the viewer, calm face, mouth closed, soft plain background",
+  old: "head and shoulders portrait of a 70-year-old person, grey hair, wrinkles, looking straight at the viewer, calm face, mouth closed, soft plain background",
+};
+
+let ws = null, busy = false, sentAt = 0, mirror = true, hasSource = false, lastUrl = null;
+const rtts = [], serverMs = [], shown = [];
+let lastInfo = null;
+
+function setStatus(html, off = false) { statusEl.innerHTML = html; statusEl.classList.toggle("off", off); }
+const median = (a) => { if (!a.length) return 0; const s = [...a].sort((x, y) => x - y); return s[Math.floor(s.length / 2)]; };
+const push = (a, v, n = 30) => { a.push(v); if (a.length > n) a.shift(); };
+
+// ---------- camera ----------
+async function openCamera(id) {
+  if (cam.srcObject) cam.srcObject.getTracks().forEach(t => t.stop());
+  const video = { width: { ideal: 640 }, height: { ideal: 480 } };
+  if (id) video.deviceId = { exact: id };
+  cam.srcObject = await navigator.mediaDevices.getUserMedia({ video, audio: false });
+  await cam.play();
+}
+async function setupCamera() {
+  let id = "";
+  try { id = (await findCamera("pac-avatar-cam")) || (await builtInCamera()); } catch (e) {}
+  try { await openCamera(id); } catch (e) { await openCamera(""); }
+  const cams = await listCameras();
+  const now = cam.srcObject.getVideoTracks()[0].getSettings().deviceId;
+  $("camSel").innerHTML = cams.map(c => `<option value="${c.deviceId}" ${c.deviceId === now ? "selected" : ""}>${c.label || "camera"}</option>`).join("");
+  $("camSel").onchange = async () => {
+    const c = cams.find(x => x.deviceId === $("camSel").value);
+    await openCamera(c.deviceId); saveCamera("pac-avatar-cam", c); send({ cmd: "reset" });
+  };
+}
+
+// ---------- the WebSocket ----------
+function send(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
+function sendOpts() {
+  send({ cmd: "opts", multiplier: +$("multiplier").value, smooth: +$("smooth").value, quality: +$("quality").value });
+}
+function connect() {
+  ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/animate");
+  ws.binaryType = "arraybuffer";
+  ws.onopen = () => { busy = false; sendOpts(); tick(); };
+  ws.onclose = () => { setStatus("<b>disconnected</b> · retrying (is the server running, and the tunnel open?)", true); setTimeout(connect, 1500); };
+  ws.onmessage = (e) => {
+    const rtt = performance.now() - sentAt;
+    const buf = e.data, n = new DataView(buf).getUint32(0);
+    const info = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 4, n)));
+    const jpeg = new Uint8Array(buf, 4 + n);
+    lastInfo = info;
+    if (jpeg.length) {
+      const url = URL.createObjectURL(new Blob([jpeg], { type: "image/jpeg" }));
+      out.onload = () => { if (lastUrl) URL.revokeObjectURL(lastUrl); lastUrl = url; };
+      out.src = url;
+      hint.hidden = true;
+      push(rtts, rtt); push(serverMs, info.ms ? info.ms.total : 0); push(shown, performance.now(), 120);
+    }
+    busy = false;
+    requestAnimationFrame(tick);
+  };
+}
+
+// one frame in flight at a time: the next goes as soon as the last comes back
+function tick() {
+  if (busy || !ws || ws.readyState !== 1 || !cam.videoWidth || !hasSource) { if (!hasSource) setTimeout(tick, 300); return; }
+  busy = true;
+  const w = +$("sendw").value, h = Math.round(w * cam.videoHeight / cam.videoWidth);
+  if (grab.width !== w || grab.height !== h) { grab.width = w; grab.height = h; }
+  gctx.save();
+  if (mirror) { gctx.translate(w, 0); gctx.scale(-1, 1); }
+  gctx.drawImage(cam, 0, 0, w, h);
+  gctx.restore();
+  grab.toBlob(async (b) => {
+    if (!b || ws.readyState !== 1) { busy = false; return; }
+    sentAt = performance.now();
+    ws.send(await b.arrayBuffer());
+  }, "image/jpeg", +$("quality").value / 100);
+}
+setInterval(() => { if (busy && performance.now() - sentAt > 4000) { busy = false; tick(); } }, 1000);   // never stall
+
+// ---------- readout ----------
+setInterval(() => {
+  const now = performance.now(), fps = shown.filter(t => now - t < 1000).length;
+  const i = lastInfo || {}, ms = i.ms || {}, rt = median(rtts), sv = median(serverMs);
+  const head = i.head ? `yaw ${i.head.yaw}° · pitch ${i.head.pitch}° · roll ${i.head.roll}°<br>at x ${i.head.x} y ${i.head.y} · size ${i.head.size}` : "—";
+  const live = rt && rt < 150;
+  readout.innerHTML =
+    `<span class="big"><b>${fps}</b> fps · round trip <b style="color:${rt ? (live ? "var(--good)" : "var(--bad)") : "inherit"}">${Math.round(rt)} ms</b></span><br>` +
+    `server ${Math.round(sv)} ms = track ${Math.round(ms.track || 0)} · motion ${Math.round(ms.motion || 0)} · warp ${Math.round(ms.warp || 0)} · paste ${Math.round(ms.paste || 0)} · jpeg ${Math.round(ms.jpeg || 0)}<br>` +
+    `network + browser ${rt ? Math.round(rt - sv) : 0} ms<br>` +
+    `face <b>${i.face === false ? "not found" : i.face ? "yes" : "—"}</b>${i.mock ? " · <b>MOCK</b>" : ""}<br>${head}` +
+    (i.note ? `<br><b>${i.note}</b>` : "");
+}, 250);
+
+// ---------- portraits ----------
+const thumbs = [];
+async function useSource(blob, thumbEl) {
+  setStatus("setting the portrait…");
+  const r = await fetch("/animate/source", { method: "POST", body: blob });
+  const j = await r.json().catch(() => ({}));
+  if (!j.ok) { setStatus(`<b>${j.note || "couldn't use that picture"}</b>`, true); return false; }
+  hasSource = true; send({ cmd: "reset" });
+  thumbs.forEach(t => t.classList.toggle("on", t === thumbEl));
+  setStatus(`<b>moving</b> · portrait ready in ${j.ms} ms · look at the camera, then press R`);
+  tick();
+  return true;
+}
+function addThumb(blob) {
+  const img = document.createElement("img");
+  img.src = URL.createObjectURL(blob);
+  img.onclick = () => useSource(blob, img);
+  $("thumbs").appendChild(img); thumbs.push(img);
+  return img;
+}
+document.querySelectorAll("[data-age]").forEach(b => b.onclick = async () => {
+  b.disabled = true; setStatus(`painting the ${b.dataset.age} portrait…`);
+  try {
+    const r = await fetch(`/portrait?prompt=${encodeURIComponent(PROMPTS[b.dataset.age])}&seed=${1 + Math.floor(Math.random() * 1e9)}`, { cache: "no-store" });
+    if (!r.ok) throw new Error(r.status);
+    const blob = await r.blob();
+    await useSource(blob, addThumb(blob));
+  } catch (e) { setStatus(`<b>painting failed</b> (${e.message})`, true); }
+  b.disabled = false;
+});
+$("file").onchange = async () => {
+  const f = $("file").files[0]; if (!f) return;
+  await useSource(f, addThumb(f)); $("file").value = "";
+};
+
+// ---------- controls ----------
+for (const id of ["multiplier", "smooth", "sendw", "quality"]) {
+  const el = $(id), v = $(id + "V");
+  const show = () => { v.textContent = id === "sendw" || id === "quality" ? el.value : (+el.value).toFixed(2); };
+  el.oninput = () => { show(); sendOpts(); }; show();
+}
+$("reset").onclick = () => send({ cmd: "reset" });
+$("mirror").onclick = () => { mirror = !mirror; $("mirror").textContent = `MIRROR: ${mirror ? "ON" : "OFF"}`; cam.classList.toggle("mirror", mirror); send({ cmd: "reset" }); };
+addEventListener("keydown", (e) => {
+  if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
+  if (e.key === "r" || e.key === "R") send({ cmd: "reset" });
+  if (/^[1-9]$/.test(e.key) && thumbs[+e.key - 1]) thumbs[+e.key - 1].click();
+});
+
+// ---------- start ----------
+async function waitReady() {
+  try {
+    const s = await (await fetch("/animate/status", { cache: "no-store" })).json();
+    if (s.ready) { setStatus(s.source ? "<b>moving</b>" : "<b>ready</b> · paint or upload a portrait" + (s.mock ? " · MOCK (no model)" : "")); if (s.source) { hasSource = true; } return; }
+    setStatus(s.note === "loading" ? "loading LivePortrait…" : `<b>${s.note}</b>`, s.note !== "loading");
+  } catch (e) { setStatus("<b>no server</b>", true); }
+  setTimeout(waitReady, 1500);
+}
+await setupCamera().catch(e => setStatus(`<b>camera: ${e.message}</b>`, true));
+waitReady();
+connect();
+</script>
+</body>
+</html>

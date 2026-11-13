@@ -126,3 +126,14 @@ Your own LoRAs: put them in loras/ on the Mac, then `./push.sh loras` sends them
 - TUNE_DEFAULTS: the panel's starting values
 - BG_IMAGE_KEEP 0.35: how much of the background IMAGE reference survives
 - WIDTH × HEIGHT 640×384: smaller (e.g. 512×320) = faster
+
+## The animation layer (animate.py, gate 1)
+A painted portrait, moved live by your face: LivePortrait warps the painting the diffusion made, it never repaints it.
+- http://localhost:8766/animate.html — the test page: paint a child, adult or old portrait (or upload one), look at the
+  camera; R = this is my neutral face. MOVEMENT, SMOOTHING, SEND WIDTH and JPEG QUALITY change it live. The readout
+  splits the round trip into the server's parts (track = face detection, motion, warp, paste, jpeg) and network + browser.
+- The face detection runs on the server (InsightFace + LivePortrait's landmarks), which also reports where your head
+  is (x, y, size, yaw, pitch, roll) for the parallax and whether anyone is there for the idle screen.
+- Server: WebSocket /animate (frames in, [4-byte length][json][jpeg] out), POST /animate/source, GET /animate/status.
+- Setup on the cloud machine: `bash setup_liveportrait.sh` (see CLOUD.md). Speed alone: `python bench_animate.py`.
+- On the Mac with MOCK=1 the portrait just sways (no model); it needs `pip install "uvicorn[standard]"` for the WebSocket.
