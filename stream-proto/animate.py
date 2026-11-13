@@ -99,6 +99,16 @@ class Animator:
         self.n = 0
         self.missing = 0
 
+    # ---- a head-and-shoulders square around the face in a photo (for painting portraits from the player) ----
+    def face_box(self, rgb):
+        with self.lock:
+            faces = self.cropper.face_analysis_wrapper.get(np.ascontiguousarray(rgb[..., ::-1]), flag_do_landmark_2d_106=False,
+                                                           direction="large-small")
+        if not faces:
+            return None
+        x1, y1, x2, y2 = [float(v) for v in faces[0].bbox[:4]]
+        return x1, y1, x2, y2
+
     # ---- detection: find and follow the face in the camera frame ----
     def track(self, rgb):
         self.n += 1

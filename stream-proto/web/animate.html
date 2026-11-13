@@ -63,6 +63,11 @@ kbd { font: 10px ui-monospace, Menlo, monospace; border: 1px solid #bbb; border-
         <button data-age="old">PAINT · OLD 70</button>
         <label class="file">UPLOAD<input type="file" id="file" accept="image/*"></label>
       </div>
+      <div class="row">
+        <button id="snap">TAKE MY PHOTO</button>
+        <button id="ages" disabled>PAINT ME AT 8 AGES</button>
+      </div>
+      <label class="slider">REPAINT<input type="range" id="repaint" min="0.3" max="0.9" step="0.05" value="0.6"><output id="repaintV">0.60</output></label>
       <div class="thumbs" id="thumbs"></div>
     </div>
 
@@ -86,6 +91,12 @@ kbd { font: 10px ui-monospace, Menlo, monospace; border: 1px solid #bbb; border-
         <li>Does it feel like <b>you</b> moving it?</li>
         <li>Does it feel <b>live</b>? (round trip under about 150 ms)</li>
       </ol>
+      <span style="margin-top:6px">GATE 2 · PAINT ME AT 8 AGES</span>
+      <ol>
+        <li>Is each one still <b>you</b>?</li>
+        <li>Do the young ones look like <b>children</b>, not small adults?</li>
+      </ol>
+      <p style="margin:0">REPAINT low = more of your photo; high = more of the age. Children get a little more on their own.</p>
       <p style="margin:0">Turn, nod, blink, talk, smile. Try all three ages. <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> switch portraits.</p>
     </div>
   </div>
@@ -229,10 +240,48 @@ $("file").onchange = async () => {
 };
 
 // ---------- controls ----------
-for (const id of ["multiplier", "smooth", "sendw", "quality"]) {
+// ---------- you: a photo, painted at eight ages (gate 2) ----------
+const AGES = [4, 8, 14, 20, 30, 45, 60, 75];
+function agePrompt(age) {
+  const who = age <= 6 ? `a ${age}-year-old little child` : age < 13 ? `a ${age}-year-old child` : age < 20 ? `a ${age}-year-old teenager`
+    : age < 60 ? `a ${age}-year-old adult` : `a ${age}-year-old elderly person, grey hair, wrinkles`;
+  return `head and shoulders portrait of ${who}, looking straight at the viewer, calm face, mouth closed, soft plain background`;
+}
+let photo = null;
+$("snap").onclick = async () => {
+  if (!cam.videoWidth) return;
+  const c = document.createElement("canvas"); c.width = cam.videoWidth; c.height = cam.videoHeight;
+  const g = c.getContext("2d"); if (mirror) { g.translate(c.width, 0); g.scale(-1, 1); } g.drawImage(cam, 0, 0);
+  photo = await new Promise(r => c.toBlob(r, "image/jpeg", 0.92));
+  addThumb(photo).title = "your photo";
+  $("ages").disabled = false;
+  setStatus("<b>photo taken</b> · now PAINT ME AT 8 AGES");
+};
+$("ages").onclick = async () => {
+  if (!photo) return;
+  $("ages").disabled = true;
+  const base = +$("repaint").value;
+  let first = null;
+  for (const age of AGES) {
+    setStatus(`painting you at ${age}…`);
+    const s = Math.min(0.92, age < 13 ? base + 0.15 : base);
+    try {
+      const r = await fetch(`/portrait/from?prompt=${encodeURIComponent(agePrompt(age))}&strength=${s.toFixed(2)}&seed=${1 + Math.floor(Math.random() * 1e9)}`,
+        { method: "POST", body: photo, cache: "no-store" });
+      if (!r.ok) throw new Error(r.status);
+      if (r.headers.get("X-Face") === "0") setStatus("<b>no face found in the photo</b>: using the middle of it", true);
+      const blob = await r.blob(), el = addThumb(blob); el.title = `you at ${age}`;
+      if (!first) { first = el; await useSource(blob, el); }
+    } catch (e) { setStatus(`<b>painting you at ${age} failed</b> (${e.message})`, true); break; }
+  }
+  setStatus("<b>8 ages painted</b> · click one (or press its number) to move it");
+  $("ages").disabled = false;
+};
+
+for (const id of ["multiplier", "smooth", "sendw", "quality", "repaint"]) {
   const el = $(id), v = $(id + "V");
   const show = () => { v.textContent = id === "sendw" || id === "quality" ? el.value : (+el.value).toFixed(2); };
-  el.oninput = () => { show(); sendOpts(); }; show();
+  el.oninput = () => { show(); if (id !== "repaint") sendOpts(); }; show();
 }
 $("reset").onclick = () => send({ cmd: "reset" });
 $("mirror").onclick = () => { mirror = !mirror; $("mirror").textContent = `MIRROR: ${mirror ? "ON" : "OFF"}`; cam.classList.toggle("mirror", mirror); send({ cmd: "reset" }); };

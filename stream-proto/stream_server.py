@@ -1426,6 +1426,51 @@ async def portrait(prompt: str = "", base: int = 0, strength: float = 0.4, seed:
     return Response(out, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 
+def portrait_crop(img):
+    """A head-and-shoulders square around the face (found by the animator's detector when it's loaded; otherwise
+    the upper middle of the picture), at the portrait size."""
+    import numpy as np
+    w, h = img.size
+    box = None
+    if animator is not None and hasattr(animator, "face_box"):
+        try:
+            box = animator.face_box(np.asarray(img))
+        except Exception as e:
+            print(f"[portrait] face detection failed: {e}")
+    if box:
+        x1, y1, x2, y2 = box
+        s = max(x2 - x1, y2 - y1)
+        side, cx, cy = s * 2.6, (x1 + x2) / 2, (y1 + y2) / 2 + s * 0.35       # room for hair above, shoulders below
+    else:
+        side, cx, cy = min(w, h) * 0.9, w / 2, h * 0.45
+    l, tp = cx - side / 2, cy - side / 2
+    canvas = Image.new("RGB", (int(side), int(side)), img.resize((1, 1)).getpixel((0, 0)))   # edges padded with its mean colour
+    canvas.paste(img, (int(-l), int(-tp)))
+    return canvas.resize((PORTRAIT, PORTRAIT), Image.LANCZOS), bool(box)
+
+
+def run_portrait_from(img, prompt, seed, strength):
+    crop, found = portrait_crop(img)
+    out = gen.portrait(full_prompt(prompt), seed, crop, strength)
+    return jpeg_bytes(out), found
+
+
+@app.post("/portrait/from")
+async def portrait_from(request: Request, prompt: str = "", strength: float = 0.6, seed: int = 0):
+    """A portrait painted FROM a photo of the player (the body: a jpeg/png): the face found, framed head and shoulders,
+    then repainted by the prompt (an age, clothes). strength = how much is repainted (0.3 keeps a lot of the photo,
+    0.8 keeps little more than the layout)."""
+    try:
+        img = ImageOps.exif_transpose(Image.open(io.BytesIO(await request.body()))).convert("RGB")
+    except Exception:
+        return JSONResponse({"error": "that isn't an image"}, status_code=400)
+    prompt = prompt.strip() or "a portrait"
+    async with lock:
+        out, found = await asyncio.to_thread(run_portrait_from, img, prompt, seed or random.randrange(1 << 30),
+                                             max(0.05, min(0.95, strength)))
+    return Response(out, media_type="image/jpeg", headers={"Cache-Control": "no-store", "X-Face": "1" if found else "0"})
+
+
 # ---------- the life (trajectory.json) ----------
 def read_trajectory():
     with open(TRAJECTORY_FILE, encoding="utf-8") as fh:
