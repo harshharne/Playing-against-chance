@@ -416,6 +416,11 @@ class Generator:
         print(f"[gen] ready · prediction={self.prediction}")
 
     # --- style LoRAs (applied before every frame; only does work when something changed) ---
+    lora_kind = "the SD 1.5"
+
+    def lora_pipes(self):
+        return [self.pipe]
+
     def apply_loras(self, t):
         want = collections.OrderedDict()
         for f, w in ((t["lora_a"], t["lora_a_w"]), (t["lora_b"], t["lora_b_w"])):
@@ -428,22 +433,31 @@ class Generator:
         for f, w in want.items():
             name = re.sub(r"\W", "_", os.path.splitext(f)[0])
             if name not in self.lora_loaded:
+                done = []
                 try:
                     t0 = time.perf_counter()
-                    self.pipe.load_lora_weights(LORA_DIR, weight_name=f, adapter_name=name)
+                    for pipe in self.lora_pipes():
+                        pipe.load_lora_weights(LORA_DIR, weight_name=f, adapter_name=name)
+                        done.append(pipe)
                     self.lora_loaded.add(name)
                     print(f"[lora] loaded {f} in {time.perf_counter() - t0:.1f} s")
                 except Exception as e:
-                    self.lora_errors[f] = str(e)[:300]
+                    for pipe in done:                                # don't leave it half loaded
+                        try:
+                            pipe.delete_adapters(name)
+                        except Exception:
+                            pass
+                    self.lora_errors[f] = f"{self.lora_kind} painter can't use it: {str(e)[:260]}"
                     print(f"[lora] couldn't load {f}: {e}")
                     continue
             names.append(name)
             weights.append(w)
-        if names:
-            self.pipe.enable_lora()
-            self.pipe.set_adapters(names, adapter_weights=weights)
-        elif self.lora_loaded:
-            self.pipe.disable_lora()
+        for pipe in self.lora_pipes():
+            if names:
+                pipe.enable_lora()
+                pipe.set_adapters(names, adapter_weights=weights)
+            elif self.lora_loaded:
+                pipe.disable_lora()
         self.lora_key = key
         self.embeds.clear()                                      # LoRAs can change the text encoder too
         self.prev = None
@@ -789,10 +803,10 @@ class SDXLGenerator(Generator):
             self.controlnet(kind)
         print(f"[sdxl] ready · avatar {WIDTH}x{HEIGHT} · world {WORLD_W}x{WORLD_H}")
 
-    def apply_loras(self, t):                                       # the LoRAs in loras/ are SD 1.5: they don't fit SDXL
-        for f, w in ((t["lora_a"], t["lora_a_w"]), (t["lora_b"], t["lora_b_w"])):
-            if f and w > 0:
-                self.lora_errors[f] = "an SD 1.5 LoRA: it doesn't work with the SDXL painter (start the server without PAINTER=sdxl to use it)"
+    lora_kind = "the SDXL"
+
+    def lora_pipes(self):                                           # a LoRA goes on both painters: live avatar, and worlds + portraits
+        return [self.pipe, self.world_pipe]
 
     def controlnet(self, kind):
         if kind not in self.cn:
