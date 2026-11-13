@@ -659,11 +659,13 @@ class Generator:
 
     last_world = None
 
-    def background(self, prompt, seed, keep=0.0):
-        """keep > 0: paint the new world FROM the last one (that much of it survives), so places change, not jump."""
+    def background(self, prompt, seed, keep=0.0, base=None):
+        """keep > 0: paint the new world FROM the last one (that much of it survives), so places change, not jump.
+        base: paint from this picture instead of the last world (the event's own world, for its slow variations)."""
         init, k = self.refs["background"]["image"], BG_IMAGE_KEEP
-        if keep > 0 and self.last_world is not None:
-            init, k = self.last_world, keep
+        src = base if base is not None else self.last_world
+        if keep > 0 and src is not None:
+            init, k = src, keep
         sf = self.full_vae.config.scaling_factor
         n = max(1, min(4, int(TUNE["world_steps"])))
         with self.torch.no_grad():
@@ -880,10 +882,11 @@ class SDXLGenerator(Generator):
             y = self.full_vae.decode(x0 / sf).sample
         return self.to_image(y)
 
-    def background(self, prompt, seed, keep=0.0):
+    def background(self, prompt, seed, keep=0.0, base=None):
         init, k = self.refs["background"]["image"], BG_IMAGE_KEEP
-        if keep > 0 and self.last_world is not None:
-            init, k = self.last_world, keep
+        src = base if base is not None else self.last_world
+        if keep > 0 and src is not None:
+            init, k = src, keep
         self.last_world = self.paint_big(prompt, seed, init, k, (WORLD_H, WORLD_W), "background")
         return self.last_world
 
@@ -943,8 +946,10 @@ class MockGenerator:
 
     last_world = None
 
-    def background(self, prompt, seed, keep=0.0):
+    def background(self, prompt, seed, keep=0.0, base=None):
         time.sleep(0.3)
+        if isinstance(prompt, tuple):                            # (from, to, mix): mock just picks the nearer one
+            prompt = prompt[1] if prompt[2] >= 0.5 else prompt[0]
         init = self.refs["background"]["image"]
         if init is not None:
             img = ImageOps.fit(init.convert("RGB"), (WORLD_W, WORLD_H)).filter(ImageFilter.GaussianBlur(3))
@@ -956,8 +961,9 @@ class MockGenerator:
                 x, y, r = rnd.randrange(WORLD_W), rnd.randrange(WORLD_H), rnd.randrange(10, 80)
                 d.ellipse((x - r, y - r, x + r, y + r), fill=tuple(min(255, max(0, v + rnd.randrange(-60, 60))) for v in c))
             img = img.filter(ImageFilter.GaussianBlur(6))
-        if keep > 0 and self.last_world is not None:            # grows out of the last world
-            img = Image.blend(img, self.last_world, keep)
+        src = base if base is not None else self.last_world
+        if keep > 0 and src is not None:  # grows out of the last world (or the event's own)
+            img = Image.blend(img, src, keep)
         self.last_world = img.copy()
         ImageDraw.Draw(img).text((12, WORLD_H - 24), "MOCK WORLD · " + prompt[:70], fill=(255, 255, 255))
         return img
@@ -1038,17 +1044,46 @@ def run_person(jpeg, prompt, pose=None, to="", mix=0.0, age=None, ramp=1.0):
     return data, ms
 
 
-world_seq, world_last = 0, {"id": 0, "img": None, "depth": None}
+world_seq, world_last = 0, {"id": 0, "img": None, "depth": None, "anchor": None}
+world_change, world_error = None, ""
 
 
-def run_background(prompt, seed, keep=0.0):
-    global world_ms, world_seq
+def picture_change(a, b):
+    """How different two worlds look, 0 (the same) to ~100: mean difference of small greyscale copies."""
+    if a is None or b is None:
+        return None
+    x = a.convert("L").resize((64, 36))
+    y = b.convert("L").resize((64, 36))
+    d = [abs(p - q) for p, q in zip(x.tobytes(), y.tobytes())]
+    return round(sum(d) / len(d) / 2.55, 1)
+
+
+def run_background(prompt, seed, keep=0.0, to="", mix=0.0, from_anchor=False, anchor=False):
+    """One world. to + mix: a blend of two scenes' words (the morph between events). from_anchor: a variation
+    of this event's own world (its slow breathing). anchor: this world is the event's own world from now on."""
+    global world_ms, world_seq, world_change, world_error
     t0 = time.perf_counter()
     gen.apply_loras(TUNE)
-    out = gen.background(full_prompt(prompt), seed, keep)
+    p = (full_prompt(prompt), full_prompt(to), mix) if to and mix > 0.001 else full_prompt(prompt)
+    base = world_last["anchor"] if from_anchor else None
+    before = world_last["img"]
+    try:
+        out = gen.background(p, seed, keep, base=base)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        world_error = f"{type(e).__name__}: {str(e)[:160]}"
+        raise
+    world_error = ""
     world_ms = (time.perf_counter() - t0) * 1000
     world_seq += 1
+    world_change = picture_change(before, out)
     world_last.update(id=world_seq, img=out, depth=None)          # its depth is made when the page asks (GET /world_depth)
+    if anchor or world_last["anchor"] is None:
+        world_last["anchor"] = out
+    how = "breathing" if from_anchor else (f"morph {mix:.2f}" if to and mix > 0.001 else ("new" if keep <= 0 else "grown"))
+    print(f"[world {world_seq}] {world_ms / 1000:.2f} s · {how} · keep {keep:.2f} · change {world_change} · {prompt[:70]!r}"
+          + (f" -> {to[:40]!r}" if to and mix > 0.001 else ""), flush=True)
     return jpeg_bytes(out), world_ms
 
 
@@ -1211,6 +1246,7 @@ def settings_view():
             "fps": round(fps, 1),
             "ms": round(sum(ms for _, ms in recent) / len(recent)) if recent else None,
             "world_ms": round(world_ms) if world_ms else None,
+            "world_change": world_change, "world_error": world_error, "world_count": world_seq,
             "gpu_mb": mem[0] if mem else None, "gpu_total_mb": mem[1] if mem else None,
             "shape_ms": round(gen.shape_ms, 1) if gen and gen.shape_ms else None,
             "parts": parts,                                      # server time per frame, by step (ms)
@@ -1335,17 +1371,26 @@ async def frame(request: Request, prompt: str = "", to: str = "", mix: float = 0
 
 
 @app.get("/background")
-async def background(prompt: str = "", keep: float = 0.0, fresh: int = 0):
+async def background(prompt: str = "", keep: float = 0.0, fresh: int = 0, to: str = "", mix: float = 0.0,
+                     base: str = "last", anchor: int = 0):
     """A world for the prompt (a new random seed every time). keep > 0: painted from the last world, so it grows
-    out of it (the game's unfolding). fresh=1: forget the last world first (a new life)."""
+    out of it (the game's unfolding). fresh=1: forget the last world first (a new life).
+    to + mix (0..1): the words blended toward the next scene (the steps of a morph between events).
+    base=anchor: a variation of this event's own world (the world breathing). anchor=1: this world becomes the
+    event's own world."""
     prompt = prompt.strip() or "an empty landscape"
     async with lock:
         if fresh:
             gen.last_world = None
-        out, ms = await asyncio.to_thread(run_background, prompt, random.randrange(1 << 30), max(0.0, min(0.95, keep)))
+            world_last.update(img=None, anchor=None)
+        try:
+            out, ms = await asyncio.to_thread(run_background, prompt, random.randrange(1 << 30), max(0.0, min(0.95, keep)),
+                                              to.strip(), max(0.0, min(1.0, mix)), base == "anchor", bool(anchor))
+        except Exception:
+            return Response(status_code=500, headers={"X-Error": world_error[:200], "Cache-Control": "no-store"})
         wid = world_seq
     return Response(out, media_type="image/jpeg", headers={"X-Gen-Ms": str(round(ms)), "X-Look": str(look_version), "X-World": str(wid),
-                                                           "Cache-Control": "no-store"})
+                                                           "X-Change": str(world_change), "Cache-Control": "no-store"})
 
 
 @app.get("/world_depth")
@@ -1394,10 +1439,13 @@ async def save_pacing(request: Request):
                 doc["pacing"][k] = round(max(0.0, min(60.0, float(v))), 2)
             except (TypeError, ValueError):
                 pass
+    ranges = {"breathe": (0.0, 30.0), "morph_steps": (1, 6)}
     for k, v in (body.get("world") or {}).items():
         if k in doc.get("world", {}):
+            lo, hi = ranges.get(k, (0.0, 0.95))
             try:
-                doc["world"][k] = round(max(0.0, min(0.95, float(v))), 2)
+                v = max(lo, min(hi, float(v)))
+                doc["world"][k] = int(round(v)) if k == "morph_steps" else round(v, 2)
             except (TypeError, ValueError):
                 pass
     tmp = TRAJECTORY_FILE + ".tmp"

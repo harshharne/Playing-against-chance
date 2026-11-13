@@ -243,7 +243,8 @@ function show(s, controls) {
   $("r_parts").textContent = Object.keys(P).length ? Object.entries(names).filter(([k]) => P[k] !== undefined).map(([k, n]) => `${n} ${Math.round(P[k])}`).join(" · ") + " ms" : "–";
   $("r_net").textContent = r.network_ms != null ? `${r.network_ms} ms per frame` + (r.ms && r.network_ms > r.ms ? " (more than the server: the GPU isn't the bottleneck)" : "") : "–";
   $("r_lean").textContent = r.lean != null ? `leaning ${Math.round(r.lean * 100)}% on the last frame (movement ${r.motion})` : "–";
-  $("r_world").textContent = r.world_ms ? `${(r.world_ms / 1000).toFixed(2)} s last draw` : "–";
+  $("r_world").textContent = r.world_error ? `ERROR: ${r.world_error}` :
+    r.world_ms ? `${(r.world_ms / 1000).toFixed(2)} s last draw · ${r.world_count} drawn · change ${r.world_change ?? "–"}` : "–";
   $("r_gpu").textContent = r.gpu_mb ? `${(r.gpu_mb / 1000).toFixed(1)} of ${(r.gpu_total_mb / 1000).toFixed(1)} GB` : "– (no GPU)";
 }
 async function poll(controls = false) {
@@ -347,6 +348,9 @@ const PACE = [
   ["WORLD", null],
   ["w:keep", "WORLD KEEPS", 0, 0.9, 0.05, "how much of the last world survives into the next (0 = a new place each time)"],
   ["w:chapter_keep", "AT A CHAPTER", 0, 0.9, 0.05, "the same, between phases (lower = repaints more)"],
+  ["w:morph_steps", "MORPH STEPS", 1, 6, 1, "between two events the world changes in this many painted steps (1 = one crossfade)"],
+  ["w:breathe", "WORLD BREATHES EVERY", 0, 20, 0.5, "inside an event a new variation of its world fades in this often, in seconds (0 = still)"],
+  ["w:breathe_keep", "EACH BREATH KEEPS", 0.2, 0.9, 0.05, "how much of the event's world each variation keeps (lower = it wanders further)"],
 ];
 let pace = null, paceTimer = 0, pacePending = { pacing: {}, world: {} };
 function paceTotal() {                                         // a rough length of one life, without the player's own time
@@ -363,12 +367,17 @@ function paceTotal() {                                         // a rough length
   t += p.arrive + 2 * f + p.final_silence;
   $("pace_total").textContent = `One life at these timings: about ${Math.round(t / 60)} min, plus the player's own time with the cards and the die.`;
 }
+function paceFmt(k, v) {
+  if (k === "w:morph_steps") return String(Math.round(v));
+  if (k === "w:breathe") return v > 0 ? v.toFixed(1) + " s" : "off";
+  return k.startsWith("w:") ? v.toFixed(2) : v.toFixed(1) + " s";
+}
 function paceBuild() {
   $("pace").innerHTML = PACE.map(([k, label, lo, hi, step, help]) => !label ? `<h3>${k}</h3>` :
     `<label class="ctl">${label} <span class="v" id="pv_${k}"></span><input type="range" data-k="${k}" min="${lo}" max="${hi}" step="${step}"><small>${help}</small></label>`).join("");
   $("pace").querySelectorAll("input").forEach(inp => inp.addEventListener("input", () => {
     const k = inp.dataset.k, v = +inp.value;
-    $("pv_" + k).textContent = k.startsWith("w:") ? v.toFixed(2) : v.toFixed(1) + " s";
+    $("pv_" + k).textContent = paceFmt(k, v);
     if (k.startsWith("w:")) { pacePending.world[k.slice(2)] = v; pace.world[k.slice(2)] = v; } else { pacePending.pacing[k] = v; pace.pacing[k] = v; }
     paceTotal();
     clearTimeout(paceTimer);
@@ -386,7 +395,7 @@ function paceShow() {
     const k = inp.dataset.k, v = k.startsWith("w:") ? pace.world[k.slice(2)] : pace.pacing[k];
     if (v === undefined) { inp.disabled = true; return; }
     if (document.activeElement !== inp) inp.value = v;
-    $("pv_" + k).textContent = k.startsWith("w:") ? (+v).toFixed(2) : (+v).toFixed(1) + " s";
+    $("pv_" + k).textContent = paceFmt(k, +v);
   });
   paceTotal();
 }

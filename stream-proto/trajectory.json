@@ -31,7 +31,10 @@
   },
   "world": {
     "keep": 0.5,
-    "chapter_keep": 0.25
+    "chapter_keep": 0.25,
+    "breathe": 5.0,
+    "breathe_keep": 0.6,
+    "morph_steps": 3
   },
   "phase_refs": [
     "",

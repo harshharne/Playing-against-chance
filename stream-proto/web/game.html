@@ -150,7 +150,8 @@ const house = createHouse($("house"));                         // Whom: the home
 const baby = createBaby($("baby"), live);                      // Body: the baby, then the live kid takes over ("baby")
 const SCENES = { egg: birth, map: worldmap, house };
 let scene = null;                                              // the drawn scene on screen now
-function holdAll(on) { live.hold(on); for (const x of [birth, worldmap, house, baby]) x.hold(on); }   // while the die rolls, everything holds still
+let held = false;
+function holdAll(on) { held = !!on; live.hold(on); for (const x of [birth, worldmap, house, baby]) x.hold(on); }   // while the die rolls, everything holds still
 async function toScene(name) {                                 // crossfade from one drawn scene to the next (or to the painted world)
   const next = SCENES[name] || null;
   if (next === scene) return;
@@ -160,7 +161,7 @@ async function toScene(name) {                                 // crossfade from
 }
 
 // ---------- the life and its timings (trajectory.json; the timings change live from /panel) ----------
-let T = null, P = {}, WK = { keep: 0.5, chapter_keep: 0.25 };
+let T = null, P = {}, WK = { keep: 0.5, chapter_keep: 0.25, breathe: 5, breathe_keep: 0.6, morph_steps: 3 };
 const sec = (k) => Math.max(0, +P[k] || 0) * 1000;
 function setPacing(doc) {
   P = doc.pacing || {}; WK = doc.world || WK;
@@ -248,12 +249,39 @@ async function ageTo(to, ms) {                                 // the age runs o
     await sleep(60);
   }
 }
-let worldDone = Promise.resolve();
-function world(scene, keep, fresh = false) {                   // the next world, painted out of the last one
+let worldDone = Promise.resolve(), worldScene = null, worldGen = 0;
+// The next world, grown out of the last one. Between two scenes it morphs in steps (WK.morph_steps): each step is
+// painted from the one before, with the words moving from the old scene to the new; the last step is the new scene
+// itself and becomes the event's own world. Keep is split across the steps, so the whole morph keeps about as much
+// of the old place as one jump would have.
+function world(scene, keep, fresh = false) {
   const prompt = scene + (S.place ? ", " + S.place : "");
-  worldDone = live.setBackground(prompt, { keep, fade: sec("world_fade"), fresh }).then(() => sleep(sec("world_fade")));
+  const from = worldScene, n = fresh || !from || from === prompt ? 1 : Math.max(1, Math.round(WK.morph_steps || 1));
+  const my = ++worldGen;
+  worldScene = prompt;
+  const fade = sec("world_fade") / n, k = n > 1 ? Math.pow(Math.max(0.01, keep), 1 / n) : keep;
+  worldDone = (async () => {
+    for (let i = 1; i <= n && my === worldGen; i++) {
+      const last = i === n;
+      await live.setBackground(last ? prompt : from, { keep: k, fade, fresh: fresh && i === 1, to: last ? "" : prompt, mix: last ? 0 : i / n, anchor: last });
+      await sleep(fade);
+    }
+  })();
   return worldDone;
 }
+// Inside an event the world keeps changing: every WK.breathe seconds a new variation of the event's own world
+// (WK.breathe_keep of it survives), crossfaded in. Never while the die rolls, never during a morph.
+(async function breathe() {
+  for (;;) {
+    const every = +WK.breathe || 0;
+    await sleep(every > 0 ? every * 1000 : 1500);
+    if (!(every > 0) || !worldScene || held || scene || document.hidden) continue;   // not under the egg, map or house
+    const my = worldGen;
+    await worldDone;
+    if (my !== worldGen || held) continue;
+    await live.setBackground(worldScene, { keep: +WK.breathe_keep || 0.6, fade: Math.min(every * 800, Math.max(1200, sec("world_fade"))), base: "anchor" });
+  }
+})();
 
 // ---------- the die (dice_reader.py, the browser reader, or ROLL on screen) ----------
 let diceOn = false, diceSrc = "", rollWaiter = null, sawThrow = false;
@@ -615,7 +643,7 @@ function status() {                                             // the hidden de
   if (debugEl.dataset.flash && performance.now() > camFlash) { delete debugEl.dataset.flash; debugEl.hidden = true; }
   if (!debugEl.hidden) {
     const st = live.stat;
-    if (!debugEl.dataset.flash) debugEl.textContent = !st.online ? "server offline" : [`${st.fps} fps`, source && `chance ${source}`, `camera: ${st.camera || "?"}`, st.camNote, `die${diceSrc ? ` (${diceSrc})` : ""}: ${dieText}`, `turn: ${turn}`, st.note, st.seg].filter(Boolean).join(" · ");
+    if (!debugEl.dataset.flash) debugEl.textContent = !st.online ? "server offline" : [`${st.fps} fps`, source && `chance ${source}`, `camera: ${st.camera || "?"}`, st.camNote, `die${diceSrc ? ` (${diceSrc})` : ""}: ${dieText}`, `turn: ${turn}`, st.worldError ? `WORLD ERROR: ${st.worldError}` : (st.worldChange ? `world change ${st.worldChange}` : ""), st.note, st.seg].filter(Boolean).join(" · ");
   }
   setTimeout(status, 250);
 }

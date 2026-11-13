@@ -418,15 +418,20 @@ export function createLive({ out, video, params }) {
   const refresh = () => { lastSig = null; };
 
   let bgAsk = 0;
-  async function setBackground(prompt, { keep = 0, fade = 600, fresh = false } = {}) {
+  // to + mix: words blended toward the next scene (a morph step); base "anchor": a variation of this event's own
+  // world (the world breathing); anchor: this one becomes the event's own world
+  async function setBackground(prompt, { keep = 0, fade = 600, fresh = false, to = "", mix = 0, base = "", anchor = false } = {}) {
     bgPrompt = prompt || null;
     if (!bgPrompt) { oldBg = null; bgImg = null; refresh(); return; }
     stat.note = "making background…";
     const ask = ++bgAsk;
     try {
-      const q = `prompt=${encodeURIComponent(bgPrompt)}&keep=${(+keep).toFixed(2)}${fresh ? "&fresh=1" : ""}`;
+      const q = `prompt=${encodeURIComponent(bgPrompt)}&keep=${(+keep).toFixed(2)}${fresh ? "&fresh=1" : ""}` +
+        (to && mix > 0 ? `&to=${encodeURIComponent(to)}&mix=${(+mix).toFixed(2)}` : "") + (base ? `&base=${base}` : "") + (anchor ? "&anchor=1" : "");
       const res = await fetch("/background?" + q, { cache: "no-store" });
+      if (res.status === 500) { stat.worldError = res.headers.get("X-Error") || "error"; stat.note = ""; return; }   // the server is up; the world failed
       if (!res.ok) throw new Error("status " + res.status);
+      stat.worldError = ""; stat.worldChange = res.headers.get("X-Change");
       stat.bgMs = +res.headers.get("X-Gen-Ms") || 0;
       const img = await createImageBitmap(await res.blob());
       if (ask !== bgAsk) { img.close(); return; }          // a newer background was asked for meanwhile
