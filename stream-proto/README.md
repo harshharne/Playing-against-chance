@@ -157,3 +157,19 @@ changes (children get a bit more). Each age can be moved live like any portrait.
 ## Style LoRA
 train_style_lora.py trains an SDXL style LoRA on the GPU machine from a folder of images (see CLOUD.md). The SDXL
 painters load LoRAs from loras/ onto both pipelines (worlds + portraits, and the live avatar).
+
+## The director (an LLM writes each moment's world)
+director.py + director.json. For every moment of the life it writes, from the life so far: the WORLD prompt (your
+written scene elaborated: light, weather, season, viewpoint, things that carry over), three BREATHE variations for
+while the moment lasts, CLOTHES when the moment changes them, and one quiet LINE. The written trajectory stays the
+spine and the fallback: off, too slow (WAIT FOR IT UP TO), or failing its checks (director.json never_in_pictures,
+word limits) -> the written scene. It never decides anything; chance does.
+- Asked AHEAD: the next event's arrival as soon as this one's outcome is known, and all of an event's branches as it
+  begins, so answers are there when the die lands. About 2 calls per event (~40 a life), cached.
+- Key: anthropic.key in stream-proto/ on the Mac (one line; git ignores it; push.sh sends it), or ANTHROPIC_API_KEY.
+- Model and rules: director.json (re-read on every call, no restart). Default claude-sonnet-5-5.
+- Panel (PACING): DIRECTOR on/off, DIRECTOR'S LINES (its line under each outcome), WAIT FOR IT UP TO. Readout
+  DIRECTOR: calls, cached, rejected, last time, errors. The server prints each answer ([director] lines).
+- For the Bookkeeper (Voice Lab): the game fires a `pac-moment` browser event with {key, line, world, written} each
+  time a directed moment is used.
+

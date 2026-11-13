@@ -34,7 +34,10 @@
     "chapter_keep": 0.25,
     "breathe": 5.0,
     "breathe_keep": 0.6,
-    "morph_steps": 3
+    "morph_steps": 3,
+    "director": 1,
+    "director_lines": 0,
+    "director_wait": 2.0
   },
   "phase_refs": [
     "",

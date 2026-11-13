@@ -161,7 +161,7 @@ async function toScene(name) {                                 // crossfade from
 }
 
 // ---------- the life and its timings (trajectory.json; the timings change live from /panel) ----------
-let T = null, P = {}, WK = { keep: 0.5, chapter_keep: 0.25, breathe: 5, breathe_keep: 0.6, morph_steps: 3 };
+let T = null, P = {}, WK = { keep: 0.5, chapter_keep: 0.25, breathe: 5, breathe_keep: 0.6, morph_steps: 3, director: 1, director_lines: 0, director_wait: 2 };
 const sec = (k) => Math.max(0, +P[k] || 0) * 1000;
 function setPacing(doc) {
   P = doc.pacing || {}; WK = doc.world || WK;
@@ -249,16 +249,17 @@ async function ageTo(to, ms) {                                 // the age runs o
     await sleep(60);
   }
 }
-let worldDone = Promise.resolve(), worldScene = null, worldGen = 0;
+let worldDone = Promise.resolve(), worldScene = null, worldGen = 0, worldBreaths = null, breathN = 0;
 // The next world, grown out of the last one. Between two scenes it morphs in steps (WK.morph_steps): each step is
 // painted from the one before, with the words moving from the old scene to the new; the last step is the new scene
 // itself and becomes the event's own world. Keep is split across the steps, so the whole morph keeps about as much
 // of the old place as one jump would have.
-function world(scene, keep, fresh = false) {
+function world(scene, keep, fresh = false, breaths = null) {
   const prompt = scene + (S.place ? ", " + S.place : "");
   const from = worldScene, n = fresh || !from || from === prompt ? 1 : Math.max(1, Math.round(WK.morph_steps || 1));
   const my = ++worldGen;
   worldScene = prompt;
+  worldBreaths = breaths && breaths.length ? breaths.map(b => b + (S.place ? ", " + S.place : "")) : null;
   const fade = sec("world_fade") / n, k = n > 1 ? Math.pow(Math.max(0.01, keep), 1 / n) : keep;
   worldDone = (async () => {
     for (let i = 1; i <= n && my === worldGen; i++) {
@@ -269,6 +270,60 @@ function world(scene, keep, fresh = false) {
   })();
   return worldDone;
 }
+// ---------- the director: an LLM writes each moment's world (and its variations, clothes, a line) from the life so far ----------
+// It is asked AHEAD: the next event's arrival as soon as this one's outcome is known, and every branch of an event as it
+// begins, so the answers are there when the die lands. Not there in time (WK.director_wait), off, or rejected: the
+// written scene, exactly as before. It never decides anything; chance does.
+const D = new Map();                                           // moment key -> its answer, null (none), or a pending promise
+let evIdx = -1;
+const lifeNow = () => ({ age: S.ageF, gender: S.gender, place: S.place, wear: S.wear, traits: S.life,
+  ledger: S.ledger.map(([a, t, w, n]) => [a, t, w, n || ""]), planted: Object.values(S.planted) });
+function momentsOf(ev) {
+  const m = [{ key: `${ev.id}:arrive`, what: "arriving at this event, before anything is decided", scene: ev.scene || "" }];
+  if (ev.type === "chosen") {
+    for (const c of ev.cards || []) if (c.scene) m.push({ key: `${ev.id}:card:${c.name}`, what: `it went: ${c.name}`, scene: c.scene, reveals: c.reveals || "" });
+    if (ev.miss && ev.miss.scene) m.push({ key: `${ev.id}:miss`, what: ev.miss.text, scene: ev.miss.scene });
+  } else if (ev.type === "happens") {
+    for (const k of ["good", "bad", "neutral"]) { const o = (ev.outcomes || {})[k]; if (o && o.scene) m.push({ key: `${ev.id}:out:${k}`, what: o.text, scene: o.scene }); }
+  } else (ev.flukes || []).forEach((f, i) => { if (f.scene) m.push({ key: `${ev.id}:fluke:${i}`, what: `${f.text} (${f.job})`, scene: f.scene }); });
+  return m.filter(x => x.scene);
+}
+function ask(ev, list) {
+  if (!list.length) return;
+  const p = fetch("/direct", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ life: lifeNow(), event: { id: ev.id, title: ev.title, type: ev.type, setup: ev.setup || ev.text || "" }, moments: list }) })
+    .then(r => r.json()).then(j => { live.stat.directorError = j.error || ""; for (const m of list) D.set(m.key, (j.moments || {})[m.key] || null); })
+    .catch(() => { for (const m of list) D.set(m.key, null); });
+  for (const m of list) D.set(m.key, p.then(() => D.get(m.key)));
+}
+function prewrite(ev) {                                        // the arrival on its own (needed first, quick), then every branch
+  if (!ev || !(+WK.director)) return;
+  const ms = momentsOf(ev).filter(m => !D.has(m.key));
+  ask(ev, ms.filter(m => m.key.endsWith(":arrive")));
+  ask(ev, ms.filter(m => !m.key.endsWith(":arrive")));
+}
+const prewriteNext = () => T && prewrite(T.events[evIdx + 1]);
+async function directed(key) {
+  if (!(+WK.director) || !D.has(key)) return null;
+  let v = D.get(key);
+  if (v && typeof v.then === "function") v = await Promise.race([v, sleep((+WK.director_wait || 0) * 1000).then(() => null)]);
+  return v && v.world ? v : null;
+}
+// the world for a moment: the director's if it's ready, the written scene if not. outcome: its clothes count too.
+function worldFor(key, scene, keep, outcome = false) {
+  const p = (async () => {
+    const d = await directed(key);
+    if (d && outcome && d.clothes) S.wear = d.clothes;
+    if (d) { live.stat.directed = (live.stat.directed || 0) + 1; dispatchEvent(new CustomEvent("pac-moment", { detail: { key, line: d.line, world: d.world, written: scene } })); }
+    lastLine = d && +WK.director_lines ? d.line : "";
+    await world(d ? d.world : scene, keep, false, d ? d.breathe : null);
+  })();
+  worldDone = p;
+  return p;
+}
+let lastLine = "";
+const dline = () => lastLine ? `<br><span style="color:#555;font-style:italic">${esc(lastLine)}</span>` : "";
+
 // Inside an event the world keeps changing: every WK.breathe seconds a new variation of the event's own world
 // (WK.breathe_keep of it survives), crossfaded in. Never while the die rolls, never during a morph.
 (async function breathe() {
@@ -279,7 +334,8 @@ function world(scene, keep, fresh = false) {
     const my = worldGen;
     await worldDone;
     if (my !== worldGen || held) continue;
-    await live.setBackground(worldScene, { keep: +WK.breathe_keep || 0.6, fade: Math.min(every * 800, Math.max(1200, sec("world_fade"))), base: "anchor" });
+    const p = worldBreaths ? worldBreaths[breathN++ % worldBreaths.length] : worldScene;   // the director's variations, if it wrote them
+    await live.setBackground(p, { keep: +WK.breathe_keep || 0.6, fade: Math.min(every * 800, Math.max(1200, sec("world_fade"))), base: "anchor" });
   }
 })();
 
@@ -450,15 +506,18 @@ async function chosen(ev) {
   }
   if (ev.drawn === "map" && how !== "none") await worldmap.reveal(got.name, how !== "hit");   // the region fills in on the map
   if (how === "none") {
-    world(ev.miss.scene, WK.keep);
-    S.ledger.push([S.ageF, ev.title, `${ev.miss.text.replace(/\.$/, "")}`, `went to: ${c.name}`]);
-    await say({ k: kick(ev), t: esc(ev.miss.text) });
+    const w = worldFor(`${ev.id}:miss`, ev.miss.scene, WK.keep, true);
+    S.ledger.push([S.ageF, ev.title, `${ev.miss.text.replace(/\.$/, "")}`, `went to: ${c.name}`]); prewriteNext();
+    await Promise.race([w, sleep(250)]);
+    await say({ k: kick(ev), t: esc(ev.miss.text), s: dline() });
   } else {
-    apply(got); if (got.scene) world(got.scene, WK.keep);
+    apply(got);
+    const w = got.scene ? worldFor(`${ev.id}:card:${got.name}`, got.scene, WK.keep, true) : null;
     if (ev.drawn === "house") house.build(got.name, sec("linger") * 0.9);                  // the home, built while it lingers
     const note = how === "hit" ? "" : how === "override" ? `${tries} throws, then the override.` : `You went for ${esc(c.name)}. Chance allotted this.`;
-    S.ledger.push([S.ageF, ev.title, got.name, how === "hit" ? "" : how === "override" ? `went for ${c.name}; ${tries} throws, then the override` : `went for ${c.name}`]);
-    await say({ k: kick(ev), t: esc(got.name), s: esc(got.reveals) + (note ? `<br><span style="color:#777;font-size:12px">${note}</span>` : "") });
+    S.ledger.push([S.ageF, ev.title, got.name, how === "hit" ? "" : how === "override" ? `went for ${c.name}; ${tries} throws, then the override` : `went for ${c.name}`]); prewriteNext();
+    if (w) await Promise.race([w, sleep(250)]);
+    await say({ k: kick(ev), t: esc(got.name), s: esc(got.reveals) + dline() + (note ? `<br><span style="color:#777;font-size:12px">${note}</span>` : "") });
   }
   avatarAt(S.ageF);                                           // a new outfit / gender: the avatar morphs to it
   if (ev.drawn === "baby") { await sleep(sec("settle")); await emerge(ev, got); return; }
@@ -522,27 +581,27 @@ async function happens(ev) {
     await sleep(sec("happen_hold"));
   }
   const key = ["good", "bad", "neutral"][(await draw(1, 3)) - 1], o = ev.outcomes[key];
-  world(o.scene, WK.keep);
-  S.ledger.push([S.ageF, ev.title, o.text, ""]);
-  await say({ k: kick(ev), t: "", s: `<span style="font-size:18px;color:#111">${esc(o.text)}</span>` });
+  const w = worldFor(`${ev.id}:out:${key}`, o.scene, WK.keep, true);
+  S.ledger.push([S.ageF, ev.title, o.text, ""]); prewriteNext();
+  await Promise.race([w, sleep(250)]);
+  await say({ k: kick(ev), t: "", s: `<span style="font-size:18px;color:#111">${esc(o.text)}</span>` + dline() });
   await linger("happen_linger");
 }
 
 async function fluke(ev) {                                     // deliberately understated
   if (ev.plant) {
-    world(ev.scene, WK.keep);
     S.planted[ev.id] = { age: Math.floor(S.ageF), text: ev.text };
-    S.ledger.push([S.ageF, ev.title, ev.text, ""]);
+    S.ledger.push([S.ageF, ev.title, ev.text, ""]); prewriteNext();
     await say({ s: esc(ev.text), cls: "small" });
     await sleep(sec("fluke_hold"));
     await unsay();
     return;
   }
-  const f = ev.flukes[(await draw(1, ev.flukes.length)) - 1];   // which small thing finds you work
+  const fi = (await draw(1, ev.flukes.length)) - 1, f = ev.flukes[fi];   // which small thing finds you work
   await say({ s: esc(f.text), cls: "small" });
   await sleep(sec("fluke_hold"));
-  world(f.scene, WK.keep);
-  S.ledger.push([S.ageF, ev.title, f.job, f.text]);
+  worldFor(`${ev.id}:fluke:${fi}`, f.scene, WK.keep, true);
+  S.ledger.push([S.ageF, ev.title, f.job, f.text]); prewriteNext();
   await say({ k: kick(ev), t: esc(f.job) });
   await linger("fluke_linger");
 }
@@ -569,14 +628,15 @@ async function arrive(ev, prev) {                              // the bridge, th
   if (prev && prev.drawn === "baby") handover = takeover(sec("takeover"));     // the baby becomes the live kid
   else if ((ev.drawn || null) !== (prev && prev.drawn || null)) toScene(ev.drawn === "baby" ? null : ev.drawn);   // drawn scene -> the next one, or the painted world
   if (prev && prev.bridge) await say({ s: esc(prev.bridge), cls: "bridge" });
-  const w = world(ev.scene, chapter ? WK.chapter_keep : WK.keep);
+  const w = ev.scene ? worldFor(`${ev.id}:arrive`, ev.scene, chapter ? WK.chapter_keep : WK.keep) : null;
+  prewrite(ev);                                                 // its branches, if they weren't asked for yet
   await Promise.all([ageTo(ev.age, dur * 0.85), sleep(dur), w, handover]);
   await unsay();
 }
 
 async function life() {
   if (!T) await loadLife();
-  S = freshLife(); setPhase(0);
+  S = freshLife(); setPhase(0); D.clear(); evIdx = -1; lastLine = "";
   deckGone(); bigEl.classList.remove("on");
   live.setPerson(null); live.setReal(false); live.setPersonAlpha(1); live.setControl({ age: 0, ramp: 1 });
   baby.hide(0); worldmap.reset(); house.reset(); if (scene) scene.hide(0); scene = null;
@@ -592,6 +652,8 @@ async function life() {
   await sleep(sec("arrive") * 0.6);
   let prev = null;
   for (const ev of T.events) {
+    evIdx++;
+    if (!prev) { prewrite(ev); prewriteNext(); }
     if (prev) await arrive(ev, prev);
     if (ev.type === "chosen") await chosen(ev);
     else if (ev.type === "happens") await happens(ev);
@@ -643,7 +705,7 @@ function status() {                                             // the hidden de
   if (debugEl.dataset.flash && performance.now() > camFlash) { delete debugEl.dataset.flash; debugEl.hidden = true; }
   if (!debugEl.hidden) {
     const st = live.stat;
-    if (!debugEl.dataset.flash) debugEl.textContent = !st.online ? "server offline" : [`${st.fps} fps`, source && `chance ${source}`, `camera: ${st.camera || "?"}`, st.camNote, `die${diceSrc ? ` (${diceSrc})` : ""}: ${dieText}`, `turn: ${turn}`, st.worldError ? `WORLD ERROR: ${st.worldError}` : (st.worldChange ? `world change ${st.worldChange}` : ""), st.note, st.seg].filter(Boolean).join(" · ");
+    if (!debugEl.dataset.flash) debugEl.textContent = !st.online ? "server offline" : [`${st.fps} fps`, source && `chance ${source}`, `camera: ${st.camera || "?"}`, st.camNote, `die${diceSrc ? ` (${diceSrc})` : ""}: ${dieText}`, `turn: ${turn}`, st.worldError ? `WORLD ERROR: ${st.worldError}` : (st.worldChange ? `world change ${st.worldChange}` : ""), +WK.director ? (st.directorError ? `director: ${st.directorError}` : `directed ${st.directed || 0}`) : "director off", st.note, st.seg].filter(Boolean).join(" · ");
   }
   setTimeout(status, 250);
 }

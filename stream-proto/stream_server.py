@@ -1287,6 +1287,7 @@ def settings_view():
             "ms": round(sum(ms for _, ms in recent) / len(recent)) if recent else None,
             "world_ms": round(world_ms) if world_ms else None,
             "world_change": world_change, "world_error": world_error, "world_count": world_seq,
+            "director": dict(director.stats, ready=director.ready),
             "gpu_mb": mem[0] if mem else None, "gpu_total_mb": mem[1] if mem else None,
             "shape_ms": round(gen.shape_ms, 1) if gen and gen.shape_ms else None,
             "parts": parts,                                      # server time per frame, by step (ms)
@@ -1517,6 +1518,26 @@ async def portrait_from(request: Request, prompt: str = "", strength: float = 0.
     return Response(out, media_type="image/jpeg", headers={"Cache-Control": "no-store", "X-Face": "1" if found else "0"})
 
 
+# ---------- the director (an LLM writes each moment's world, its variations, clothes and a line) ----------
+from director import Director
+director = Director()
+
+
+@app.post("/direct")
+async def direct(request: Request):
+    """Body: {life: {...}, event: {...}, moments: [{key, what, scene, reveals?}]} -> {moments: {key: {world, breathe,
+    clothes, line, written}}}. Moments it couldn't write well are left out: the game uses the written scene for those."""
+    if not director.ready:
+        return {"moments": {}, "error": "no Anthropic key (anthropic.key or ANTHROPIC_API_KEY)"}
+    try:
+        body = await request.json()
+    except ValueError:
+        return JSONResponse({"moments": {}, "error": "not JSON"}, status_code=400)
+    moments = [m for m in body.get("moments", []) if isinstance(m, dict) and m.get("key")][:12]
+    out = await asyncio.to_thread(director.write, body.get("life") or {}, body.get("event") or {}, moments)
+    return {"moments": out, "ms": director.stats["last_ms"], "error": director.stats["last_error"]}
+
+
 # ---------- the life (trajectory.json) ----------
 def read_trajectory():
     with open(TRAJECTORY_FILE, encoding="utf-8") as fh:
@@ -1544,13 +1565,13 @@ async def save_pacing(request: Request):
                 doc["pacing"][k] = round(max(0.0, min(60.0, float(v))), 2)
             except (TypeError, ValueError):
                 pass
-    ranges = {"breathe": (0.0, 30.0), "morph_steps": (1, 6)}
+    ranges = {"breathe": (0.0, 30.0), "morph_steps": (1, 6), "director": (0, 1), "director_lines": (0, 1), "director_wait": (0.0, 8.0)}
     for k, v in (body.get("world") or {}).items():
         if k in doc.get("world", {}):
             lo, hi = ranges.get(k, (0.0, 0.95))
             try:
                 v = max(lo, min(hi, float(v)))
-                doc["world"][k] = int(round(v)) if k == "morph_steps" else round(v, 2)
+                doc["world"][k] = int(round(v)) if k in ("morph_steps", "director", "director_lines") else round(v, 2)
             except (TypeError, ValueError):
                 pass
     tmp = TRAJECTORY_FILE + ".tmp"

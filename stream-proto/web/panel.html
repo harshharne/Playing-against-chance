@@ -146,6 +146,7 @@ button.ghost { background: #fff; color: var(--ink); }
         <dt>NETWORK + BROWSER</dt><dd id="r_net">–</dd>
         <dt>SHAPE READER</dt><dd id="r_shape">–</dd>
         <dt>WORLD</dt><dd id="r_world">–</dd>
+        <dt>DIRECTOR</dt><dd id="r_director">–</dd>
         <dt>GPU MEMORY</dt><dd id="r_gpu">–</dd>
       </dl>
     </section>
@@ -243,6 +244,9 @@ function show(s, controls) {
   $("r_parts").textContent = Object.keys(P).length ? Object.entries(names).filter(([k]) => P[k] !== undefined).map(([k, n]) => `${n} ${Math.round(P[k])}`).join(" · ") + " ms" : "–";
   $("r_net").textContent = r.network_ms != null ? `${r.network_ms} ms per frame` + (r.ms && r.network_ms > r.ms ? " (more than the server: the GPU isn't the bottleneck)" : "") : "–";
   $("r_lean").textContent = r.lean != null ? `leaning ${Math.round(r.lean * 100)}% on the last frame (movement ${r.motion})` : "–";
+  const dr = r.director || {};
+  if ($("r_director")) $("r_director").textContent = !dr.ready ? "no Anthropic key: written scenes only" :
+    dr.last_error ? `ERROR: ${dr.last_error}` : `${dr.calls} calls · ${dr.cached} cached · ${dr.rejected} rejected · last ${dr.last_ms ? (dr.last_ms / 1000).toFixed(1) + " s" : "–"} · ${dr.model || ""}`;
   $("r_world").textContent = r.world_error ? `ERROR: ${r.world_error}` :
     r.world_ms ? `${(r.world_ms / 1000).toFixed(2)} s last draw · ${r.world_count} drawn · change ${r.world_change ?? "–"}` : "–";
   $("r_gpu").textContent = r.gpu_mb ? `${(r.gpu_mb / 1000).toFixed(1)} of ${(r.gpu_total_mb / 1000).toFixed(1)} GB` : "– (no GPU)";
@@ -351,6 +355,9 @@ const PACE = [
   ["w:morph_steps", "MORPH STEPS", 1, 6, 1, "between two events the world changes in this many painted steps (1 = one crossfade)"],
   ["w:breathe", "WORLD BREATHES EVERY", 0, 20, 0.5, "inside an event a new variation of its world fades in this often, in seconds (0 = still)"],
   ["w:breathe_keep", "EACH BREATH KEEPS", 0.2, 0.9, 0.05, "how much of the event's world each variation keeps (lower = it wanders further)"],
+  ["w:director", "DIRECTOR", 0, 1, 1, "an LLM writes each moment's world, its variations and clothes from the life so far (rules: director.json). Off = the written scenes"],
+  ["w:director_lines", "DIRECTOR'S LINES", 0, 1, 1, "also show its one quiet line under each outcome"],
+  ["w:director_wait", "WAIT FOR IT UP TO", 0, 8, 0.5, "if its answer isn't ready yet, wait this long, then use the written scene"],
 ];
 let pace = null, paceTimer = 0, pacePending = { pacing: {}, world: {} };
 function paceTotal() {                                         // a rough length of one life, without the player's own time
@@ -370,6 +377,8 @@ function paceTotal() {                                         // a rough length
 function paceFmt(k, v) {
   if (k === "w:morph_steps") return String(Math.round(v));
   if (k === "w:breathe") return v > 0 ? v.toFixed(1) + " s" : "off";
+  if (k === "w:director" || k === "w:director_lines") return v >= 0.5 ? "on" : "off";
+  if (k === "w:director_wait") return v.toFixed(1) + " s";
   return k.startsWith("w:") ? v.toFixed(2) : v.toFixed(1) + " s";
 }
 function paceBuild() {
