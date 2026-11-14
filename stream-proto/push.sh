@@ -18,9 +18,13 @@ if gcloud compute scp --zone="$ZONE" "$VM":~/stream-proto/trajectory.json /tmp/s
   python3 - <<'PY'
 import json
 mine, cloud = json.load(open("trajectory.json")), json.load(open("/tmp/stream-proto-cloud-trajectory.json"))
-changed = [k for k in ("pacing", "world") if cloud.get(k) and cloud.get(k) != mine.get(k)]
-for k in changed:
-    mine[k] = cloud[k]
+# value by value: a setting tuned on the panel comes back; a setting that's new here (not on the cloud yet) stays
+changed = []
+for k in ("pacing", "world"):
+    for name, v in (cloud.get(k) or {}).items():
+        if name in mine.get(k, {}) and mine[k][name] != v:
+            mine[k][name] = v
+            changed.append(f"{k}.{name}")
 if changed:
     json.dump(mine, open("trajectory.json", "w"), indent=2, ensure_ascii=False)
     print("kept the timings tuned on /panel (" + ", ".join(changed) + ") in your trajectory.json")
