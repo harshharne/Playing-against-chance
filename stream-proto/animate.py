@@ -66,7 +66,8 @@ class Animator:
         # follow: how much the portrait follows where your head is (left/right, nearer/further), 0 = turning only
         # turn_limit: degrees of turn (left/right) the portrait follows fully; tilts and nods get 70 % of it.
         # Beyond that it eases off instead of bending the painting (LivePortrait smears past ~20 degrees of tilt)
-        self.opts = {"multiplier": 1.0, "smooth": 0.15, "follow": 0.6, "turn_limit": 22, "redetect": 10, "quality": 85}
+        # face_smooth: steadies eyes and mouth (0 = raw: crisp but the tracker's noise shows)
+        self.opts = {"multiplier": 1.0, "smooth": 0.3, "face_smooth": 0.3, "follow": 0.0, "turn_limit": 22, "redetect": 10, "quality": 85}
         self.src = None
         self.last_head = None
         self.reset()
@@ -149,7 +150,7 @@ class Animator:
             self.last_head = None
             return s["img"], {"face": False, "ms": t}
         self.missing = 0
-        follow = max(0.0, min(1.0, float(self.opts.get("follow", 0.6))))
+        follow = max(0.0, min(1.0, float(self.opts.get("follow", 0.0))))
         if self.ref_lmk is not None:                                   # moved out of the neutral window: start a new neutral
             c0, c1 = self.ref_lmk.mean(0), lmk.mean(0)
             size = float((self.ref_lmk.max(0) - self.ref_lmk.min(0)).max())
@@ -163,9 +164,10 @@ class Animator:
             x_d = w.get_kp_info(I_d)
             # steady the HEAD (angles, position, size) a little; eyes and mouth (exp) stay raw so blinks and speech are crisp
             a = max(0.0, min(0.9, float(self.opts["smooth"])))
-            pose = {k: x_d[k] for k in ("pitch", "yaw", "roll", "t", "scale")}
-            if self.prev is not None and a > 0:
-                pose = {k: self.prev[k] * a + v * (1 - a) for k, v in pose.items()}
+            b = max(0.0, min(0.9, float(self.opts.get("face_smooth", 0.3))))
+            pose = {k: x_d[k] for k in ("pitch", "yaw", "roll", "t", "scale", "exp")}
+            if self.prev is not None:
+                pose = {k: self.prev[k] * (b if k == "exp" else a) + v * (1 - (b if k == "exp" else a)) for k, v in pose.items()}
             self.prev = pose
             if self.ref is None:
                 self.ref = ({"exp": x_d["exp"], "t": pose["t"], "scale": pose["scale"],
@@ -181,7 +183,7 @@ class Animator:
             R_d = self.rot(ang["pitch"], ang["yaw"], ang["roll"])
             xs = s["x_s_info"]
             R_new = (R_d @ R0.permute(0, 2, 1)) @ s["R_s"]                     # relative motion: your change since neutral,
-            delta = xs["exp"] + (x_d["exp"] - x0["exp"])                       # applied to the portrait's own pose and face
+            delta = xs["exp"] + (pose["exp"] - x0["exp"])                      # applied to the portrait's own pose and face
             scale = xs["scale"] * (1 + (pose["scale"] / x0["scale"] - 1) * follow)
             t_new = xs["t"] + (pose["t"] - x0["t"]) * follow
             t_new[..., 2].fill_(0)

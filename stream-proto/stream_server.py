@@ -1652,7 +1652,7 @@ async def animate_ws(ws: WebSocket):
                 if animator is not None and cmd.get("cmd") == "reset":
                     animator.reset()
                 elif animator is not None and cmd.get("cmd") == "opts":
-                    for k in ("multiplier", "smooth", "follow", "turn_limit", "redetect", "quality"):
+                    for k in ("multiplier", "smooth", "face_smooth", "follow", "turn_limit", "redetect", "quality"):
                         if k in cmd:
                             try:
                                 animator.opts[k] = float(cmd[k])
