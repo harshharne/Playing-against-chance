@@ -62,7 +62,11 @@ class Animator:
         self.w = LivePortraitWrapper(inference_cfg=self.cfg)
         self.cropper = Cropper(crop_cfg=self.crop_cfg)
         self.lock = threading.Lock()
-        self.opts = {"multiplier": 1.0, "smooth": 0.3, "redetect": 10, "quality": 85}
+        # multiplier: how much of your motion; smooth: steadies the HEAD only (eyes and mouth stay raw);
+        # follow: how much the portrait follows where your head is (left/right, nearer/further), 0 = turning only
+        # turn_limit: degrees of turn (left/right) the portrait follows fully; tilts and nods get 70 % of it.
+        # Beyond that it eases off instead of bending the painting (LivePortrait smears past ~20 degrees of tilt)
+        self.opts = {"multiplier": 1.0, "smooth": 0.15, "follow": 0.6, "turn_limit": 22, "redetect": 10, "quality": 85}
         self.src = None
         self.last_head = None
         self.reset()
@@ -94,7 +98,8 @@ class Animator:
 
     def reset(self):
         self.ref = None          # the neutral face: (kp info, rotation) of the first face seen after this
-        self.prev = None         # last driving keypoints, for smoothing
+        self.prev = None         # the head's last pose (angles, position, size), for smoothing
+        self.ref_lmk = None      # where the face was at neutral: frames are cropped there, so moving your head shows
         self.lmk = None          # tracked landmarks
         self.n = 0
         self.missing = 0
@@ -140,33 +145,51 @@ class Animator:
         if lmk is None:
             self.missing += 1
             if self.missing > LOST_AFTER:
-                self.ref, self.prev = None, None                     # they left: the next face is a new neutral
+                self.ref, self.prev, self.ref_lmk = None, None, None  # they left: the next face is a new neutral
             self.last_head = None
             return s["img"], {"face": False, "ms": t}
         self.missing = 0
+        follow = max(0.0, min(1.0, float(self.opts.get("follow", 0.6))))
+        if self.ref_lmk is not None:                                   # moved out of the neutral window: start a new neutral
+            c0, c1 = self.ref_lmk.mean(0), lmk.mean(0)
+            size = float((self.ref_lmk.max(0) - self.ref_lmk.min(0)).max())
+            if follow <= 0 or float(np.abs(c1 - c0).max()) > size * 0.9:
+                self.ref, self.prev, self.ref_lmk = None, None, None
         with torch.no_grad():
-            crop = self.crop_image(rgb, lmk, dsize=256, scale=2.2, vy_ratio=-0.1, flag_do_rot=False)
+            # crop where the face was at neutral (so moving your head moves you in the crop) unless follow is off
+            box = self.ref_lmk if (self.ref_lmk is not None and follow > 0) else lmk
+            crop = self.crop_image(rgb, box, dsize=256, scale=2.2, vy_ratio=-0.1, flag_do_rot=False)
             I_d = w.prepare_source(crop["img_crop"])
             x_d = w.get_kp_info(I_d)
-            R_d = self.rot(x_d["pitch"], x_d["yaw"], x_d["roll"])
+            # steady the HEAD (angles, position, size) a little; eyes and mouth (exp) stay raw so blinks and speech are crisp
+            a = max(0.0, min(0.9, float(self.opts["smooth"])))
+            pose = {k: x_d[k] for k in ("pitch", "yaw", "roll", "t", "scale")}
+            if self.prev is not None and a > 0:
+                pose = {k: self.prev[k] * a + v * (1 - a) for k, v in pose.items()}
+            self.prev = pose
             if self.ref is None:
-                self.ref = (x_d, R_d)
+                self.ref = ({"exp": x_d["exp"], "t": pose["t"], "scale": pose["scale"],
+                             "ang": {k: pose[k].clone() for k in ("pitch", "yaw", "roll")}},
+                            self.rot(pose["pitch"], pose["yaw"], pose["roll"]))
+                self.ref_lmk = lmk.copy()
             x0, R0 = self.ref
+            lim = max(5.0, float(self.opts.get("turn_limit", 22)))
+            ang = {}
+            for k, f in (("yaw", 1.0), ("pitch", 0.7), ("roll", 0.7)):          # soft limit on the turn since neutral
+                L = lim * f
+                ang[k] = x0["ang"][k] + L * torch.tanh((pose[k] - x0["ang"][k]) / L)
+            R_d = self.rot(ang["pitch"], ang["yaw"], ang["roll"])
             xs = s["x_s_info"]
             R_new = (R_d @ R0.permute(0, 2, 1)) @ s["R_s"]                     # relative motion: your change since neutral,
             delta = xs["exp"] + (x_d["exp"] - x0["exp"])                       # applied to the portrait's own pose and face
-            scale = xs["scale"] * (x_d["scale"] / x0["scale"])
-            t_new = xs["t"] + (x_d["t"] - x0["t"])
+            scale = xs["scale"] * (1 + (pose["scale"] / x0["scale"] - 1) * follow)
+            t_new = xs["t"] + (pose["t"] - x0["t"]) * follow
             t_new[..., 2].fill_(0)
             x_new = scale * (s["x_c_s"] @ R_new + delta) + t_new
             x_new = w.stitching(s["x_s"], x_new)
             if s["lip"] is not None:
                 x_new = x_new + s["lip"]
             x_new = s["x_s"] + (x_new - s["x_s"]) * float(self.opts["multiplier"])
-            a = max(0.0, min(0.95, float(self.opts["smooth"])))
-            if self.prev is not None and a > 0:
-                x_new = self.prev * a + x_new * (1 - a)
-            self.prev = x_new
             t2 = time.perf_counter()
             t["motion"] = (t2 - t1) * 1000
             out = w.warp_decode(s["f_s"], s["x_s"], x_new)

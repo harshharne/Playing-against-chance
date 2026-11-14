@@ -74,8 +74,10 @@ kbd { font: 10px ui-monospace, Menlo, monospace; border: 1px solid #bbb; border-
     <div class="group">
       <span>MOVEMENT</span>
       <label class="slider">MOVEMENT<input type="range" id="multiplier" min="0.3" max="1.6" step="0.05" value="1"><output id="multiplierV">1.00</output></label>
-      <label class="slider">SMOOTHING<input type="range" id="smooth" min="0" max="0.9" step="0.05" value="0.3"><output id="smoothV">0.30</output></label>
-      <label class="slider">SEND WIDTH<input type="range" id="sendw" min="240" max="640" step="80" value="480"><output id="sendwV">480</output></label>
+      <label class="slider">HEAD SMOOTHING<input type="range" id="smooth" min="0" max="0.8" step="0.05" value="0.15"><output id="smoothV">0.15</output></label>
+      <label class="slider">TURN LIMIT<input type="range" id="turn_limit" min="8" max="45" step="1" value="22"><output id="turn_limitV">22</output></label>
+      <label class="slider">FOLLOW POSITION<input type="range" id="follow" min="0" max="1" step="0.05" value="0.6"><output id="followV">0.60</output></label>
+      <label class="slider">SEND WIDTH<input type="range" id="sendw" min="240" max="800" step="80" value="640"><output id="sendwV">640</output></label>
       <label class="slider">JPEG QUALITY<input type="range" id="quality" min="40" max="95" step="5" value="80"><output id="qualityV">80</output></label>
       <div class="row">
         <button class="main" id="reset">RESET NEUTRAL <kbd>R</kbd></button>
@@ -147,7 +149,7 @@ async function setupCamera() {
 // ---------- the WebSocket ----------
 function send(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
 function sendOpts() {
-  send({ cmd: "opts", multiplier: +$("multiplier").value, smooth: +$("smooth").value, quality: +$("quality").value });
+  send({ cmd: "opts", multiplier: +$("multiplier").value, smooth: +$("smooth").value, follow: +$("follow").value, turn_limit: +$("turn_limit").value, quality: +$("quality").value });
 }
 function connect() {
   ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/animate");
@@ -278,9 +280,9 @@ $("ages").onclick = async () => {
   $("ages").disabled = false;
 };
 
-for (const id of ["multiplier", "smooth", "sendw", "quality", "repaint"]) {
+for (const id of ["multiplier", "smooth", "follow", "turn_limit", "sendw", "quality", "repaint"]) {
   const el = $(id), v = $(id + "V");
-  const show = () => { v.textContent = id === "sendw" || id === "quality" ? el.value : (+el.value).toFixed(2); };
+  const show = () => { v.textContent = id === "sendw" || id === "quality" ? el.value : id === "turn_limit" ? el.value + "°" : (+el.value).toFixed(2); };
   el.oninput = () => { show(); if (id !== "repaint") sendOpts(); }; show();
 }
 $("reset").onclick = () => send({ cmd: "reset" });
