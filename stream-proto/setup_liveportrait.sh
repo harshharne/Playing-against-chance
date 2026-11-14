@@ -20,8 +20,8 @@ fi
 echo "== what it needs (keeps the torch that's already installed) =="
 pip install -q pyyaml opencv-python-headless scipy imageio rich onnx scikit-image tyro pykalman huggingface_hub
 pip uninstall -y -q onnxruntime || true          # the CPU build hides the GPU one
-pip install -q onnxruntime-gpu
-python -c "import onnxruntime as o; print('onnxruntime providers:', o.get_available_providers())"
+pip install -q "onnxruntime-gpu[cuda,cudnn]"      # with CUDA 12's cuBLAS + cuDNN, whatever torch brings
+python -c "import onnxruntime as o; o.preload_dlls() if hasattr(o, 'preload_dlls') else None; print('onnxruntime providers:', o.get_available_providers())"
 
 echo "== weights (~0.6 GB) =="
 python - "$LP" <<'PY'

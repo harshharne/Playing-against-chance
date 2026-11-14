@@ -282,11 +282,17 @@ def dwpose():
         return _wb["model"]
     _wb["tried"] = True
     try:
+        from animate import ORT_FIX, ort_preload, ort_where
+        ort_preload()
         from rtmlib import Wholebody
         import onnxruntime as ort
         cuda = "CUDAExecutionProvider" in ort.get_available_providers()
         _wb["model"] = Wholebody(to_openpose=True, mode=DWPOSE_MODE, backend="onnxruntime", device="cuda" if cuda else "cpu")
-        _wb["where"] = ("GPU" if cuda else "CPU (onnxruntime-gpu not working)") + f", {DWPOSE_MODE}"
+        m = _wb["model"]
+        where = ort_where([getattr(getattr(m, n, None), "session", None) for n in ("det_model", "pose_model")])
+        _wb["where"] = (where if where != "?" else ("GPU" if cuda else "CPU")) + f", {DWPOSE_MODE}"
+        if where == "CPU":
+            print(f"[pose] DWPose fell back to the CPU (slow). Fix: {ORT_FIX}")
         print(f"[pose] DWPose ready on {_wb['where']}")
     except Exception as e:
         _wb["error"] = str(e)[:300]
@@ -1610,6 +1616,7 @@ def load_animator():
 async def animate_status():
     return {"ready": animator is not None, "note": animator_note if ANIMATE else "off (ANIMATE=0)",
             "source": bool(animator is not None and animator.src is not None), "mock": MOCK,
+            "detection": getattr(animator, "where", "mock" if MOCK else None),
             "opts": animator.opts if animator else None, "head": animator.last_head if animator else None}
 
 

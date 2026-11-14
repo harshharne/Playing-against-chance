@@ -28,6 +28,29 @@ LP_DIR = os.environ.get("LIVEPORTRAIT_DIR", os.path.expanduser("~/LivePortrait")
 LOST_AFTER = 45          # frames without a face before the next face is treated as a new person (new neutral)
 
 
+def ort_preload():
+    """onnxruntime-gpu needs CUDA 12's cuBLAS and cuDNN; torch may bring a different CUDA. Load the ones from the
+    nvidia-* pip packages (pip install "onnxruntime-gpu[cuda,cudnn]") before any session, so detection is on the GPU."""
+    try:
+        import onnxruntime as ort
+        if hasattr(ort, "preload_dlls"):
+            ort.preload_dlls()
+    except Exception as e:
+        print(f"[onnx] couldn't preload the CUDA libraries: {e}")
+
+
+def ort_where(sessions):
+    """'GPU' only if every session really runs on CUDA (onnxruntime falls back to the CPU quietly)."""
+    try:
+        provs = [s.get_providers()[0] for s in sessions if s is not None]
+        return "GPU" if provs and all(p == "CUDAExecutionProvider" for p in provs) else "CPU"
+    except Exception:
+        return "?"
+
+
+ORT_FIX = 'pip install -q "onnxruntime-gpu[cuda,cudnn]"  (then restart the server)'
+
+
 def _head_info(lmk, w, h, yaw=0.0, pitch=0.0, roll=0.0):
     lo, hi = lmk.min(0), lmk.max(0)
     c = (lo + hi) / 2
@@ -43,6 +66,7 @@ class Animator:
             raise RuntimeError(f"LivePortrait's weights aren't in {lp_dir}/pretrained_weights (run setup_liveportrait.sh)")
         if lp_dir not in sys.path:
             sys.path.insert(0, lp_dir)
+        ort_preload()
         import cv2
         import torch
         from src.config.crop_config import CropConfig
@@ -61,6 +85,11 @@ class Animator:
             self.cfg.flag_force_cpu, self.cfg.flag_use_half_precision, self.crop_cfg.flag_force_cpu = True, False, True
         self.w = LivePortraitWrapper(inference_cfg=self.cfg)
         self.cropper = Cropper(crop_cfg=self.crop_cfg)
+        fa = self.cropper.face_analysis_wrapper
+        sessions = [getattr(self.cropper.human_landmark_runner, "session", None)] + \
+                   [getattr(m, "session", None) for m in getattr(fa, "models", {}).values()]
+        self.where = ort_where(sessions)
+        print(f"[animate] face detection on the {self.where}" + ("" if self.where == "GPU" else f" (slow, uneven). Fix: {ORT_FIX}"), flush=True)
         self.lock = threading.Lock()
         # multiplier: how much of your motion; smooth: steadies the HEAD only (eyes and mouth stay raw);
         # follow: how much the portrait follows where your head is (left/right, nearer/further), 0 = turning only

@@ -298,7 +298,8 @@ addEventListener("keydown", (e) => {
 async function waitReady() {
   try {
     const s = await (await fetch("/animate/status", { cache: "no-store" })).json();
-    if (s.ready) { setStatus(s.source ? "<b>moving</b>" : "<b>ready</b> · paint or upload a portrait" + (s.mock ? " · MOCK (no model)" : "")); if (s.source) { hasSource = true; } return; }
+    const det = s.detection === "CPU" ? " · <b style=\"color:var(--bad)\">face detection on the CPU: see the server window</b>" : s.detection === "GPU" ? " · detection on the GPU" : "";
+    if (s.ready) { setStatus((s.source ? "<b>moving</b>" : "<b>ready</b> · paint or upload a portrait" + (s.mock ? " · MOCK (no model)" : "")) + det, s.detection === "CPU"); if (s.source) { hasSource = true; } return; }
     setStatus(s.note === "loading" ? "loading LivePortrait…" : `<b>${s.note}</b>`, s.note !== "loading");
   } catch (e) { setStatus("<b>no server</b>", true); }
   setTimeout(waitReady, 1500);
