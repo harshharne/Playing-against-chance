@@ -1672,7 +1672,12 @@ async def animate_ws(ws: WebSocket):
             if animator is None:
                 await ws.send_bytes(ws_pack({"note": animator_note or "loading"}))
                 continue
-            jpeg, info = await asyncio.to_thread(animator.drive_jpeg, data)
+            try:
+                jpeg, info = await asyncio.to_thread(animator.drive_jpeg, data)
+            except Exception as e:                                   # say what broke, keep the connection
+                import traceback
+                traceback.print_exc()
+                jpeg, info = b"", {"note": f"animator error: {type(e).__name__}: {str(e)[:160]}"}
             await ws.send_bytes(ws_pack(info, jpeg))
     except WebSocketDisconnect:
         pass

@@ -180,10 +180,10 @@ class Animator:
             return s["img"], {"face": False, "ms": t}
         self.missing = 0
         follow = max(0.0, min(1.0, float(self.opts.get("follow", 0.0))))
-        if self.ref_lmk is not None:                                   # moved out of the neutral window: start a new neutral
-            c0, c1 = self.ref_lmk.mean(0), lmk.mean(0)
+        if follow > 0 and self.ref_lmk is not None:                   # follow mode only: moved out of the neutral
+            c0, c1 = self.ref_lmk.mean(0), lmk.mean(0)                 # window -> start a new neutral there
             size = float((self.ref_lmk.max(0) - self.ref_lmk.min(0)).max())
-            if follow <= 0 or float(np.abs(c1 - c0).max()) > size * 0.9:
+            if float(np.abs(c1 - c0).max()) > size * 0.9:
                 self.ref, self.prev, self.ref_lmk = None, None, None
         with torch.no_grad():
             # crop where the face was at neutral (so moving your head moves you in the crop) unless follow is off
