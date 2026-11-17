@@ -5,8 +5,13 @@
 // the words): only letters. The event is called out, its options come up along the bottom, the one you pick is
 // set in the middle with its throw, the die's number lands alone. Letters form out of the fog and go back into it.
 //
-// The lettering: serif capitals (Cinzel), and in every block of words ONE letter drawn tall and narrow (Cormorant),
-// rising above its line or dropping through the one below; lines in a block justified to one width.
+// The lettering: one high-contrast display serif (Noto Serif Display, which has true narrow widths). Capitals; in a
+// block of two lines the first is heavier, the second light and tracked out; ONE letter per block is the same face
+// at its narrowest and much taller, rising above its line or dropping through the next. Lines justified (gently) to
+// one width.
+//
+// The fog moves: it rolls and curls (warped noise), its edges breathe, wisps drift over the picture, and it
+// thickens over the middle at every change of place, so each new world forms out of it (fog.swell).
 //
 //   const fog = createFog({ root, sec })      root: the element over the picture (.gen)
 //   fog.active(on)                            show / hide the frame and its letters
@@ -14,53 +19,50 @@
 //   fog.unsay()
 //   const i = await fog.deck(cards, onHover, setKeys)
 //   await fog.lock(i, label) · fog.hint(text) · fog.hide() · fog.show() · await fog.land(n, hit)
-//   await fog.turnOver(card, note) · fog.deckGone()
+//   await fog.turnOver(card, note) · fog.deckGone() · fog.swell(ms)   (a change of place: the fog rolls in, then clears)
 
-const SX = 0.56;                       // how narrow the tall letter is drawn
-const TALL = 2.4;                      // how tall, in the line's own letter size
-const PREFER = "IMNEHTLAOCRVKU";       // letters that look best tall (strong verticals first)
+const TALL = 2.25;                     // how tall the tall letter is, in its line's letter size
+const PREFER = "IMNHTEKLARU";          // letters that read well tall (straight stems; no round letters)
+const SWELL = 0.5;                     // how thick the fog gets over the middle at a change of place
 
 const CSS = `
-@font-face { font-family: "PAC Cinzel"; src: url("fonts/cinzel-latin-400-normal.woff2") format("woff2"); font-weight: 400; font-display: block; }
-@font-face { font-family: "PAC Cinzel"; src: url("fonts/cinzel-latin-700-normal.woff2") format("woff2"); font-weight: 700; font-display: block; }
-@font-face { font-family: "PAC Cormorant"; src: url("fonts/cormorant-garamond-latin-400-normal.woff2") format("woff2"); font-weight: 400; font-display: block; }
-@font-face { font-family: "PAC Cormorant"; src: url("fonts/cormorant-garamond-latin-500-normal.woff2") format("woff2"); font-weight: 500; font-display: block; }
-@font-face { font-family: "PAC Cormorant"; src: url("fonts/cormorant-garamond-latin-400-italic.woff2") format("woff2"); font-weight: 400; font-style: italic; font-display: block; }
+@font-face { font-family: "PAC Display"; src: url("fonts/noto-serif-display-latin-wdth-normal.woff2") format("woff2"); font-weight: 100 900; font-stretch: 62.5% 100%; font-display: block; }
+@font-face { font-family: "PAC Display"; src: url("fonts/noto-serif-display-latin-wdth-italic.woff2") format("woff2"); font-weight: 100 900; font-stretch: 62.5% 100%; font-style: italic; font-display: block; }
 .fogc { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; opacity: 0; transition: opacity 1.2s ease; }
 .fogl { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity 0.8s ease; --ink: #121212; color: var(--ink); }
 body.ui-fog .fogc, body.ui-fog .fogl { opacity: 1; }
 body.ui-fog .say, body.ui-fog .deck, body.ui-fog .big, body.ui-fog .flip, body.ui-fog .pip { display: none !important; }
 .fogl .stage { position: absolute; left: 10%; right: 10%; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; align-items: center; gap: 2.2vh; }
 .fogl .row { position: absolute; left: 11%; right: 11%; bottom: 12.5%; display: flex; justify-content: space-evenly; align-items: flex-end; gap: 2vw; }
-.fogl .note { font: 400 clamp(11px, 1.05vw, 15px)/1 "PAC Cinzel", serif; letter-spacing: 0.32em; text-transform: uppercase; color: #3a3a3a; }
-.fogl .note b { font-weight: 700; color: var(--ink); }
-.art { font-family: "PAC Cinzel", "Cinzel", "Trajan Pro", serif; text-transform: uppercase; text-align: center; line-height: 0.98; white-space: nowrap;
-       text-shadow: 0 0 22px rgba(255,255,255,0.95), 0 0 6px rgba(255,255,255,0.9); user-select: none; }
+.fogl .note { font: 400 clamp(11px, 0.95vw, 14px)/1 "PAC Display", serif; letter-spacing: 0.34em; text-transform: uppercase; color: #333; }
+.fogl .note b { font-weight: 600; color: var(--ink); }
+.art { font-family: "PAC Display", "Noto Serif Display", "Didot", serif; text-transform: uppercase; text-align: center; line-height: 1; white-space: nowrap;
+       text-shadow: 0 0 14px rgba(255,255,255,0.75); user-select: none; font-kerning: normal; }
 .art .ln { display: block; }
-.art .ln.a { font-weight: 700; } .art .ln.b { font-weight: 400; }
+.art .ln.a { font-weight: 560; letter-spacing: 0.05em; }
+.art .ln.b { font-weight: 300; letter-spacing: 0.13em; }
+.art .ln.one { font-weight: 520; letter-spacing: 0.06em; }
 .art .ch { display: inline-block; transition: opacity 0.9s ease, filter 0.9s ease, transform 0.9s ease; }
-.art .sp { display: inline-block; width: 0.38em; }
-.art .tall { font-family: "PAC Cormorant", "Cormorant Garamond", serif; font-weight: 500; font-size: ${TALL}em; line-height: 0; transform-origin: 50% 50%; }
-.art .tall.up { transform: scaleX(${SX}); }
-.art .tall.dn { transform: translateY(0.36em) scaleX(${SX}); }
+.art .sp { display: inline-block; width: 0.3em; }
+.art .tall { font-size: var(--tall, ${TALL}em); font-stretch: 62.5%; font-weight: 330; letter-spacing: 0; line-height: 0; margin: 0 0.01em; }
+.art .tall.dn { transform: translateY(0.31em); }
 .art .ch.pre { opacity: 0; filter: blur(12px); }
 .art .ch.out { opacity: 0; filter: blur(10px); }
-.art .tall.up.pre, .art .tall.up.out { transform: scaleX(${SX}) translateY(-0.06em); }
-.prose { font: 400 clamp(20px, 2.3vw, 34px)/1.3 "PAC Cormorant", "Cormorant Garamond", serif; text-align: center; max-width: 30em; text-wrap: balance;
-         text-shadow: 0 0 20px rgba(255,255,255,0.95), 0 0 6px rgba(255,255,255,0.9); transition: opacity 1s ease, filter 1s ease; }
+.prose { font: 300 clamp(20px, 2.1vw, 32px)/1.35 "PAC Display", "Noto Serif Display", serif; text-align: center; max-width: 30em; text-wrap: balance;
+         text-shadow: 0 0 14px rgba(255,255,255,0.8); transition: opacity 1s ease, filter 1s ease; }
 .prose.small { font-size: clamp(16px, 1.6vw, 24px); }
 .prose.quote { font-style: italic; }
 .prose.pre, .prose.out { opacity: 0; filter: blur(10px); }
 .fogl .opt { pointer-events: auto; cursor: pointer; background: none; border: 0; padding: 1.2vh 0.4vw; color: inherit; transition: opacity 0.5s ease; font: inherit; }
 .fogl .row.hovering .opt:not(.focus) { opacity: 0.32; }
 .fogl .opt:focus-visible { outline: none; }
-.fogl .opt.focus .art { text-shadow: 0 0 26px rgba(255,255,255,1), 0 0 8px rgba(255,255,255,1); }
+.fogl .opt.focus .art { text-shadow: 0 0 18px rgba(255,255,255,1); }
 .fogl .begin { pointer-events: auto; cursor: pointer; background: none; border: 0; padding: 8px 14px; color: inherit; }
-.fogl .num { font: 300 clamp(140px, 34vh, 330px)/0.9 "PAC Cormorant", "Cormorant Garamond", serif; text-shadow: 0 0 40px rgba(255,255,255,1); transition: opacity 0.9s ease, filter 0.9s ease; }
+.fogl .num { font: 250 clamp(160px, 40vh, 380px)/0.9 "PAC Display", "Noto Serif Display", serif; font-stretch: 62.5%; text-shadow: 0 0 30px rgba(255,255,255,0.9); transition: opacity 0.9s ease, filter 0.9s ease; }
 .fogl .num.pre, .fogl .num.out { opacity: 0; filter: blur(16px); }
-.fogl .end { pointer-events: auto; max-height: 70vh; overflow: auto; font: 400 clamp(14px, 1.3vw, 19px)/1.45 "PAC Cormorant", serif; text-shadow: 0 0 14px #fff; transition: opacity 1s; }
+.fogl .end { pointer-events: auto; max-height: 70vh; overflow: auto; font: 300 clamp(14px, 1.2vw, 18px)/1.5 "PAC Display", serif; text-shadow: 0 0 12px #fff; transition: opacity 1s; }
 .fogl .end table { border-collapse: collapse; } .fogl .end td { padding: 1px 16px 1px 0; vertical-align: top; }
-.fogl .end td:first-child { font-family: "PAC Cinzel", serif; font-size: 0.8em; color: #555; } .fogl .end td:nth-child(2) { font-family: "PAC Cinzel", serif; font-size: 0.8em; letter-spacing: 0.1em; }
+.fogl .end td:first-child { font-size: 0.8em; color: #555; } .fogl .end td:nth-child(2) { font-size: 0.78em; letter-spacing: 0.16em; text-transform: uppercase; font-weight: 500; }
 .fogl .end i { font-style: italic; color: #555; }
 `;
 
@@ -68,7 +70,7 @@ body.ui-fog .say, body.ui-fog .deck, body.ui-fog .big, body.ui-fog .flip, body.u
 const VS = `attribute vec2 p; void main() { gl_Position = vec4(p, 0.0, 1.0); }`;
 const FS = `
 precision mediump float;
-uniform vec2 res; uniform float t, veil;
+uniform vec2 res; uniform float t, veil, swell;
 float h(vec2 p) { p = fract(p * vec2(127.1, 311.7)); p += dot(p, p + 19.19); return fract(p.x * p.y); }
 float n(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   return mix(mix(h(i), h(i + vec2(1, 0)), f.x), mix(h(i + vec2(0, 1)), h(i + vec2(1, 1)), f.x), f.y); }
@@ -76,16 +78,21 @@ float fbm(vec2 p) { float s = 0.0, a = 0.5; for (int i = 0; i < 5; i++) { s += a
 float box(vec2 p, vec2 b, float r) { vec2 q = abs(p) - b + r; return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r; }
 void main() {
   vec2 uv = gl_FragCoord.xy / res, a = vec2(res.x / res.y, 1.0), p = (uv - 0.5) * a;
-  float d = box(p, vec2(0.5 * a.x - 0.075, 0.5 - 0.075), 0.06);            // < 0 inside the sheet
-  vec2 drift = vec2(t * 0.011, -t * 0.007);
-  float n1 = fbm(p * 2.4 + drift), n2 = fbm(p * 6.0 - drift * 1.7), n3 = fbm(p * 1.3 - drift * 0.6 + 9.0);
-  float e = d + (n1 - 0.5) * 0.17 + (n2 - 0.5) * 0.05;                      // the torn edge, slowly moving
-  float fog = smoothstep(-0.16, -0.005, e) * (0.75 + 0.25 * n2);           // the white band inside the dark
-  float haze = veil * (0.55 + 0.45 * n3) * (1.0 - 0.35 * smoothstep(0.0, 0.45, length(p / a)));   // over the middle when letters are up
-  float dark = smoothstep(0.0, 0.07, e + (n2 - 0.5) * 0.05);
-  float hatch = 0.5 + 0.5 * sin((gl_FragCoord.x + gl_FragCoord.y * 0.55) * 1.15 + n2 * 4.0);   // the pen hatching, faint
-  vec3 ink = vec3(0.045) + vec3(0.035) * hatch * smoothstep(0.02, 0.12, e) + (h(gl_FragCoord.xy) - 0.5) * 0.03;
-  float w = max(fog, haze);
+  // the fog rolls: noise pushed around by more noise, both moving, so it curls instead of sliding
+  vec2 w1 = vec2(fbm(p * 1.7 + vec2(t * 0.06, t * 0.025)), fbm(p * 1.7 + vec2(-t * 0.05, t * 0.04) + 7.3));
+  vec2 q = p + (w1 - 0.5) * 0.65;
+  float roll = fbm(q * 2.3 + vec2(t * 0.045, -t * 0.03));
+  float fine = fbm(q * 6.5 - vec2(t * 0.09, t * 0.05));
+  float breath = sin(t * 0.35) * 0.012 + sin(t * 0.17 + 1.3) * 0.009;     // the edges breathe in and out
+  float d = box(p, vec2(0.5 * a.x - 0.075 - breath, 0.5 - 0.075 - breath), 0.06);   // < 0 inside the sheet
+  float e = d + (roll - 0.5) * 0.2 + (fine - 0.5) * 0.06;                  // the torn edge
+  float fog = smoothstep(-0.17, -0.005, e) * (0.7 + 0.3 * fine);           // the white band inside the dark
+  float wisp = smoothstep(0.56, 0.86, fbm(q * 1.5 + vec2(t * 0.07, t * 0.012))) * 0.24;   // wisps drifting over the picture
+  float centre = 1.0 - 0.35 * smoothstep(0.0, 0.45, length(p / a));
+  float haze = (veil + swell) * (0.45 + 0.55 * roll) * centre;             // thicker behind the letters, and at a change
+  float dark = smoothstep(0.0, 0.07, e + (fine - 0.5) * 0.05);
+  vec3 ink = vec3(0.04) + (h(gl_FragCoord.xy + t) - 0.5) * 0.03;
+  float w = max(max(fog, haze), wisp);
   vec3 col = mix(vec3(1.0), ink, dark);
   float al = max(w, dark);
   gl_FragColor = vec4(col * al, al);
@@ -102,12 +109,12 @@ function frame(canvas) {
   gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
   const loc = gl.getAttribLocation(pr, "p"); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
-  const U = { res: gl.getUniformLocation(pr, "res"), t: gl.getUniformLocation(pr, "t"), veil: gl.getUniformLocation(pr, "veil") };
-  return (t, veil) => {
+  const U = { res: gl.getUniformLocation(pr, "res"), t: gl.getUniformLocation(pr, "t"), veil: gl.getUniformLocation(pr, "veil"), swell: gl.getUniformLocation(pr, "swell") };
+  return (t, veil, swell) => {
     const w = Math.max(2, Math.round(canvas.clientWidth / 2)), hh = Math.max(2, Math.round(canvas.clientHeight / 2));
     if (canvas.width !== w || canvas.height !== hh) { canvas.width = w; canvas.height = hh; }
     gl.viewport(0, 0, w, hh);
-    gl.uniform2f(U.res, w, hh); gl.uniform1f(U.t, t); gl.uniform1f(U.veil, veil);
+    gl.uniform2f(U.res, w, hh); gl.uniform1f(U.t, t); gl.uniform1f(U.veil, veil); gl.uniform1f(U.swell, swell);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   };
 }
@@ -125,8 +132,9 @@ function splitLines(text) {                                   // one line, or tw
   return [best.a, best.b];
 }
 function pickTall(lines, seed) {                              // [line, index, "up" | "dn"]: one tall letter per block
-  const li = lines.length === 1 ? 0 : (seed % 5 < 3 ? 0 : 1);
-  const ln = lines[li], dir = lines.length === 1 ? (seed % 2 ? "up" : "dn") : li === 0 ? "up" : "dn";
+  if (lines.length === 1) return /[A-Za-z]/.test(lines[0][0] || "") ? [0, 0, "up"] : null;   // one line: a tall initial
+  const li = seed % 5 < 3 ? 0 : 1;                             // two: the first line's rises above it, the last's drops through
+  const ln = lines[li], dir = li === 0 ? "up" : "dn";
   let best = -1, score = -1;
   for (let i = 0; i < ln.length; i++) {
     const c = ln[i].toUpperCase(), r = PREFER.indexOf(c);
@@ -138,11 +146,12 @@ function pickTall(lines, seed) {                              // [line, index, "
   return best < 0 ? null : [li, best, dir];
 }
 // the block as HTML: lines of letters, each its own span (they form out of the fog one by one)
-export function artHTML(text, { size = "5vw", weights = ["a", "b"] } = {}) {
+export function artHTML(text, { size = "5vw", weights = ["a", "b"], tall: tallSize = null, initial = false } = {}) {
   const t = String(text || "").replace(/\s+/g, " ").trim();
-  const lines = splitLines(t), tall = pickTall(lines, hash(t));
+  const lines = splitLines(t);
+  const tall = tallSize === 0 ? null : initial ? pickTall([lines[0]], 0) : pickTall(lines, hash(t));   // initial: only ever a tall first letter
   const out = lines.map((ln, li) => {
-    const w = lines.length === 1 ? "a" : weights[li] || "b";
+    const w = lines.length === 1 ? "one" : weights[li] || "b";
     const chars = [...ln].map((c, i) => {
       if (c === " ") return `<span class="ch sp"> </span>`;
       const isTall = tall && tall[0] === li && tall[1] === i;
@@ -150,15 +159,10 @@ export function artHTML(text, { size = "5vw", weights = ["a", "b"] } = {}) {
     }).join("");
     return `<span class="ln ${w}">${chars}</span>`;
   }).join("");
-  return `<div class="art" style="font-size:${size}">${out}</div>`;
+  return `<div class="art" style="font-size:${size}${tallSize ? `;--tall:${tallSize}em` : ""}">${out}</div>`;
 }
-// after it's on the page: pull the tall letter's neighbours in (it's drawn narrow), justify the lines to one width
+// after it's on the page: the lines of a block spread (gently) to one width; too far apart and they stay centred
 export function fitArt(el) {
-  for (const t of el.querySelectorAll(".tall")) {
-    t.style.margin = "";
-    const w = t.offsetWidth, m = -w * (1 - SX) / 2 + 1;
-    t.style.margin = `0 ${m}px`;
-  }
   const lines = [...el.querySelectorAll(".ln")];
   if (lines.length < 2) return;
   lines.forEach(l => { l.style.letterSpacing = ""; l.style.marginRight = ""; });
@@ -167,7 +171,8 @@ export function fitArt(el) {
   lines.forEach((l, k) => {
     const n = [...l.textContent].length;
     if (n < 2 || max - ws[k] < 2) return;
-    const ls = Math.min(fs * 0.9, (max - ws[k]) / (n - 1));
+    const base = parseFloat(getComputedStyle(l).letterSpacing) || 0;
+    const ls = Math.min(fs * 0.3, base + (max - ws[k]) / (n - 1));
     l.style.letterSpacing = ls + "px"; l.style.marginRight = -ls + "px";     // (the last letter's spacing doesn't count)
   });
 }
@@ -183,10 +188,12 @@ export function createFog({ root, sec }) {
   const draw = frame(canvas);
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   const frames = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-  let on = false, veil = 0.08, veilTo = 0.08;
+  let on = false, veil = 0.08, veilTo = 0.08, sw0 = 0, sw1 = 0;
   (function tick(now) {
     veil += (veilTo - veil) * 0.04;
-    if (on && draw && !document.hidden) draw(now / 1000, veil);
+    let swell = 0;                                             // a change of place: rolls in over its first quarter, clears over the rest
+    if (now < sw1) { const k = (now - sw0) / (sw1 - sw0), e = k < 0.25 ? k / 0.25 : 1 - (k - 0.25) / 0.75; swell = SWELL * e * e * (3 - 2 * e); }
+    if (on && draw && !document.hidden) draw(now / 1000, veil, swell);
     requestAnimationFrame(tick);
   })(0);
   const fade = () => Math.max(400, sec("fade"));
@@ -212,7 +219,7 @@ export function createFog({ root, sec }) {
   }
   const plain = (html) => { const d = document.createElement("div"); d.innerHTML = String(html || ""); return d.textContent.trim(); };
   const node = (html) => { const d = document.createElement("div"); d.innerHTML = html; return d.firstElementChild || d; };
-  const sizeFor = (text, big) => { const n = String(text).length; return big ? (n <= 8 ? "8.2vw" : n <= 16 ? "6.2vw" : "4.8vw") : (n <= 12 ? "4.2vw" : "3.4vw"); };
+  const sizeFor = (text, big) => { const n = String(text).length; return big ? (n <= 8 ? "7vw" : n <= 16 ? "5.2vw" : "4.2vw") : (n <= 12 ? "3.6vw" : "3vw"); };
 
   // ---------- the words ----------
   let shown = [];
@@ -228,7 +235,7 @@ export function createFog({ root, sec }) {
     if (begin) {                                               // the opening, and the end: the name, and the way in
       if (/\bend\b/.test(cls)) els.push(node(`<div class="end">${s}</div>`));
       else els.push(node(artHTML(plain(k) || plain(t), { size: "6vw" })));
-      const b = node(`<button type="button" class="begin">${artHTML("Begin", { size: "1.7vw" })}</button>`);
+      const b = node(`<button type="button" class="begin"><span class="note">begin</span></button>`);
       b.addEventListener("click", () => onBegin && onBegin());
       els.push(b);
     } else if (/\bend\b/.test(cls)) {
@@ -249,9 +256,9 @@ export function createFog({ root, sec }) {
   let opts = [], chosen = null, centre = [];
   function deck(cards, onHover, setKeys) {
     row.innerHTML = ""; row.className = "row";
-    const size = cards.length > 5 ? "1.75vw" : cards.length > 3 ? "2.1vw" : "2.6vw";
+    const size = cards.length > 5 ? "max(17px, 1.75vw)" : cards.length > 3 ? "max(19px, 2.1vw)" : "max(22px, 2.5vw)";
     opts = cards.map((c, i) => {
-      const b = node(`<button type="button" class="opt" aria-label="${String(c.name).replace(/"/g, "&quot;")}">${artHTML(c.name, { size })}</button>`);
+      const b = node(`<button type="button" class="opt" aria-label="${String(c.name).replace(/"/g, "&quot;")}">${artHTML(c.name, { size, tall: 1.55, initial: true })}</button>`);
       row.appendChild(b); return b;
     });
     veilTo = 0.26;
@@ -330,5 +337,6 @@ export function createFog({ root, sec }) {
     on = !!v; document.body.classList.toggle("ui-fog", on);
     if (!on) { stage.innerHTML = ""; row.innerHTML = ""; shown = []; centre = []; opts = []; chosen = null; }
   }
-  return { active, say, unsay, deck, lock, hint, hide, show: showAgain, land, turnOver, deckGone, get on() { return on; } };
+  function swell(ms) { sw0 = performance.now(); sw1 = sw0 + Math.max(1500, ms); }
+  return { swell, active, say, unsay, deck, lock, hint, hide, show: showAgain, land, turnOver, deckGone, get on() { return on; } };
 }

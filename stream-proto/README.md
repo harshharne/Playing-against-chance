@@ -176,8 +176,12 @@ A painted portrait, moved live by your face: LivePortrait warps the painting the
   up along the bottom, the one you pick is set in the middle with its throw ("throw 3 or more"), the die's number lands
   alone, then hit or miss; what chance gave instead forms slowly out of the fog ("allotted"). What happened is shown
   in a line of serif; the bridge lines, setups and card descriptions are not shown: the voice says them.
-- The lettering: Cinzel capitals, one letter per block drawn tall and narrow (Cormorant) rising above its line or
-  dropping through the next, lines justified to one width. Fonts are in web/fonts (OFL), so no internet is needed.
+- The lettering: one high-contrast display serif, Noto Serif Display (it has true narrow widths, so nothing is
+  squeezed). Titles of two lines: the first heavier, the second light and tracked out, one letter drawn at the
+  narrowest width and much taller, crossing between them. One-line words: a tall initial. Options: a smaller tall
+  initial. Font in web/fonts (OFL), so no internet is needed.
+- The fog moves: it rolls and curls, its edges breathe, wisps drift over the picture, and at every change of place it
+  thickens over the middle and clears as the new place forms (SWELL in ui-fog.js).
 - In the fog the portrait stands to the right (the event's name has the middle).
 - A switch during a pick waits until the pick is done.
 - For the Bookkeeper: every line the game would show fires a `pac-say` browser event {k, t, s, cls, shown}, in both

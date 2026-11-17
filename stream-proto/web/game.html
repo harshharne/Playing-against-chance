@@ -361,6 +361,7 @@ function world(scene, { keep = 0, fresh = false, breaths = null, dur = 0, direct
   worldScene = prompt; breathN = 0;
   worldNoise = Math.max(0, evIdx) * 2 + (turn ? 1 : 0);         // an event and its outcome: related noises, not the same one
   worldBreaths = breaths && breaths.length ? breaths.map(b => compose(b, { directed: true, age })) : null;
+  if (FOG() && !fresh) fog.swell(ms);                           // in the fog: it rolls in, and the new place forms out of it
   worldAt = Infinity;                                           // no breath until this change has landed, and a while after
   const my = worldGen;
   worldDone = live.world(prompt, { from, keep: fresh ? 0 : keep, frames: n, dur: ms, base: fresh ? "none" : "last", fresh,
