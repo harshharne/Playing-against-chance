@@ -7,7 +7,8 @@ the clothes that follow the job. It never decides what happens (the die and rand
 If it is slow, off, or writes something that fails the checks, the written scene is used, exactly as before.
 
 For each moment it writes:
-    world     the scene prompt for the painter (short: SDXL reads ~55 words)
+    world     the scene prompt for the painter (short: the painter reads 77 tokens, and the look's words and the
+              place take about 30 of them, so a world is cut at 36 words)
     breathe   three small variations of that scene, for the world breathing inside the event
     clothes   what the player wears now, or "" (keeps the card's)
     line      one line for the narrative box / the Bookkeeper (used only when the panel says so)
@@ -26,7 +27,7 @@ import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 API = os.environ.get("DIRECTOR_API_URL", "https://api.anthropic.com/v1/messages")   # (override only for testing)
-MAX_WORLD_WORDS = 55
+MAX_WORLD_WORDS = 36
 
 
 def read_key():
@@ -107,6 +108,10 @@ class Director:
         planted = "\n".join(f"- at {p['age']}: {p['text']}" for p in life.get("planted", [])) or "- none"
         who = ", ".join(x for x in [life.get("gender") or "", f"age {int(life.get('age', 0))}", life.get("place") or "",
                                     f"wears {life['wear']}" if life.get("wear") else "", ", ".join(life.get("traits", []))] if x)
+        if life.get("means"):                                    # what the family had (Whom): it shows in the worlds of youth
+            who += f"\nBorn into: {life['means']}"
+        if life.get("light"):                                    # the light of this age (a life as one day)
+            who += f"\nThe light at this age: {life['light']}"
         ms = "\n".join(
             f'- key "{m["key"]}": {m.get("what", "")}\n  written scene: {m.get("scene", "")}' + (f'\n  card says: {m["reveals"]}' if m.get("reveals") else "")
             for m in moments)

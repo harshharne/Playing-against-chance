@@ -119,12 +119,14 @@ button:focus-visible { outline: 3px solid #888; outline-offset: 2px; }
 //  Playing Against Chance — Life Trajectory v1. One life, 19 events, from trajectory.json.
 //  Chosen = you pick a card and throw the die; a miss is allotted by random.org.
 //  Happens = random.org picks one of three hidden outcomes. Fluke = something tiny, paid off later.
+//  The piece is the TRANSITION: nothing cuts. The world is always on its way from one place to the next.
 //  The unfolding (the beats, all minimums, all in trajectory.json "pacing", tuned live on /panel):
-//    ARRIVE  bridge line · the age counts up · the world paints from the last one · the avatar ages
+//    ARRIVE  bridge line · the age counts up · the world changes, picture by picture, for as long as the years
+//            that pass (a year takes ARRIVE: PER YEAR) · the avatar ages
 //    SETTLE  name + setup in a soft window      CARDS  rise one by one, wait for you
 //    LOCK    your card to the centre, the target   THROW  waits for the die; everything holds still while it rolls
 //    LAND    the number, big and alone, then hit or miss   MISS  the allotted card turns over
-//    LINGER  what happened stays while the new world paints in
+//    LINGER  what happened stays while the world turns into it
 //  Never shown: odds, percentages, the hidden outcomes, that a fluke mattered (until it does).
 // ============================================================================
 import { createLive } from "./live.js";
@@ -161,10 +163,12 @@ async function toScene(name) {                                 // crossfade from
 }
 
 // ---------- the life and its timings (trajectory.json; the timings change live from /panel) ----------
-let T = null, P = {}, WK = { keep: 0.5, chapter_keep: 0.25, breathe: 5, breathe_keep: 0.6, morph_steps: 3, director: 1, director_lines: 0, director_wait: 2 };
+const WK0 = { keep: 0.25, turn_keep: 0.45, chapter_keep: 0.1, breathe: 5, breathe_keep: 0.55, morph_steps: 8, director: 1, director_lines: 0, director_wait: 2 };
+let T = null, P = {}, WK = { ...WK0 };
 const sec = (k) => Math.max(0, +P[k] || 0) * 1000;
 function setPacing(doc) {
-  P = doc.pacing || {}; WK = doc.world || WK;
+  P = doc.pacing || {}; WK = { ...WK0, ...(doc.world || {}) };
+  if (T && doc.context) T.context = doc.context;
   document.documentElement.style.setProperty("--fade", (sec("fade") / 1000) + "s");
 }
 async function loadLife() {
@@ -212,7 +216,10 @@ const kickAge = () => `AGE ${Math.floor(S.ageF)}`;                           // 
 
 // ---------- the age, the avatar, the world ----------
 let S;                                                         // this life
-function freshLife() { return { ageF: 0, gender: null, place: "", wear: "", ledger: [], planted: {}, phase: 0, avatar: false, life: [], baby: "" }; }
+function freshLife() {                                         // seed: this life's own noise, shared by all its worlds (the server's LAYOUT HOLD)
+  return { ageF: 0, gender: null, place: "", means: "", wear: "", ledger: [], planted: {}, phase: 0, avatar: false, life: [], baby: "",
+           seed: 1 + Math.floor(Math.random() * 1e9) };
+}
 const AGES = [                                                 // the avatar between these: blended, so it ages continuously
   [0, "a newborn baby wrapped in a soft blanket"], [2, "a toddler"], [6, "a small {child}"], [11, "a {child}"],
   [15, "a teenage {kid}"], [19, "a young {adult}, late teens"], [25, "a young {adult} in their twenties"],
@@ -227,7 +234,7 @@ function who(desc, age) {
   if (g === "nb" && age >= 2) d += ", androgynous";
   if (S.wear && age >= 2) d += `, in ${S.wear}`;
   if (S.life.length) d += ", " + S.life.join(", ");             // what the Body throw gave: eyes, a birthmark, your skin
-  return d + ", painterly portrait";
+  return d + ", portrait";                                      // (the look's own words are added on the server, in front)
 }
 function avatarAt(age) {
   live.setControl({ age });
@@ -249,34 +256,56 @@ async function ageTo(to, ms) {                                 // the age runs o
     await sleep(60);
   }
 }
-let worldDone = Promise.resolve(), worldScene = null, worldGen = 0, worldBreaths = null, breathN = 0;
-// The next world, grown out of the last one. Between two scenes it morphs in steps (WK.morph_steps): each step is
-// painted from the one before, with the words moving from the old scene to the new; the last step is the new scene
-// itself and becomes the event's own world. Keep is split across the steps, so the whole morph keeps about as much
-// of the old place as one jump would have.
-function world(scene, keep, fresh = false, breaths = null) {
-  const prompt = scene + (S.place ? ", " + S.place : "");
-  const from = worldScene, n = fresh || !from || from === prompt ? 1 : Math.max(1, Math.round(WK.morph_steps || 1));
-  const my = ++worldGen;
-  worldScene = prompt;
-  worldBreaths = breaths && breaths.length ? breaths.map(b => b + (S.place ? ", " + S.place : "")) : null;
-  const fade = sec("world_fade") / n, k = n > 1 ? Math.pow(Math.max(0.01, keep), 1 / n) : keep;
-  worldDone = (async () => {
-    for (let i = 1; i <= n && my === worldGen; i++) {
-      const last = i === n;
-      await live.setBackground(last ? prompt : from, { keep: k, fade, fresh: fresh && i === 1, to: last ? "" : prompt, mix: last ? 0 : i / n, anchor: last });
-      await sleep(fade);
-    }
-  })();
+// ---------- what a world shows: the written scene, in this life's context (trajectory.json "context") ----------
+// The scene says what is there. The life adds the rest: where you were born (place, from Where), what your family had
+// (means, from Whom, while you're young), the light of your age (a life as one day: dawn at birth, night at the end),
+// and the air after something good or bad happens. A scene that names its own light keeps it. When the director
+// writes the world it does all of this itself, and only the place is added.
+const CX = () => (T && T.context) || {};
+function lightAt(age) { let w = ""; for (const [a, words] of CX().light || []) if (age >= a) w = words; return w; }
+function compose(scene, { directed = false, mood = "", age = null } = {}) {
+  const c = CX(), at = age ?? S.ageF, parts = [scene];
+  if (S.place) parts.push(S.place);
+  if (!directed) {
+    if (S.means && at < (+c.means_until || 0)) parts.push(S.means);
+    const own = c.light_words ? new RegExp(`\\b(${c.light_words})\\b`, "i") : null, light = lightAt(at);
+    if (light && !(own && own.test(scene))) parts.push(light);
+    if (mood && c.outcome && c.outcome[mood]) parts.push(c.outcome[mood]);
+  }
+  return parts.join(", ");
+}
+
+// ---------- the world changes ----------
+// Every change is painted on the server as a run of pictures (live.world): all from the picture on screen, each
+// repainted a little more, the words moving from the old scene to the new; the screen dissolves through them and
+// pushes in. How many pictures: one every MORPH FRAME seconds of the change, at most MORPH STEPS. The last one is
+// the new scene itself and becomes this moment's own world, which then breathes.
+//   keep: how much of the old picture survives · dur: ms for the whole change · fresh: a new life
+let worldDone = Promise.resolve(), worldScene = null, worldGen = 0, worldBreaths = null, breathN = 0, worldNoise = 0, worldAt = 0;
+function world(scene, { keep = 0, fresh = false, breaths = null, dur = 0, directed = false, mood = "", age = null, turn = false } = {}) {
+  const prompt = compose(scene, { directed, mood, age });
+  const from = fresh ? "" : (worldScene || ""), ms = dur || sec("world_fade");
+  const each = Math.max(300, sec("morph_frame") || 1200);
+  const n = fresh || !from || from === prompt || sceneCovers() ? 1 : Math.max(1, Math.min(Math.round(+WK.morph_steps || 1), Math.round(ms / each)));
+  ++worldGen;
+  worldScene = prompt; breathN = 0;
+  worldNoise = Math.max(0, evIdx) * 2 + (turn ? 1 : 0);         // an event and its outcome: related noises, not the same one
+  worldBreaths = breaths && breaths.length ? breaths.map(b => compose(b, { directed: true, age })) : null;
+  worldAt = Infinity;                                           // no breath until this change has landed, and a while after
+  const my = worldGen;
+  worldDone = live.world(prompt, { from, keep: fresh ? 0 : keep, frames: n, dur: ms, base: fresh ? "none" : "last", fresh,
+                                   seed: S.seed, event: worldNoise, push: n > 1 })
+    .then(ok => { if (my === worldGen) worldAt = performance.now(); return ok; });
   return worldDone;
 }
+const sceneCovers = () => !!scene;                            // the egg, the map or the house is drawn over the world: one picture is enough
 // ---------- the director: an LLM writes each moment's world (and its variations, clothes, a line) from the life so far ----------
 // It is asked AHEAD: the next event's arrival as soon as this one's outcome is known, and every branch of an event as it
 // begins, so the answers are there when the die lands. Not there in time (WK.director_wait), off, or rejected: the
 // written scene, exactly as before. It never decides anything; chance does.
 const D = new Map();                                           // moment key -> its answer, null (none), or a pending promise
 let evIdx = -1;
-const lifeNow = () => ({ age: S.ageF, gender: S.gender, place: S.place, wear: S.wear, traits: S.life,
+const lifeNow = () => ({ age: S.ageF, gender: S.gender, place: S.place, wear: S.wear, traits: S.life, means: S.means, light: lightAt(S.ageF),
   ledger: S.ledger.map(([a, t, w, n]) => [a, t, w, n || ""]), planted: Object.values(S.planted) });
 function momentsOf(ev) {
   const m = [{ key: `${ev.id}:arrive`, what: "arriving at this event, before anything is decided", scene: ev.scene || "" }];
@@ -309,33 +338,40 @@ async function directed(key) {
   if (v && typeof v.then === "function") v = await Promise.race([v, sleep((+WK.director_wait || 0) * 1000).then(() => null)]);
   return v && v.world ? v : null;
 }
-// the world for a moment: the director's if it's ready, the written scene if not. outcome: its clothes count too.
-function worldFor(key, scene, keep, outcome = false) {
+// the world for a moment: the director's if it's ready, the written scene (in the life's context) if not.
+// outcome: what happened (its clothes count too; the world TURNS into it); otherwise an arrival.
+function worldFor(key, scene, { keep = 0, dur = 0, outcome = false, mood = "", age = null } = {}) {
   const p = (async () => {
     const d = await directed(key);
     if (d && outcome && d.clothes) S.wear = d.clothes;
     if (d) { live.stat.directed = (live.stat.directed || 0) + 1; dispatchEvent(new CustomEvent("pac-moment", { detail: { key, line: d.line, world: d.world, written: scene } })); }
     lastLine = d && +WK.director_lines ? d.line : "";
-    await world(d ? d.world : scene, keep, false, d ? d.breathe : null);
+    await world(d ? d.world : scene, { keep, dur, directed: !!d, breaths: d ? d.breathe : null, mood, age, turn: outcome });
   })();
   worldDone = p;
   return p;
 }
-let lastLine = "";
+// what happened: the world turns into it, over TURN seconds (trajectory.json pacing), keeping TURN KEEPS of the place
+const turnTo = (key, scene, mood = "") => worldFor(key, scene, { keep: +WK.turn_keep, dur: sec("turn") || sec("world_fade") * 1.6, outcome: true, mood });
+let lastLine = "", bridging = false;
 const dline = () => lastLine ? `<br><span style="color:#555;font-style:italic">${esc(lastLine)}</span>` : "";
 
 // Inside an event the world keeps changing: every WK.breathe seconds a new variation of the event's own world
-// (WK.breathe_keep of it survives), crossfaded in. Never while the die rolls, never during a morph.
+// (WK.breathe_keep of it survives; its noise swings a little: the server's DRIFT), soaked in over the old one.
+// The director's variations if it wrote them, otherwise the small changes in trajectory.json context.breaths.
+// Never while the die rolls, never during a change or the words between events, never under a drawn scene.
 (async function breathe() {
+  let last = 0;
   for (;;) {
-    const every = +WK.breathe || 0;
-    await sleep(every > 0 ? every * 1000 : 1500);
-    if (!(every > 0) || !worldScene || held || scene || document.hidden) continue;   // not under the egg, map or house
+    await sleep(250);
+    const every = (+WK.breathe || 0) * 1000, now = performance.now();
+    if (!(every > 0) || !worldScene || held || scene || bridging || document.hidden || now - last < every || now - worldAt < every) continue;
     const my = worldGen;
-    await worldDone;
-    if (my !== worldGen || held) continue;
-    const p = worldBreaths ? worldBreaths[breathN++ % worldBreaths.length] : worldScene;   // the director's variations, if it wrote them
-    await live.setBackground(p, { keep: +WK.breathe_keep || 0.6, fade: Math.min(every * 800, Math.max(1200, sec("world_fade"))), base: "anchor" });
+    const list = worldBreaths || (CX().breaths || []).map(b => `${worldScene}, ${b}`);
+    const p = list.length ? list[breathN % list.length] : worldScene;
+    breathN++; last = performance.now();
+    await live.world(p, { keep: +WK.breathe_keep || 0.55, frames: 1, dur: Math.min(every * 0.8, Math.max(1200, sec("world_fade"))),
+                          base: "anchor", seed: S.seed, event: worldNoise, breath: breathN, anchor: false, polite: true });
   }
 })();
 
@@ -464,8 +500,9 @@ function apply(c) {
   if (c.gender) S.gender = c.gender;
   if (c.place) S.place = c.place;
   if (c.wear) S.wear = c.wear;
+  if (c.means) S.means = c.means;                                // what the family had: it shows in the worlds of your youth
 }
-async function linger(key, extraAge) {                         // what happened stays while the new world paints in
+async function linger(key, extraAge) {                         // what happened stays while the world turns into it
   await Promise.all([sleep(sec(key)), worldDone, extraAge ? ageTo(extraAge, sec(key) * 0.8) : null]);
 }
 
@@ -506,13 +543,13 @@ async function chosen(ev) {
   }
   if (ev.drawn === "map" && how !== "none") await worldmap.reveal(got.name, how !== "hit");   // the region fills in on the map
   if (how === "none") {
-    const w = worldFor(`${ev.id}:miss`, ev.miss.scene, WK.keep, true);
+    const w = turnTo(`${ev.id}:miss`, ev.miss.scene);
     S.ledger.push([S.ageF, ev.title, `${ev.miss.text.replace(/\.$/, "")}`, `went to: ${c.name}`]); prewriteNext();
     await Promise.race([w, sleep(250)]);
     await say({ k: kick(ev), t: esc(ev.miss.text), s: dline() });
   } else {
     apply(got);
-    const w = got.scene ? worldFor(`${ev.id}:card:${got.name}`, got.scene, WK.keep, true) : null;
+    const w = got.scene ? turnTo(`${ev.id}:card:${got.name}`, got.scene) : null;
     if (ev.drawn === "house") house.build(got.name, sec("linger") * 0.9);                  // the home, built while it lingers
     const note = how === "hit" ? "" : how === "override" ? `${tries} throws, then the override.` : `You went for ${esc(c.name)}. Chance allotted this.`;
     S.ledger.push([S.ageF, ev.title, got.name, how === "hit" ? "" : how === "override" ? `went for ${c.name}; ${tries} throws, then the override` : `went for ${c.name}`]); prewriteNext();
@@ -581,7 +618,7 @@ async function happens(ev) {
     await sleep(sec("happen_hold"));
   }
   const key = ["good", "bad", "neutral"][(await draw(1, 3)) - 1], o = ev.outcomes[key];
-  const w = worldFor(`${ev.id}:out:${key}`, o.scene, WK.keep, true);
+  const w = turnTo(`${ev.id}:out:${key}`, o.scene, key);            // good / bad / neutral: it shows in the air (context.outcome)
   S.ledger.push([S.ageF, ev.title, o.text, ""]); prewriteNext();
   await Promise.race([w, sleep(250)]);
   await say({ k: kick(ev), t: "", s: `<span style="font-size:18px;color:#111">${esc(o.text)}</span>` + dline() });
@@ -600,7 +637,7 @@ async function fluke(ev) {                                     // deliberately u
   const fi = (await draw(1, ev.flukes.length)) - 1, f = ev.flukes[fi];   // which small thing finds you work
   await say({ s: esc(f.text), cls: "small" });
   await sleep(sec("fluke_hold"));
-  worldFor(`${ev.id}:fluke:${fi}`, f.scene, WK.keep, true);
+  turnTo(`${ev.id}:fluke:${fi}`, f.scene);
   S.ledger.push([S.ageF, ev.title, f.job, f.text]); prewriteNext();
   await say({ k: kick(ev), t: esc(f.job) });
   await linger("fluke_linger");
@@ -620,16 +657,25 @@ async function phaseRef(i) {                                   // optional: a st
   } catch (e) { console.warn("[phase ref]", url, e); }
 }
 
-async function arrive(ev, prev) {                              // the bridge, the years, the world and the avatar, together
+// The bridge, the years, the world and the avatar, together. The more years pass, the longer the change takes
+// (ARRIVE + ARRIVE: PER YEAR x the years), so the pace of the piece is the pace of the life: quick through the
+// crowded twenties, long across the quiet decades. A chapter takes at least CHAPTER BREATH.
+function arriveMs(ev, prev) {
+  const years = Math.max(0, (+ev.age || 0) - S.ageF);
+  return Math.max(prev && prev.chapter ? sec("chapter") : 0, sec("arrive") + sec("arrive_year") * years);
+}
+async function arrive(ev, prev) {
   const chapter = !!(prev && prev.chapter);
   if (chapter) { S.phase = Math.min(PHASES.length - 1, S.phase + 1); setPhase(S.phase); }
-  const dur = sec(chapter ? "chapter" : "arrive");
+  const dur = arriveMs(ev, prev);
   let handover = null;
   if (prev && prev.drawn === "baby") handover = takeover(sec("takeover"));     // the baby becomes the live kid
   else if ((ev.drawn || null) !== (prev && prev.drawn || null)) toScene(ev.drawn === "baby" ? null : ev.drawn);   // drawn scene -> the next one, or the painted world
+  bridging = true;                                              // (the world is about to change: no breath now)
   if (prev && prev.bridge) await say({ s: esc(prev.bridge), cls: "bridge" });
-  const w = ev.scene ? worldFor(`${ev.id}:arrive`, ev.scene, chapter ? WK.chapter_keep : WK.keep) : null;
+  const w = ev.scene ? worldFor(`${ev.id}:arrive`, ev.scene, { keep: +(chapter ? WK.chapter_keep : WK.keep), dur: dur * 0.92, age: ev.age }) : null;
   prewrite(ev);                                                 // its branches, if they weren't asked for yet
+  bridging = false;
   await Promise.all([ageTo(ev.age, dur * 0.85), sleep(dur), w, handover]);
   await unsay();
 }
@@ -642,7 +688,7 @@ async function life() {
   baby.hide(0); worldmap.reset(); house.reset(); if (scene) scene.hide(0); scene = null;
   worldmap.load().catch(() => {}); baby.preload();
   await live.whenReady();
-  world(T.events[0].scene, 0, true);                           // a new life: a fresh world
+  world(T.events[0].scene, { fresh: true, age: 0 });          // a new life: a fresh world, its own seed
   if (T.events[0].drawn === "egg") { birth.reset(); toScene("egg"); }
   await say({ k: "PLAYING AGAINST CHANCE", t: `One life. ${T.events.length} moments.`, s: diceOn ? "Throw the die to begin." : "", begin: true });
   await waitThrow("begin");
@@ -705,7 +751,7 @@ function status() {                                             // the hidden de
   if (debugEl.dataset.flash && performance.now() > camFlash) { delete debugEl.dataset.flash; debugEl.hidden = true; }
   if (!debugEl.hidden) {
     const st = live.stat;
-    if (!debugEl.dataset.flash) debugEl.textContent = !st.online ? "server offline" : [`${st.fps} fps`, source && `chance ${source}`, `camera: ${st.camera || "?"}`, st.camNote, `die${diceSrc ? ` (${diceSrc})` : ""}: ${dieText}`, `turn: ${turn}`, st.worldError ? `WORLD ERROR: ${st.worldError}` : (st.worldChange ? `world change ${st.worldChange}` : ""), +WK.director ? (st.directorError ? `director: ${st.directorError}` : `directed ${st.directed || 0}`) : "director off", st.note, st.seg].filter(Boolean).join(" · ");
+    if (!debugEl.dataset.flash) debugEl.textContent = !st.online ? "server offline" : [`${st.fps} fps`, source && `chance ${source}`, `camera: ${st.camera || "?"}`, st.camNote, `die${diceSrc ? ` (${diceSrc})` : ""}: ${dieText}`, `turn: ${turn}`, st.worldError ? `WORLD ERROR: ${st.worldError}` : (st.worldId ? `world ${st.worldId}${st.bgMs ? ` (${st.bgMs} ms)` : ""}` : ""), st.worldTokens > 77 ? `PROMPT TOO LONG (${st.worldTokens} tokens, 77 are read)` : "", +WK.director ? (st.directorError ? `director: ${st.directorError}` : `directed ${st.directed || 0}`) : "director off", st.note, st.seg].filter(Boolean).join(" · ");
   }
   setTimeout(status, 250);
 }

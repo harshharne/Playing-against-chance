@@ -2,17 +2,22 @@
   "_how": [
     "The life, from H's 'Life Trajectory v1' (3 Nov 2026). The game reads this file at the start of every life, so edits show up on the next life (no restart).",
     "target: write it the way the player sees it: '3 or more', 'a 6', 'exactly 1'.",
-    "scene: what the world shows (painted from the previous world). place (Where cards) is added to every scene after it. wear (Whom cards) dresses the avatar.",
+    "scene: what the world shows, in plain things a painter can paint (no writing: it comes out as scribble). The game adds the life's context to it: see \"context\". place (Where cards) is added to every scene after it. wear (Whom cards) dresses the avatar. means (Whom cards): what the family had; it shows in the worlds of your youth.",
     "chapter: true = a longer breath after this event. tries: throws allowed (Birth = 3). allot: false = a miss allots nothing (Love).",
     "drawn: this event is drawn instead of painted: \"egg\" (birth.js), \"map\" (worldmap.js), \"house\" (house.js), \"baby\" (baby.js: the baby, then the live kid takes over).",
     "genes (Body cards): what emerges on the baby, one by one. life: true = it stays on the avatar for life (eyes, a birthmark). Skin always comes first and is taken from the player's own camera, never from a card.",
-    "pacing: seconds, all minimums. They're also sliders on /panel (PACING), which save back into this file. world.keep: how much of the last world survives into the next (0-1).",
+    "pacing: seconds, all minimums. They're also sliders on /panel (PACING), which save back into this file. arrive + arrive_year x the years that pass = how long the world takes to change between two events (chapter = the least after a chapter event). turn = how long it takes to become an outcome. morph_frame = one painted picture per this many seconds of a change.",
+    "world: keep / turn_keep / chapter_keep = how much of the picture on screen survives a change (arriving at an event / its outcome / after a chapter): lower = it becomes a more different place. morph_steps = the most pictures one change is painted in. breathe = seconds between the small variations inside an event, breathe_keep = how much of the event's world each keeps. rev: leave it (push.sh uses it to know these settings were re-based).",
+    "context: what the life adds to every written scene. light: [from this age, words] = the light of your age, a life as one day (a scene that already names its light, matched by light_words, keeps its own). means_until: the age until which the family's means show. outcome: words added after a good / bad / neutral Happens. breaths: the small changes the world breathes through inside an event. Empty a list or a string to switch that part off.",
     "phase_refs: optional style reference paintings, one per phase (BASELINE, CRUST, ADULTHOOD, LATER LIFE), e.g. \"refs/crust.jpg\" in web/refs/. Empty = none."
   ],
   "pacing": {
     "fade": 1.2,
-    "arrive": 4.5,
+    "arrive": 4.0,
+    "arrive_year": 0.45,
     "world_fade": 2.5,
+    "turn": 4.5,
+    "morph_frame": 1.2,
     "settle": 3.0,
     "card_rise": 0.25,
     "lock": 1.5,
@@ -30,14 +35,70 @@
     "takeover": 6.0
   },
   "world": {
-    "keep": 0.5,
-    "chapter_keep": 0.25,
+    "rev": 2,
+    "keep": 0.25,
+    "turn_keep": 0.45,
+    "chapter_keep": 0.1,
+    "morph_steps": 8,
     "breathe": 5.0,
-    "breathe_keep": 0.6,
-    "morph_steps": 3,
+    "breathe_keep": 0.55,
     "director": 1,
     "director_lines": 0,
     "director_wait": 2.0
+  },
+  "context": {
+    "light": [
+      [
+        0,
+        "soft early-morning light"
+      ],
+      [
+        6,
+        "clear morning light"
+      ],
+      [
+        14,
+        "bright late-morning light"
+      ],
+      [
+        21,
+        "high midday light"
+      ],
+      [
+        30,
+        "warm afternoon light"
+      ],
+      [
+        42,
+        "late-afternoon light, long shadows"
+      ],
+      [
+        55,
+        "golden evening light"
+      ],
+      [
+        66,
+        "dusk, the first lamps lit"
+      ],
+      [
+        78,
+        "night, lamplight"
+      ]
+    ],
+    "light_words": "dawn|morning|noon|midday|afternoon|evening|dusk|night|sunset|sunrise|light|lamp|glowing",
+    "means_until": 24,
+    "outcome": {
+      "good": "the air clear and bright",
+      "bad": "a grey, heavy sky",
+      "neutral": ""
+    },
+    "breaths": [
+      "the light shifting a little",
+      "a breeze passing through",
+      "a moment later, small things moved",
+      "dust drifting in the light",
+      "a cloud passing over"
+    ]
   },
   "phase_refs": [
     "",
@@ -161,49 +222,56 @@
           "reveals": "Five children, one field, someone else's.",
           "target": "2 or more",
           "scene": "a mud house at the edge of a field, five children, a borrowed plough",
-          "wear": "simple worn cotton clothes"
+          "wear": "simple worn cotton clothes",
+          "means": "poor and bare, worn mended things"
         },
         {
           "name": "A shopkeeper's family",
           "reveals": "You live above the shop and work in it by seven.",
           "target": "3 or more",
           "scene": "a small shop with a home above it, shelves of jars, a counter",
-          "wear": "plain everyday clothes"
+          "wear": "plain everyday clothes",
+          "means": "modest and crowded, well-used things"
         },
         {
           "name": "Salaried, on loans",
           "reveals": "A loan for the flat, the car and the fridge.",
           "target": "3 or more",
           "scene": "a small apartment with a new fridge, a car parked outside, bills on the table",
-          "wear": "neat office clothes"
+          "wear": "neat office clothes",
+          "means": "tidy lower-middle-class, things a little too new"
         },
         {
           "name": "Devout and strict",
           "reveals": "Prayers before breakfast. Questions, never.",
           "target": "4 or more",
           "scene": "a modest home with a shrine, prayer books, morning light",
-          "wear": "modest traditional clothes"
+          "wear": "modest traditional clothes",
+          "means": "plain, strict and orderly"
         },
         {
           "name": "Artists, rent overdue",
           "reveals": "Love, books, and a landlord at the door.",
           "target": "5 or more",
           "scene": "a cluttered flat full of books and paintings, a landlord at the door",
-          "wear": "paint-stained bohemian clothes"
+          "wear": "paint-stained bohemian clothes",
+          "means": "shabby but colourful, books and pictures around"
         },
         {
           "name": "Old money",
           "reveals": "Everything is paid for, including the silence.",
           "target": "a 6",
           "scene": "a grand old mansion, high ceilings, portraits, a silent dining hall",
-          "wear": "expensive tailored clothes"
+          "wear": "expensive tailored clothes",
+          "means": "wealthy and old, polished wood, heavy curtains"
         },
         {
           "name": "A politician's family",
           "reveals": "Your birthday is a public event.",
           "target": "exactly 1",
           "scene": "a large house with posters and garlands, a crowd at the gate, cameras",
-          "wear": "crisp white formal clothes"
+          "wear": "crisp white formal clothes",
+          "means": "showy and privileged, fresh paint, attendants waiting"
         }
       ],
       "bridge": "The house is ready. The body is still being decided.",
@@ -415,7 +483,7 @@
         },
         "neutral": {
           "text": "A year passes. You learn long division and forget it by summer.",
-          "scene": "a blackboard full of long division, summer light through the window"
+          "scene": "a blackboard covered in chalk sums, summer light through the window"
         }
       },
       "bridge": "School, homework, school. Eight more years."
@@ -426,7 +494,7 @@
       "type": "chosen",
       "age": 16,
       "setup": "Choose a stream at sixteen, as if you knew who you'd be at forty.",
-      "scene": "a school noticeboard with lists of names, a crowded corridor",
+      "scene": "a school noticeboard covered in pinned lists, a crowded corridor",
       "cards": [
         {
           "name": "Arts",
@@ -477,7 +545,7 @@
       "outcomes": {
         "good": {
           "text": "The paper leaks. The exam is held again, and the retest is easier.",
-          "scene": "an exam hall notice board: exam cancelled, retest"
+          "scene": "an exam hall emptied out mid-exam, papers left on the desks, a notice pinned to the door"
         },
         "bad": {
           "text": "You fall ill in exam week. You pass, barely, and the marksheet follows you for years.",
@@ -554,7 +622,7 @@
         },
         "neutral": {
           "text": "The stock market crashes. You own no stocks.",
-          "scene": "a stock market screen full of red numbers, people walking past"
+          "scene": "a stock exchange hall, big screens glowing red, people walking past"
         }
       },
       "bridge": "You need work. Work, it turns out, needs a coincidence."
@@ -569,7 +637,7 @@
         {
           "text": "A stranger messages you online after misreading your profile. They like what they misread.",
           "job": "A job at a company you've never heard of.",
-          "scene": "a small office with an unfamiliar logo on the door"
+          "scene": "a small office, an unfamiliar emblem on the glass door"
         },
         {
           "text": "Your old school teacher spots you at a tea stall. Her nephew needs someone.",
@@ -636,7 +704,7 @@
       "type": "chosen",
       "age": 32,
       "setup": "A chance to change the direction of your life. It expires on Friday.",
-      "scene": "an office desk with a ringing phone, a calendar showing Friday",
+      "scene": "an office desk with a ringing phone, a wall calendar",
       "cards": [
         {
           "name": "Change nothing",
@@ -654,19 +722,19 @@
           "name": "A friend's business proposal",
           "reveals": "He has a deck, and an uncle with money.",
           "target": "4 or more",
-          "scene": "a small startup office, a pitch deck on a screen"
+          "scene": "a small startup office, a bright screen, mismatched chairs"
         },
         {
           "name": "The offer abroad",
           "reveals": "A new country, and a name nobody there can say.",
           "target": "5 or more",
-          "scene": "a foreign city street, signs in another language"
+          "scene": "a foreign city street, unfamiliar shopfronts and signs"
         },
         {
           "name": "Quit and start the thing",
           "reveals": "The thing you've described at every party for ten years.",
           "target": "a 6",
-          "scene": "a garage workshop with a hand-painted sign"
+          "scene": "a garage workshop, a hand-painted signboard leaning by the door"
         }
       ],
       "bridge": "You live with the choice for three years."
@@ -684,7 +752,7 @@
         },
         "bad": {
           "text": "Your company is sold. Your role is \"under review\" for three years.",
-          "scene": "an office full of boxes, a sign: under new management"
+          "scene": "an office full of packing boxes, a new sign being hung over the door"
         },
         "neutral": {
           "text": "You get a new chair. You talk about it for a week.",
@@ -758,7 +826,7 @@
         },
         "neutral": {
           "text": "Life settles into a routine so steady you stop noticing the years.",
-          "scene": "a calendar on the wall, a steady clock, the same days"
+          "scene": "a quiet living room, a wall calendar, a steady clock"
         }
       },
       "bridge": "Eight quiet years. Too quiet."
@@ -781,7 +849,7 @@
           "name": "A rare disease",
           "reveals": "Slow, and manageable, with a name nobody can pronounce.",
           "target": "3 or more",
-          "scene": "a doctor's office, a long word on a chart"
+          "scene": "a doctor's office, a chart on the wall, an examination bed"
         },
         {
           "name": "Swapped at birth",
@@ -868,7 +936,7 @@
           "name": "Forward messages to everyone you know",
           "reveals": "Good morning, with a sunflower.",
           "target": "exactly 1",
-          "scene": "a phone screen full of good morning messages with sunflowers"
+          "scene": "an armchair by a window, a phone glowing with pictures of sunflowers"
         }
       ],
       "bridge": "Four years into the rest of it, something comes back."

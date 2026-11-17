@@ -40,7 +40,7 @@ the timings. Edit it and the next life uses it (no restart). The rules are in `w
   Birth gives 3 throws, then the override allots. Love allots nothing: a miss means you didn't meet anyone that day.
 - HAPPENS: random.org picks good, bad or neutral; only the one that happened is shown.
 - FLUKES: the first job (random.org picks which small thing finds you work), and the umbrella (planted at 52, quoted back at 64).
-- The unfolding: no hard cuts. Every world is painted FROM the last one (WORLD KEEPS on the panel) and crossfaded in; the
+- The unfolding: no hard cuts. The world is always on its way from one place to the next (see "The living world"); the
   avatar is a blend of two age descriptions, so it ages continuously as the age counts up; one text window at a time, each fading
   out fully before the next. Cards and throws wait for the player; everything else runs on the PACING timings (minimums).
 - The ending: after Death and a 10 s silence, the life read back as a list (age, event, what came, what was wanted).
@@ -65,7 +65,8 @@ the timings. Edit it and the next life uses it (no restart). The rules are in `w
 - If SDXL fails to load, the server falls back to the SD 1.5 painter by itself (the panel says why).
 - The SD 1.5 LoRAs in loras/ don't work with SDXL (the panel says so if one is picked).
 - One-time setup on the cloud machine: `bash setup_sdxl.sh` (installs DWPose, downloads ~20 GB, runs bench.py).
-- `PAINTER=sdxl python bench.py`: time per avatar frame, world and portrait, without the browser.
+- `PAINTER=sdxl python bench.py`: time per avatar frame, per world picture (fresh, in-between, last) and portrait,
+  without the browser. It also says the lowest ONE PICTURE EVERY the GPU can keep up with.
 
 ## Run
 On the cloud machine (chance-rtx), see CLOUD.md for the full routine:
@@ -138,13 +139,32 @@ A painted portrait, moved live by your face: LivePortrait warps the painting the
 - Setup on the cloud machine: `bash setup_liveportrait.sh` (see CLOUD.md). Speed alone: `python bench_animate.py`.
 - On the Mac with MOCK=1 the portrait just sways (no model); it needs `pip install "uvicorn[standard]"` for the WebSocket.
 
-## The living world
-- Between two events the world MORPHS in steps (panel: MORPH STEPS): each step is painted from the one before with
-  the words moving from the old scene to the new one; the last step is the new scene and becomes the event's world.
-- Inside an event it BREATHES: every few seconds (WORLD BREATHES EVERY) a new variation of the event's own world
-  fades in (EACH BREATH KEEPS = how much survives). Never while the die rolls, never under the egg, map or house.
-- The server prints one line per world: how long it took, what kind it was and how much it CHANGED (0 = the same
-  picture, ~100 = completely different). The panel's WORLD line shows the same, or the error if a world failed;
+## The living world (the transition is the piece)
+- A CHANGE (arriving at an event, or the world turning into what happened) is painted as a run of pictures, streamed
+  as they're made (POST /world: each message is [length][json][jpeg][depth jpeg]). All of them start from the picture
+  on screen and use the same noise; each is repainted a little more than the one before (from 30% up to 1 - KEEPS)
+  while the words move from the old scene to the new. The in-between pictures take 2 steps and the tiny decoder
+  (IN-BETWEEN STEPS); the last one is full quality and becomes the moment's own world.
+- The page queues the pictures and dissolves through them (web/parallax.js): the new one soaks in in soft patches,
+  the far parts first (DISSOLVE), the view pushing in through the run (PUSH IN), all in parallax with your head. A
+  fade that has started always finishes, so nothing jumps; a newer change only drops the pictures not yet shown.
+- PACE: the change between two events takes ARRIVE + ARRIVE: PER YEAR x the years that pass (at least CHAPTER BREATH
+  after a chapter), so a decade takes longer than a year and the life sets the tempo. An outcome turns in over WORLD
+  TURNS. One picture per ONE PICTURE EVERY seconds of a change, at most MOST PICTURES.
+- ONE LIFE, ONE LOOK: the look's words go FIRST in every prompt (the painter reads 77 tokens; the end is what gets cut,
+  and the server warns when a prompt is that long). Each life has one seed: LAYOUT HOLD of every world's noise is the
+  life's own, so places rhyme. PALETTE HOLD leans each world's colours toward the life's running colours.
+- CONTEXT (trajectory.json "context"): the game adds to every written scene where you were born (Where), what the
+  family had (Whom, "means", until 24), the light of your age (a life as one day: dawn at birth, night at the end;
+  a scene that names its own light keeps it), and after a Happens, the air (good: clear; bad: a grey sky). The
+  director gets the same context and writes it in itself.
+- Inside an event it BREATHES: every WORLD BREATHES EVERY seconds a variation of the moment's own world (its noise
+  swung by BREATH DRIFT, its words from the director or context.breaths) soaks in. Never during a change or the words
+  between events, never while the die rolls, never under the egg, map or house.
+- Scenes are written as things a painter can paint: no readable writing (notices, signs saying X): it comes out as
+  scribble. Several were rewritten for that.
+- The server prints one line per picture ([world N] change 3/6 · time · how much repainted · how far the words are).
+  The panel's WORLD line shows the last change (pictures, time each), errors, and a warning if a prompt is too long;
   so does the game's hidden debug line (D).
 - The parallax follows your head as found on the GPU machine (DWPose's nose in pose/both shape modes, or the
   animator's face detection), falling back to the browser's outline. GET /head says where it is.

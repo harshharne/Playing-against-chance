@@ -2,7 +2,10 @@
 Live webcam -> diffusion. Runs on the cloud GPU (chance-rtx, RTX PRO 6000; first built on an L4); also works on a Mac (MPS), slowly.
 
 Two separate generations:
-  WORLD (background)  made once per draw from its own prompt (a few steps, full-quality VAE).
+  WORLD (background)  a place, painted FROM the one before it, so the life unfolds instead of cutting. A change of
+                      place is painted as a short run of pictures (POST /world streams them, each with its depth map):
+                      all from the same starting picture and the same noise, repainted a little more each time while
+                      the words move from the old scene to the new. The browser dissolves through them.
   AVATAR (person)     the browser cuts the person out of the camera and sends the frame here; it is
                       encoded with the tiny VAE, noised by CHANGE, repainted in ONE step and sent back.
 Both use the same painter and the same style LoRAs, so they share one look.
@@ -50,7 +53,7 @@ import urllib.request
 import zlib
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageDraw, ImageFilter, ImageOps, ImageStat
 
@@ -143,6 +146,13 @@ TUNE_DEFAULTS = {
     "ghost_guard": 0.5,       # how quickly that leaning lets go when you move (0 = never: smooth but ghosty, 1 = at once)
     "skip_still": 1.5,        # browser: don't send a new frame unless the camera changed at least this much (0 = always send)
     "parallax": 0.03,         # browser: how far the world shifts with your head (0 = flat)
+    # the world's consistency (one life = one seed, sent by the game)
+    "layout_hold": 0.5,       # how much of its noise every world of one life shares, so compositions rhyme (0 = each its own)
+    "drift": 0.3,             # how far a breath's noise swings from its event's noise (0 = the same picture again, 1 = unrelated)
+    "palette_hold": 0.3,      # how far each world's colours lean toward the life's running colours (0 = off)
+    "between_steps": 2,       # steps for the in-between pictures of a change (tiny decoder below 4; 4 = as good as the last one)
+    "dissolve": 0.5,          # browser: 0 = a plain crossfade between worlds, 1 = the new one soaks in in patches, far parts first
+    "push": 0.02,             # browser: how far the view pushes in through each picture of a change (0 = still)
 }
 TUNE = dict(TUNE_DEFAULTS)
 LOOK_KEYS = {"style", "ref_mode", "world_steps", "lora_a", "lora_a_w", "lora_b", "lora_b_w", "ip_style", "style_prompt", "negative", "guidance"}
@@ -599,7 +609,16 @@ class Generator:
 
     # --- painting ---
     def noise(self, i, shape, seed=None):
+        """seed: a number, or a recipe ((seed, weight), ...) whose weights' squares add up to 1: several noises mixed
+        into one (see world_noise: the life's own, the event's own, a breath's swing)."""
         torch = self.torch
+        if isinstance(seed, (tuple, list)):
+            n = None
+            for sd, w in seed:
+                g = torch.Generator("cpu").manual_seed(int(sd) + i)
+                part = torch.randn(shape, generator=g) * float(w)
+                n = part if n is None else n + part
+            return n.to(self.device, self.dtype)
         if seed is not None:
             g = torch.Generator("cpu").manual_seed(seed + i)
             return torch.randn(shape, generator=g).to(self.device, self.dtype)
@@ -684,32 +703,52 @@ class Generator:
             self.lap("decode")
         return self.to_image(y)
 
-    last_world = None
+    _world_lat = None                                            # (picture, its latents): a change paints many pictures from one start
 
-    def background(self, prompt, seed, keep=0.0, base=None):
-        """keep > 0: paint the new world FROM the last one (that much of it survives), so places change, not jump.
-        base: paint from this picture instead of the last world (the event's own world, for its slow variations)."""
-        init, k = self.refs["background"]["image"], BG_IMAGE_KEEP
-        src = base if base is not None else self.last_world
-        if keep > 0 and src is not None:
-            init, k = src, keep
-        sf = self.full_vae.config.scaling_factor
+    def world_latents(self, img):
+        """A world picture as latents. Kept for the last one asked, so the pictures of one change encode it once."""
+        c = self._world_lat
+        if c is not None and c[0] is img:
+            return c[1]
+        x = self.to_tensor(ImageOps.fit(img.convert("RGB"), (WORLD_W, WORLD_H)))
+        lat = self.full_vae.encode(x).latent_dist.mean * self.full_vae.config.scaling_factor
+        self._world_lat = (img, lat)
+        return lat
+
+    def world_steps(self, fast):
         n = max(1, min(4, int(TUNE["world_steps"])))
+        return min(n, max(1, int(TUNE["between_steps"]))) if fast else n
+
+    def world_paint(self, lat, ts, prompt, seed):
+        return self.denoise(lat, ts, prompt, "background", seed=seed, size=(WORLD_H, WORLD_W))
+
+    def world_frame(self, prompt, seed, init=None, keep=0.0, fast=False):
+        """One world picture. init + keep: painted FROM that picture, that much of it surviving (the unfolding: places
+        change, they don't jump). Without: from pure noise, or from the background IMAGE reference if there is one.
+        fast: an in-between picture of a change: fewer steps and the tiny decoder."""
+        if (init is None or keep <= 0) and self.refs["background"]["image"] is not None:
+            init, keep = self.refs["background"]["image"], BG_IMAGE_KEEP
+        n = self.world_steps(fast)
         with self.torch.no_grad():
-            if init is not None:                                 # start from the last world / the reference picture
-                img = ImageOps.fit(init, (WORLD_W, WORLD_H))
-                lat = self.full_vae.encode(self.to_tensor(img)).latent_dist.mean * sf
-                t0 = int((1 - k) * 1000) - 1
-                ts = [int(t0 * (n - k) / n) for k in range(n)]
-            else:                                                # start from pure noise
-                lat = None
-                ts = [int(999 * (n - k) / n) for k in range(n)]      # 1: [999]  2: [999, 499]  4: [999, 749, 499, 249]
-            x0 = self.denoise(lat, ts, prompt, "background", seed=seed, size=(WORLD_H, WORLD_W))
-            y = self.full_vae.decode(x0 / sf).sample
-            if self.torch.isnan(y).any():                        # fp16 trouble: fall back to the tiny VAE
+            lat = self.world_latents(init) if init is not None and keep > 0 else None
+            t0 = max(n, min(999, int(round((1 - keep) * 1000)) - 1)) if lat is not None else 999
+            ts = [int(t0 * (n - j) / n) for j in range(n)]      # from noise: 1: [999]  2: [999, 499]  4: [999, 749, 499, 249]
+            x0 = self.world_paint(lat, ts, prompt, seed)
+            y = None
+            if not (fast and n < 4):
+                y = self.full_vae.decode(x0 / self.full_vae.config.scaling_factor).sample
+                if self.torch.isnan(y).any():                    # fp16 trouble: fall back to the tiny decoder
+                    y = None
+            if y is None:
                 y = self.tiny_vae.decode(x0).sample
-        self.last_world = self.to_image(y)
-        return self.last_world
+        return self.to_image(y)
+
+    def prompt_tokens(self, prompt):
+        """How many tokens the painter's text reader sees in this prompt (it reads 77; the rest is cut off)."""
+        try:
+            return len(self.pipe.tokenizer(prompt, truncation=False).input_ids)
+        except Exception:
+            return 0
 
     def portrait(self, prompt, seed, init=None, strength=0.4):
         """The baby: painted once (init None), then repainted lightly from the last one as each trait emerges."""
@@ -726,11 +765,11 @@ class Generator:
             y = self.full_vae.decode(x0 / sf).sample
         return self.to_image(y)
 
-    def world_depth(self, img):
-        """A depth map of a world picture (near = white), for the browser's parallax. Grey PNG, half size."""
+    def depth_array(self, img):
+        """A depth map of a world picture (near = 255), as an array the size of the picture: for the browser's parallax."""
         with self.torch.no_grad():
             d = self.depth_map(self.to_tensor(img), size=(img.height, img.width), smooth=False)
-        return depth_png((d[0, 0].float().clamp(0, 1) * 255).round().byte().cpu().numpy(), img.size)
+        return (d[0, 0].float().clamp(0, 1) * 255).round().byte().cpu().numpy()
 
     def gpu_mb(self):
         if self.device != "cuda":
@@ -810,7 +849,7 @@ class SDXLGenerator(Generator):
         self.cn, self.depth_model, self.depth_range = {}, None, None
         self.shape_img, self.shape_ms, self.prev_shape = None, None, None
         self.prev_in, self.motion, self.lean, self.timing, self.t_lap = None, None, None, {}, 0.0
-        self.cur_img, self.last_world = None, None
+        self.cur_img = None
         self.ip_zero = self.encode_images([Image.new("RGB", (224, 224), (128, 128, 128))]) * 0
         for kind in ("depth", "pose"):                              # loaded now, so the first frames don't stall
             self.controlnet(kind)
@@ -910,13 +949,18 @@ class SDXLGenerator(Generator):
             y = self.full_vae.decode(x0 / sf).sample
         return self.to_image(y)
 
-    def background(self, prompt, seed, keep=0.0, base=None):
-        init, k = self.refs["background"]["image"], BG_IMAGE_KEEP
-        src = base if base is not None else self.last_world
-        if keep > 0 and src is not None:
-            init, k = src, keep
-        self.last_world = self.paint_big(prompt, seed, init, k, (WORLD_H, WORLD_W), "background")
-        return self.last_world
+    def world_steps(self, fast):
+        return max(1, min(SDXL_WORLD_STEPS, int(TUNE["between_steps"]))) if fast else SDXL_WORLD_STEPS
+
+    def world_paint(self, lat, ts, prompt, seed):                   # DreamShaper XL Lightning, CFG 2
+        return self.denoise(lat, ts, prompt, "background", seed=seed, size=(WORLD_H, WORLD_W), unet=self.world_unet,
+                            guidance=SDXL_WORLD_CFG, which="world")
+
+    def prompt_tokens(self, prompt):
+        try:
+            return len(self.world_pipe.tokenizer(prompt, truncation=False).input_ids)
+        except Exception:
+            return 0
 
     def portrait(self, prompt, seed, init=None, strength=0.4):
         return self.paint_big(prompt, seed, init, 1 - strength, (PORTRAIT, PORTRAIT), "person")
@@ -972,29 +1016,29 @@ class MockGenerator:
         g = ImageOps.colorize(ImageOps.grayscale(ImageOps.posterize(img, 3)), black=(20, 10, 40), white=c)
         return Image.blend(img, g, min(1.0, float(TUNE["change"])))
 
-    last_world = None
-
-    def background(self, prompt, seed, keep=0.0, base=None):
-        time.sleep(0.3)
-        if isinstance(prompt, tuple):                            # (from, to, mix): mock just picks the nearer one
-            prompt = prompt[1] if prompt[2] >= 0.5 else prompt[0]
-        init = self.refs["background"]["image"]
-        if init is not None:
-            img = ImageOps.fit(init.convert("RGB"), (WORLD_W, WORLD_H)).filter(ImageFilter.GaussianBlur(3))
-        else:
-            rnd, c = random.Random(seed), self.ref_colour("background", self.tint(prompt))
-            img = Image.new("RGB", (WORLD_W, WORLD_H), c)
-            d = ImageDraw.Draw(img)
-            for _ in range(30):
-                x, y, r = rnd.randrange(WORLD_W), rnd.randrange(WORLD_H), rnd.randrange(10, 80)
-                d.ellipse((x - r, y - r, x + r, y + r), fill=tuple(min(255, max(0, v + rnd.randrange(-60, 60))) for v in c))
-            img = img.filter(ImageFilter.GaussianBlur(6))
-        src = base if base is not None else self.last_world
-        if keep > 0 and src is not None:  # grows out of the last world (or the event's own)
-            img = Image.blend(img, src, keep)
-        self.last_world = img.copy()
-        ImageDraw.Draw(img).text((12, WORLD_H - 24), "MOCK WORLD · " + prompt[:70], fill=(255, 255, 255))
+    def world_frame(self, prompt, seed, init=None, keep=0.0, fast=False):
+        """A stand-in world: soft blobs in the prompt's colour, laid out by the noise recipe (so the same seed gives the
+        same layout, like the real painter), blended with the picture it is painted from."""
+        time.sleep(0.12 if fast else 0.3)
+        ref = self.refs["background"]["image"]
+        if ref is not None and (init is None or keep <= 0):
+            return ImageOps.fit(ref.convert("RGB"), (WORLD_W, WORLD_H)).filter(ImageFilter.GaussianBlur(3))
+        c = self.ref_colour("background", self.tint(prompt))
+        recipe = seed if isinstance(seed, (tuple, list)) else ((seed or 0, 1.0),)
+        img = Image.new("RGB", (WORLD_W, WORLD_H), tuple(int(v * 0.7 + 60) for v in c))
+        d = ImageDraw.Draw(img)
+        for sd, w in recipe:                                     # each noise in the recipe places its share of the blobs
+            rnd = random.Random(int(sd))
+            for _ in range(max(1, round(26 * float(w) ** 2))):
+                x, y, r = rnd.randrange(WORLD_W), rnd.randrange(WORLD_H), rnd.randrange(30, 150)
+                d.ellipse((x - r, y - r, x + r, y + r), fill=tuple(min(255, max(0, v + rnd.randrange(-70, 70))) for v in c))
+        img = img.filter(ImageFilter.GaussianBlur(5))
+        if init is not None and keep > 0:                        # grows out of the picture it is painted from
+            img = Image.blend(img, ImageOps.fit(init.convert("RGB"), (WORLD_W, WORLD_H)), keep)
         return img
+
+    def prompt_tokens(self, prompt):
+        return round(len(prompt.split()) * 1.35) + 2
 
     def portrait(self, prompt, seed, init=None, strength=0.4):
         """A drawn stand-in baby: a face with eyes, tinted by the prompt, so the page's animation has something to work on."""
@@ -1012,13 +1056,13 @@ class MockGenerator:
             img = Image.blend(ImageOps.fit(init, (n, n)), img, max(0.2, strength))
         return img
 
-    def world_depth(self, img):
+    def depth_array(self, img):
         """Mock depth: lower = nearer, plus a little of the picture's brightness."""
         import numpy as np
         h, w = img.height, img.width
         grad = np.linspace(40, 230, h)[:, None].repeat(w, 1)
         lum = np.asarray(ImageOps.grayscale(img), dtype="float32")
-        return depth_png(np.clip(grad * 0.8 + lum * 0.2, 0, 255).astype("uint8"), img.size)
+        return np.clip(grad * 0.8 + lum * 0.2, 0, 255).astype("uint8")
 
 
 gen = None
@@ -1026,6 +1070,10 @@ painter_note = ""
 lock = asyncio.Lock()                              # the live avatar (and anything that changes what it uses)
 world_lock = asyncio.Lock()                        # worlds and portraits: their own painter, so they don't stall the avatar
 lora_lock = threading.Lock()                       # LoRAs go on both painters: changed by one thread at a time
+# The locks above queue the requests. These two guard the painting itself, in its own thread: if a page drops a request
+# half way, its place in the queue is given up while the GPU is still busy, and the next one must not start on top of it.
+person_paint = threading.Lock()
+world_paint = threading.Lock()                     # (the SD 1.5 painter has one UNet for both: there it is person_paint)
 
 
 @contextlib.asynccontextmanager
@@ -1040,7 +1088,6 @@ async def both_locks():
 frame_log = collections.deque(maxlen=60)          # (time, ms, {part: ms}) of recent avatar frames, for the readout
 rtt_log = collections.deque(maxlen=30)            # the browser's measured round trip per frame (ms)
 wait_log = collections.deque(maxlen=30)           # how long each frame queued behind the previous one on the server (ms)
-world_ms = None
 
 
 def depth_png(arr, size):
@@ -1050,19 +1097,21 @@ def depth_png(arr, size):
     return buf.getvalue()
 
 
-def jpeg_bytes(img):
+def jpeg_bytes(img, quality=88):
     buf = io.BytesIO()
-    img.save(buf, "JPEG", quality=88)
+    img.save(buf, "JPEG", quality=quality)
     return buf.getvalue()
 
 
 def full_prompt(prompt):
-    """The stage / lab prompt + the look's words + the trigger words of the LoRAs that are on + the style prompt."""
-    parts = [prompt, current_style().get("prompt", "")]
+    """The look FIRST (its words, the trigger words of the LoRAs that are on, the style prompt), then the scene.
+    The painter reads 77 tokens and drops the rest: with the look in front it is never the part that gets cut, and it
+    sits in the same place in every prompt, which keeps the look steady from one picture to the next."""
+    parts = [current_style().get("prompt", "")]
     for f, w in ((TUNE["lora_a"], TUNE["lora_a_w"]), (TUNE["lora_b"], TUNE["lora_b_w"])):
         if f and w > 0:
             parts.append(trigger_words(f))
-    parts.append(TUNE["style_prompt"])
+    parts += [TUNE["style_prompt"], prompt]
     return ", ".join(p.strip() for p in parts if p and p.strip())
 
 
@@ -1075,7 +1124,8 @@ def run_person(jpeg, prompt, pose=None, to="", mix=0.0, age=None, ramp=1.0):
         img = ImageOps.fit(img, (WIDTH, HEIGHT))
     t1 = time.perf_counter()
     p = (full_prompt(prompt), full_prompt(to), mix) if to and mix > 0.001 else full_prompt(prompt)
-    out = gen.person(img, p, pose, age, ramp)
+    with person_paint:
+        out = gen.person(img, p, pose, age, ramp)
     t2 = time.perf_counter()
     data = jpeg_bytes(out)
     t3 = time.perf_counter()
@@ -1086,8 +1136,24 @@ def run_person(jpeg, prompt, pose=None, to="", mix=0.0, age=None, ramp=1.0):
     return data, ms
 
 
-world_seq, world_last = 0, {"id": 0, "img": None, "depth": None, "anchor": None}
-world_change, world_error = None, ""
+# ---------- the worlds: one life, unfolding ----------
+# Every world is painted FROM a picture that came before it, so the life changes place without cutting.
+#   a CHANGE   (arriving at an event, or its outcome) is painted as a run of pictures: all from the SAME starting
+#              picture (what is on screen) and the SAME noise, each repainted a little more than the one before
+#              while the words move from the old scene to the new. The last is the new scene itself and becomes the
+#              event's own world (its anchor). The pages dissolve through the run.
+#   a BREATH   (inside an event) is one picture: a variation of the event's own world, its noise swung a little.
+# What keeps one life looking like one life: the look's words in front of every prompt, the style LoRAs, one seed per
+# life (LAYOUT HOLD: every world shares part of its noise), and PALETTE HOLD (colours lean toward the life's own).
+MORPH_START = 0.3             # how much the first picture of a change is repainted; the run climbs from here
+WORLD_MEMORY = 16             # the last pictures kept, so a change can start from exactly the one on screen
+world_seq, world_last = 0, {"id": 0, "img": None, "anchor": None}
+world_frames = collections.OrderedDict()           # id -> {"img", "depth"}
+world_change, world_error, world_tokens = None, "", 0
+world_job, world_morphs = 0, 0                     # the newest change asked for; how many changes are being painted now
+world_run = {"kind": "", "n": 0, "ms": [], "total_ms": None}      # the last run, for the readout
+palette = {"mean": None, "std": None}              # the life's running colours (luma + two colour axes)
+YCC = ((0.299, 0.587, 0.114), (-0.168736, -0.331264, 0.5), (0.5, -0.418688, -0.081312))
 
 
 def picture_change(a, b):
@@ -1100,42 +1166,141 @@ def picture_change(a, b):
     return round(sum(d) / len(d) / 2.55, 1)
 
 
-def run_background(prompt, seed, keep=0.0, to="", mix=0.0, from_anchor=False, anchor=False):
-    """One world. to + mix: a blend of two scenes' words (the morph between events). from_anchor: a variation
-    of this event's own world (its slow breathing). anchor: this world is the event's own world from now on."""
-    global world_ms, world_seq, world_change, world_error
+def world_noise(seed, event=0, breath=0):
+    """The noise recipe a world is painted from: ((seed, weight), ...), the squares of the weights adding up to 1.
+    Every world of a life shares the life's noise (LAYOUT HOLD of it) and adds its event's own. A breath swings away
+    from its event's noise by DRIFT, in a direction that turns a little with every breath: variations that stay
+    relatives of the event's world and of each other."""
+    import math
+    hold = max(0.0, min(1.0, float(TUNE["layout_hold"])))
+    a, b = math.sqrt(hold), math.sqrt(1 - hold)
+    life, ev = int(seed), int(seed) + 7919 * (int(event) + 1)
+    rec = [(life, a), (ev, b)]
+    if breath:
+        th, ph = max(0.0, min(1.0, float(TUNE["drift"]))) * math.pi / 2, int(breath) * 1.1
+        rec = [(life, a * math.cos(th)), (ev, b * math.cos(th)),
+               (ev + 101, math.sin(th) * math.cos(ph)), (ev + 202, math.sin(th) * math.sin(ph))]
+    return tuple((sd % (1 << 30), round(w, 6)) for sd, w in rec if abs(w) > 1e-6)
+
+
+def morph_plan(n, keep):
+    """(how much is repainted, how far the words have moved) for each of the n pictures of a change. The last one is
+    the change itself: 1 - keep repainted, the new scene's words alone. The ones before climb to it."""
+    top = max(0.05, min(1.0, 1 - keep))
+    if n <= 1:
+        return [(top, 1.0)]
+    lo = min(MORPH_START, top * 0.5)
+    return [(lo + (top - lo) * i / (n - 1), (i + 1) / n) for i in range(n)]
+
+
+def hold_palette(img, learn):
+    """PALETTE HOLD: lean this picture's brightness and colour toward the life's running colours, so one world doesn't
+    jump to the next in colour. learn: this picture is an event's own world: the running colours move toward it."""
+    import numpy as np
+    h = max(0.0, min(0.9, float(TUNE["palette_hold"])))
+    if h <= 0 and not learn:
+        return img
+    m = np.array(YCC, dtype=np.float32)
+    x = np.asarray(img.convert("RGB"), dtype=np.float32) @ m.T
+    flat = x[::4, ::4].reshape(-1, 3)
+    mean, std = flat.mean(0), flat.std(0) + 1.0
+    out = img
+    if h > 0 and palette["mean"] is not None:
+        gain = np.clip((palette["std"] / std) ** h, 0.6, 1.6)
+        y = (x - mean) * gain + mean + (palette["mean"] - mean) * h
+        out = Image.fromarray(np.clip(y @ np.linalg.inv(m).T + 0.5, 0, 255).astype(np.uint8))
+    if learn:                                                    # from the picture as painted, before the lean
+        if palette["mean"] is None:
+            palette.update(mean=mean, std=std)
+        else:
+            palette.update(mean=palette["mean"] * 0.6 + mean * 0.4, std=palette["std"] * 0.6 + std * 0.4)
+    return out
+
+
+def depth_jpeg(arr):
+    """The depth map for the page: small and smooth is all the parallax needs."""
+    g = Image.fromarray(arr, "L").resize((max(2, WORLD_W // 3), max(2, WORLD_H // 3)), Image.BILINEAR)
+    return jpeg_bytes(g, 85)
+
+
+def new_life_worlds():
+    """A new life: no picture to paint from, no colours to lean toward."""
+    world_last.update(img=None, anchor=None)
+    world_frames.clear()
+    palette.update(mean=None, std=None)
+
+
+def world_job_for(prompt, frm="", keep=0.0, frames=1, base=None, seed=0, event=0, breath=0, anchor=True, kind="change", plan=None):
+    if base is None or keep <= 0:                                # nothing to paint from: one picture, from noise
+        base, keep, frames = None, 0.0, 1
+    return {"prompt": prompt, "from": frm, "keep": keep, "n": frames, "base": base, "anchor": anchor, "kind": kind,
+            "noise": world_noise(seed or random.randrange(1, 1 << 30), event, breath), "plan": plan or morph_plan(frames, keep),
+            "t0": time.perf_counter(), "ms": []}
+
+
+def paint_world(job, i):
+    """Picture i (from 0) of a job -> (info, the picture, its depth). Runs in its own thread."""
+    global world_seq, world_change, world_error, world_tokens
     t0 = time.perf_counter()
-    with lora_lock:
-        gen.apply_loras(TUNE)
-    p = (full_prompt(prompt), full_prompt(to), mix) if to and mix > 0.001 else full_prompt(prompt)
-    base = world_last["anchor"] if from_anchor else None
-    before = world_last["img"]
-    try:
-        out = gen.background(p, seed, keep, base=base)
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        world_error = f"{type(e).__name__}: {str(e)[:160]}"
-        raise
-    world_error = ""
-    world_ms = (time.perf_counter() - t0) * 1000
-    world_seq += 1
-    world_change = picture_change(before, out)
-    world_last.update(id=world_seq, img=out, depth=None)          # its depth is made when the page asks (GET /world_depth)
-    if anchor or world_last["anchor"] is None:
-        world_last["anchor"] = out
-    how = "breathing" if from_anchor else (f"morph {mix:.2f}" if to and mix > 0.001 else ("new" if keep <= 0 else "grown"))
-    print(f"[world {world_seq}] {world_ms / 1000:.2f} s · {how} · keep {keep:.2f} · change {world_change} · {prompt[:70]!r}"
-          + (f" -> {to[:40]!r}" if to and mix > 0.001 else ""), flush=True)
-    return jpeg_bytes(out), world_ms
+    with world_paint:
+        with lora_lock:
+            gen.apply_loras(TUNE)
+        repaint, mix = job["plan"][i]
+        final = i == job["n"] - 1
+        a, b = job["from"], job["prompt"]
+        p = full_prompt(b) if mix >= 0.999 or not a or a == b else (full_prompt(a), full_prompt(b), mix)
+        base = job["base"]
+        before = world_last["img"]
+        try:
+            img = gen.world_frame(p, job["noise"], base, 1 - repaint if base is not None else 0.0, fast=not final)
+            img = hold_palette(img, final and job["anchor"])
+            depth = gen.depth_array(img)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            world_error = f"{type(e).__name__}: {str(e)[:160]}"
+            raise
+        world_error = ""
+        tokens = gen.prompt_tokens(full_prompt(b))
+        if tokens > 77 and tokens != world_tokens:
+            print(f"[world] the prompt is {tokens} tokens: the painter reads 77, so its end is cut off: ...{full_prompt(b)[-60:]!r}", flush=True)
+        world_tokens = tokens
+        world_seq += 1
+        wid = world_seq
+        world_change = picture_change(before, img)
+        world_last.update(id=wid, img=img)
+        if final and (job["anchor"] or world_last["anchor"] is None):
+            world_last["anchor"] = img
+        world_frames[wid] = {"img": img, "depth": depth}
+        while len(world_frames) > WORLD_MEMORY:
+            world_frames.popitem(last=False)
+    ms = (time.perf_counter() - t0) * 1000
+    job["ms"].append(ms)
+    world_run.update(kind=job["kind"], n=job["n"], ms=[round(v) for v in job["ms"]],
+                     total_ms=round((time.perf_counter() - job["t0"]) * 1000) if final else None)
+    print(f"[world {wid}] {job['kind']} {i + 1}/{job['n']} · {ms / 1000:.2f} s · repainted {repaint:.2f}"
+          + (f" · words {mix:.2f}" if mix < 0.999 else "") + f" · change {world_change} · {b[:70]!r}", flush=True)
+    if MOCK:                                                     # the mock says what it is (on the copy that's shown, not the one painted from)
+        img = img.copy()
+        ImageDraw.Draw(img).text((12, WORLD_H - 24), f"MOCK WORLD {wid} · {job['kind']} {i + 1}/{job['n']} · {b[:80]}", fill=(255, 255, 255))
+    info = {"i": i + 1, "n": job["n"], "id": wid, "final": final, "ms": round(ms), "change": world_change, "tokens": tokens}
+    return info, img, depth
+
+
+def run_background(prompt, seed, keep=0.0, to="", mix=0.0, from_anchor=False, anchor=False):
+    """One world, the simple way (GET /background: the lab page, a redraw). to + mix: the words blended toward another
+    scene. from_anchor: a variation of the event's own world. anchor: this world is the event's own from now on."""
+    base = world_last["anchor"] if from_anchor else world_last["img"]
+    blend = bool(to) and mix > 0.001
+    job = world_job_for(to if blend else prompt, prompt if blend else "", keep, 1, base, seed, anchor=anchor,
+                        kind="breath" if from_anchor else "single", plan=[(max(0.05, 1 - keep), mix if blend else 1.0)])
+    info, img, _ = paint_world(job, 0)
+    return jpeg_bytes(img), info
 
 
 def run_world_depth(wid):
-    if wid != world_last["id"] or world_last["img"] is None:
-        return None
-    if world_last["depth"] is None:
-        world_last["depth"] = gen.world_depth(world_last["img"])
-    return world_last["depth"]
+    f = world_frames.get(wid)
+    return depth_png(f["depth"], f["img"].size) if f else None
 
 
 portrait_last = {"img": None}
@@ -1143,7 +1308,8 @@ portrait_last = {"img": None}
 
 def run_portrait(prompt, seed, base, strength):
     init = portrait_last["img"] if base else None
-    out = gen.portrait(full_prompt(prompt), seed, init, strength)
+    with world_paint:
+        out = gen.portrait(full_prompt(prompt), seed, init, strength)
     portrait_last["img"] = out
     return jpeg_bytes(out)
 
@@ -1170,13 +1336,15 @@ async def load():
             gen = await asyncio.to_thread(Generator)
     else:
         gen = await asyncio.to_thread(Generator)
-    global world_lock
+    global world_lock, world_paint
     if not isinstance(gen, (SDXLGenerator, MockGenerator)):         # the SD 1.5 painter paints worlds with the avatar's own UNet
-        world_lock = lock
+        world_lock, world_paint = lock, person_paint
     if not MOCK:
         await asyncio.to_thread(dwpose)
     if not MOCK:   # warm up so the first real frames aren't slow
-        await asyncio.to_thread(run_background, "warm up", 0)
+        await asyncio.to_thread(run_background, "warm up", 1)       # a full picture ...
+        await asyncio.to_thread(paint_world, world_job_for("warm up", "", 0.5, 2, world_last["img"], 1), 0)   # ... and an in-between
+        new_life_worlds()
         await asyncio.to_thread(run_person, jpeg_bytes(Image.new("RGB", (WIDTH, HEIGHT), (128, 128, 128))), "warm up")
         frame_log.clear()
     if ANIMATE:
@@ -1230,6 +1398,7 @@ async def config():
             "references": True, "look": look_version, "tune": tune_version, "shape": TUNE["shape"],
             "filter": current_style().get("filter", ""), "skip_still": TUNE["skip_still"], "pace": pace_version,
             "out_scale": 2, "world_w": WORLD_W, "world_h": WORLD_H, "parallax": TUNE["parallax"],
+            "dissolve": TUNE["dissolve"], "push": TUNE["push"],
             "server_pose": bool(_wb["model"]) or MOCK}
 
 
@@ -1239,7 +1408,9 @@ def clean_tune(d):
     out = {}
     rng = {"change": (0.1, 1.0), "world_steps": (1, 4), "lora_a_w": (0, 2), "lora_b_w": (0, 2),
            "ip_style": (0, 1.5), "guidance": (1, 4), "steady": (0, 0.9), "cn_strength": (0, 1.5),
-           "ghost_guard": (0, 1), "skip_still": (0, 10), "child_until": (0, 20), "child_cn": (0, 1), "parallax": (0, 0.1)}
+           "ghost_guard": (0, 1), "skip_still": (0, 10), "child_until": (0, 20), "child_cn": (0, 1), "parallax": (0, 0.1),
+           "layout_hold": (0, 1), "drift": (0, 1), "palette_hold": (0, 0.9), "between_steps": (1, 4), "dissolve": (0, 1),
+           "push": (0, 0.05)}
     for k, v in d.items():
         if k not in TUNE_DEFAULTS:
             continue
@@ -1248,7 +1419,7 @@ def clean_tune(d):
                 v = max(rng[k][0], min(rng[k][1], float(v)))
             except (TypeError, ValueError):
                 continue
-            if k == "world_steps":
+            if k in ("world_steps", "between_steps"):
                 v = int(round(v))
         else:
             v = str(v)[:400]
@@ -1291,7 +1462,8 @@ def settings_view():
             "detection": ("DWPose on " + _wb["where"]) if _wb["model"] else ("browser MediaPipe" + (f" (DWPose: {_wb['error']})" if _wb["error"] else "")),
             "fps": round(fps, 1),
             "ms": round(sum(ms for _, ms in recent) / len(recent)) if recent else None,
-            "world_ms": round(world_ms) if world_ms else None,
+            "world_ms": world_run["ms"][-1] if world_run["ms"] else None,
+            "world_run": world_run, "world_tokens": world_tokens,
             "world_change": world_change, "world_error": world_error, "world_count": world_seq,
             "director": dict(director.stats, ready=director.ready),
             "gpu_mb": mem[0] if mem else None, "gpu_total_mb": mem[1] if mem else None,
@@ -1421,34 +1593,108 @@ async def frame(request: Request, prompt: str = "", to: str = "", mix: float = 0
     return Response(out, media_type="image/jpeg", headers=hd)
 
 
+def world_pack(info, jpeg=b"", depth=b""):
+    """One message of the world stream: [4-byte length][json][the picture, jpeg][its depth, jpeg]."""
+    j = json.dumps(dict(info, jpeg=len(jpeg), depth=len(depth))).encode()
+    return struct.pack(">I", len(j)) + j + jpeg + depth
+
+
+def world_message(job, i):
+    info, img, depth = paint_world(job, i)
+    return world_pack(info, jpeg_bytes(img, 90 if info["final"] else 82), depth_jpeg(depth))
+
+
+@app.post("/world")
+async def world(request: Request):
+    """The game's worlds, streamed. Body (JSON):
+        prompt   the scene to arrive at             from     the scene on screen now (its words blend into the new ones)
+        keep     how much of the starting picture survives in the last one (0-0.95)
+        frames   how many pictures the change is painted in (1 = one picture)
+        base     "last": paint from what is on screen (from_id = that picture's id) · "anchor": from this event's own
+                 world (a breath) · "none": from noise
+        seed     the life's seed · event: which event · breath: which breath (0 = not a breath)
+        anchor   the last picture becomes this event's own world · fresh: a new life (forget the old pictures and colours)
+        polite   a breath: gives way while a change is being painted, and never stops one
+    Answer: a stream, one message per picture as it is painted (see world_pack); {"error": ...} if one fails,
+    {"skipped": true} for a breath that gave way. A newer change stops an older one after the picture in hand."""
+    global world_job, world_morphs
+    try:
+        b = await request.json()
+        prompt = str(b.get("prompt") or "").strip() or "an empty landscape"
+        frm = str(b.get("from") or "").strip()
+        keep = max(0.0, min(0.95, float(b.get("keep") or 0)))
+        frames = max(1, min(12, int(b.get("frames") or 1)))
+        seed, event, breath = int(b.get("seed") or 0), int(b.get("event") or 0), int(b.get("breath") or 0)
+        from_id, base_kind = int(b.get("from_id") or 0), str(b.get("base") or "last")
+        polite, anchor, fresh = bool(b.get("polite")), bool(b.get("anchor", True)), bool(b.get("fresh"))
+    except (ValueError, TypeError, AttributeError):
+        return JSONResponse({"error": "bad request"}, status_code=400)
+    hd = {"Cache-Control": "no-store", "X-Accel-Buffering": "no"}
+    if polite and world_morphs > 0:
+        return Response(world_pack({"skipped": True}), media_type="application/octet-stream", headers=hd)
+    if not polite:
+        world_job += 1                                          # from here on, an older change stops
+    mine = world_job
+
+    async def run():
+        global world_morphs
+        if not polite:
+            world_morphs += 1
+        try:
+            job = None
+            i = 0
+            while True:
+                async with world_lock:
+                    if world_job != mine:
+                        break
+                    if job is None:                              # made here, in turn: the picture it starts from is settled now
+                        if fresh:
+                            new_life_worlds()
+                        f = world_frames.get(from_id)
+                        base = None if base_kind == "none" else world_last["anchor"] if base_kind == "anchor" else \
+                            (f["img"] if f else world_last["img"])
+                        job = world_job_for(prompt, frm, keep, frames, base, seed, event, breath, anchor and not polite,
+                                            "breath" if polite else "change")
+                    try:
+                        msg = await asyncio.to_thread(world_message, job, i)
+                    except Exception:
+                        yield world_pack({"error": world_error or "the world failed"})
+                        break
+                yield msg
+                i += 1
+                if i >= job["n"]:
+                    break
+        finally:
+            if not polite:
+                world_morphs -= 1
+
+    return StreamingResponse(run(), media_type="application/octet-stream", headers=hd)
+
+
 @app.get("/background")
 async def background(prompt: str = "", keep: float = 0.0, fresh: int = 0, to: str = "", mix: float = 0.0,
-                     base: str = "last", anchor: int = 0):
-    """A world for the prompt (a new random seed every time). keep > 0: painted from the last world, so it grows
-    out of it (the game's unfolding). fresh=1: forget the last world first (a new life).
-    to + mix (0..1): the words blended toward the next scene (the steps of a morph between events).
-    base=anchor: a variation of this event's own world (the world breathing). anchor=1: this world becomes the
-    event's own world."""
+                     base: str = "last", anchor: int = 0, seed: int = 0):
+    """One world for the prompt, the simple way (the lab page; the game uses POST /world). A new random seed every
+    time unless one is given. keep > 0: painted from the last world. fresh=1: forget the last world first.
+    to + mix (0..1): the words blended toward another scene. base=anchor: a variation of the event's own world.
+    anchor=1: this world becomes the event's own world. Its depth: GET /world_depth?id=<X-World>."""
     prompt = prompt.strip() or "an empty landscape"
     async with world_lock:
         if fresh:
-            gen.last_world = None
-            world_last.update(img=None, anchor=None)
+            new_life_worlds()
         try:
-            out, ms = await asyncio.to_thread(run_background, prompt, random.randrange(1 << 30), max(0.0, min(0.95, keep)),
-                                              to.strip(), max(0.0, min(1.0, mix)), base == "anchor", bool(anchor))
+            out, info = await asyncio.to_thread(run_background, prompt, seed or random.randrange(1, 1 << 30), max(0.0, min(0.95, keep)),
+                                                to.strip(), max(0.0, min(1.0, mix)), base == "anchor", bool(anchor))
         except Exception:
             return Response(status_code=500, headers={"X-Error": world_error[:200], "Cache-Control": "no-store"})
-        wid = world_seq
-    return Response(out, media_type="image/jpeg", headers={"X-Gen-Ms": str(round(ms)), "X-Look": str(look_version), "X-World": str(wid),
-                                                           "X-Change": str(world_change), "Cache-Control": "no-store"})
+    return Response(out, media_type="image/jpeg", headers={"X-Gen-Ms": str(info["ms"]), "X-Look": str(look_version), "X-World": str(info["id"]),
+                                                           "X-Change": str(info["change"]), "Cache-Control": "no-store"})
 
 
 @app.get("/world_depth")
 async def world_depth(id: int = 0):
-    """The depth of the last world (grey PNG, near = white), for the page's parallax."""
-    async with world_lock:
-        data = await asyncio.to_thread(run_world_depth, id)
+    """The depth of a recent world (grey PNG, near = white), for the page's parallax."""
+    data = await asyncio.to_thread(run_world_depth, id)
     if not data:
         return Response(status_code=204)
     return Response(data, media_type="image/png", headers={"Cache-Control": "no-store"})
@@ -1504,7 +1750,8 @@ def portrait_crop(img):
 
 def run_portrait_from(img, prompt, seed, strength):
     crop, found = portrait_crop(img)
-    out = gen.portrait(full_prompt(prompt), seed, crop, strength)
+    with world_paint:
+        out = gen.portrait(full_prompt(prompt), seed, crop, strength)
     return jpeg_bytes(out), found
 
 
@@ -1571,9 +1818,9 @@ async def save_pacing(request: Request):
                 doc["pacing"][k] = round(max(0.0, min(60.0, float(v))), 2)
             except (TypeError, ValueError):
                 pass
-    ranges = {"breathe": (0.0, 30.0), "morph_steps": (1, 6), "director": (0, 1), "director_lines": (0, 1), "director_wait": (0.0, 8.0)}
+    ranges = {"breathe": (0.0, 30.0), "morph_steps": (1, 12), "director": (0, 1), "director_lines": (0, 1), "director_wait": (0.0, 8.0)}
     for k, v in (body.get("world") or {}).items():
-        if k in doc.get("world", {}):
+        if k in doc.get("world", {}) and k != "rev":
             lo, hi = ranges.get(k, (0.0, 0.95))
             try:
                 v = max(lo, min(hi, float(v)))

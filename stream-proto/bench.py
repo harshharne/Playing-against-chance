@@ -41,10 +41,17 @@ for shape in ("off", "depth", "pose", "both"):
     frames(f"avatar, shape={shape}")
 ss.TUNE["shape"] = "depth"
 frames("avatar, age 4 (child pose)", age=4.0, ramp=1.0)
-t = time.perf_counter(); ss.run_background("a village by a river at dawn", random.randrange(1 << 30)); w1 = time.perf_counter() - t
-t = time.perf_counter(); ss.run_background("the same village at noon", random.randrange(1 << 30), 0.5); w2 = time.perf_counter() - t
-t = time.perf_counter(); ss.run_world_depth(ss.world_last["id"]); d = time.perf_counter() - t
-print(f"  world, fresh {w1:.2f} s · grown from the last {w2:.2f} s · its depth map {d:.2f} s")
+for _ in range(2):                                                  # warm up (each picture includes its depth map)
+    ss.paint_world(ss.world_job_for("a village by a river at dawn", seed=7), 0)
+t = time.perf_counter(); ss.paint_world(ss.world_job_for("a village by a river at dawn", seed=7), 0); w1 = time.perf_counter() - t
+job = ss.world_job_for("a school classroom", "a village by a river at dawn", 0.25, 6, ss.world_last["img"], 7, event=1)
+ts = []
+for i in range(job["n"]):
+    t = time.perf_counter(); ss.paint_world(job, i); ts.append(time.perf_counter() - t)
+mid = statistics.median(ts[:-1])
+print(f"  world, fresh {w1:.2f} s · a change in {job['n']} pictures: in-between {mid:.2f} s each, the last {ts[-1]:.2f} s "
+      f"(whole change {sum(ts):.1f} s)")
+print(f"     -> MORPH: ONE PICTURE EVERY should be at least {mid * 1.15:.1f} s on the panel, or the change waits for the painter")
 t = time.perf_counter(); ss.run_portrait("a newborn baby girl in a cot", 1, 0, 0.4); p1 = time.perf_counter() - t
 t = time.perf_counter(); ss.run_portrait("a newborn baby girl in a cot, green eyes", 1, 1, 0.38); p2 = time.perf_counter() - t
 print(f"  baby portrait {p1:.2f} s · a trait emerging {p2:.2f} s")

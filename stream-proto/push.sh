@@ -18,8 +18,13 @@ if gcloud compute scp --zone="$ZONE" "$VM":~/stream-proto/trajectory.json /tmp/s
   python3 - <<'PY'
 import json
 mine, cloud = json.load(open("trajectory.json")), json.load(open("/tmp/stream-proto-cloud-trajectory.json"))
-# value by value: a setting tuned on the panel comes back; a setting that's new here (not on the cloud yet) stays
+# value by value: a setting tuned on the panel comes back; a setting that's new here (not on the cloud yet) stays.
+# Except when the settings were re-based in the code (world.rev differs): then the cloud's old values would undo the
+# new ones, so they are left behind once, and tuning starts again from the new values.
 changed = []
+if (cloud.get("world") or {}).get("rev") != (mine.get("world") or {}).get("rev"):
+    print("this version re-bases the timings and world settings: the ones tuned earlier on /panel were NOT carried over")
+    cloud = {}
 for k in ("pacing", "world"):
     for name, v in (cloud.get(k) or {}).items():
         if name in mine.get(k, {}) and mine[k][name] != v:

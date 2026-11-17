@@ -122,8 +122,19 @@ button.ghost { background: #fff; color: var(--ink); }
     <section>
       <h2>CHANGE</h2>
       <label class="ctl">CHANGE (avatar) <span class="v" id="changeV"></span><input id="change" type="range" min="0.1" max="1" step="0.05"><small>How much of you is repainted. 1.0 = from pure noise, where the one-step painter is at its best; with a SHAPE on, the shape keeps your body. With SHAPE off, high CHANGE melts you.</small></label>
-      <label class="ctl">WORLD STEPS <span class="v" id="world_stepsV"></span><input id="world_steps" type="range" min="1" max="4" step="1"><small>The background. 1 = what the one-step painter is trained for. More = a second look at the details; may help or hurt, compare.</small></label>
-      <label class="ctl">PARALLAX <span class="v" id="parallaxV"></span><input id="parallax" type="range" min="0" max="0.08" step="0.005"><small>How far the world shifts with your head, so the painting reads in depth (its depth map is made once per world). 0 = flat.</small></label>
+      <label class="ctl">WORLD STEPS <span class="v" id="world_stepsV"></span><input id="world_steps" type="range" min="1" max="4" step="1"><small>The SD 1.5 painter's background only (the SDXL world painter always takes 4). 1 = what the one-step painter is trained for.</small></label>
+    </section>
+
+    <section>
+      <h2>THE WORLD, UNFOLDING</h2>
+      <p class="note">A change of place is painted as a run of pictures the screen dissolves through. These settle how one life stays one life, and how the change looks. How long, how many pictures and how much of each place survives: PACING, below.</p>
+      <label class="ctl">LAYOUT HOLD <span class="v" id="layout_holdV"></span><input id="layout_hold" type="range" min="0" max="1" step="0.05"><small>One life has one seed. This much of every world's noise is the life's own, so its places rhyme in composition. 0 = every place composed afresh. High = the places change less.</small></label>
+      <label class="ctl">PALETTE HOLD <span class="v" id="palette_holdV"></span><input id="palette_hold" type="range" min="0" max="0.9" step="0.05"><small>How far each world's brightness and colour lean toward the life's running colours, so one place doesn't jump to the next in colour. 0 = off.</small></label>
+      <label class="ctl">BREATH DRIFT <span class="v" id="driftV"></span><input id="drift" type="range" min="0" max="1" step="0.05"><small>Inside an event the world breathes: how far each variation swings from the event's own world. 0 = barely moves, 1 = wanders freely.</small></label>
+      <label class="ctl">IN-BETWEEN STEPS <span class="v" id="between_stepsV"></span><input id="between_steps" type="range" min="1" max="4" step="1"><small>Painting steps for the pictures on the way (the last one is always full quality). 2 = fast and soft, like wet paint; 4 = each as finished as the last, slower.</small></label>
+      <label class="ctl">DISSOLVE <span class="v" id="dissolveV"></span><input id="dissolve" type="range" min="0" max="1" step="0.05"><small>How one picture turns into the next. 0 = a plain crossfade (the whole frame ghosts at once). Higher = the new one soaks in in soft patches, the far parts first.</small></label>
+      <label class="ctl">PUSH IN <span class="v" id="pushV"></span><input id="push" type="range" min="0" max="0.05" step="0.005"><small>The view moves in through each picture of a change, so the years read as travelling forward. 0 = still.</small></label>
+      <label class="ctl">PARALLAX <span class="v" id="parallaxV"></span><input id="parallax" type="range" min="0" max="0.08" step="0.005"><small>How far the world shifts with your head, so the painting reads in depth (every picture comes with its depth map). 0 = flat.</small></label>
       <button class="ghost" id="redraw">REDRAW THE WORLD</button>
     </section>
 
@@ -171,9 +182,10 @@ button.ghost { background: #fff; color: var(--ink); }
 
 <script>
 const $ = (id) => document.getElementById(id);
-const SLIDERS = ["cn_strength", "lora_a_w", "lora_b_w", "ip_style", "guidance", "change", "world_steps", "steady", "ghost_guard", "skip_still", "child_until", "child_cn", "parallax"];
+const SLIDERS = ["cn_strength", "lora_a_w", "lora_b_w", "ip_style", "guidance", "change", "world_steps", "steady", "ghost_guard", "skip_still", "child_until", "child_cn", "parallax",
+                 "layout_hold", "palette_hold", "drift", "between_steps", "dissolve", "push"];
 const TEXTS = ["style_prompt", "negative"];
-const fmt = (k, v) => k === "world_steps" || k === "child_until" ? String(Math.round(v)) : k === "parallax" ? (+v).toFixed(3) : (+v).toFixed(2);
+const fmt = (k, v) => k === "world_steps" || k === "child_until" || k === "between_steps" ? String(Math.round(v)) : k === "parallax" || k === "push" ? (+v).toFixed(3) : (+v).toFixed(2);
 let state = null, defaults = null;
 
 // ---------- sending ----------
@@ -247,8 +259,11 @@ function show(s, controls) {
   const dr = r.director || {};
   if ($("r_director")) $("r_director").textContent = !dr.ready ? "no Anthropic key: written scenes only" :
     dr.last_error ? `ERROR: ${dr.last_error}` : `${dr.calls} calls · ${dr.cached} cached · ${dr.rejected} rejected · last ${dr.last_ms ? (dr.last_ms / 1000).toFixed(1) + " s" : "–"} · ${dr.model || ""}`;
-  $("r_world").textContent = r.world_error ? `ERROR: ${r.world_error}` :
-    r.world_ms ? `${(r.world_ms / 1000).toFixed(2)} s last draw · ${r.world_count} drawn · change ${r.world_change ?? "–"}` : "–";
+  const wr = r.world_run || {}, wms = wr.ms || [];
+  $("r_world").textContent = r.world_error ? `ERROR: ${r.world_error}` : !wms.length ? "–" :
+    (wr.n > 1 ? `last change: ${wms.length} of ${wr.n} pictures${wr.total_ms ? ` in ${(wr.total_ms / 1000).toFixed(1)} s` : ""} (${wms.slice(0, -1).length ? "in-between " + (wms.slice(0, -1).reduce((a, b) => a + b, 0) / wms.slice(0, -1).length / 1000).toFixed(2) + " s, " : ""}last ${(wms[wms.length - 1] / 1000).toFixed(2)} s)`
+               : `last picture ${(wms[wms.length - 1] / 1000).toFixed(2)} s (${wr.kind})`)
+    + ` · ${r.world_count} painted · change ${r.world_change ?? "–"}` + (r.world_tokens > 77 ? ` · PROMPT TOO LONG: ${r.world_tokens} tokens, the painter reads 77` : "");
   $("r_gpu").textContent = r.gpu_mb ? `${(r.gpu_mb / 1000).toFixed(1)} of ${(r.gpu_total_mb / 1000).toFixed(1)} GB` : "– (no GPU)";
 }
 async function poll(controls = false) {
@@ -329,9 +344,12 @@ listPresets();
 const PACE = [
   ["EVERY EVENT", null],
   ["fade", "TEXT FADE", 0.2, 3, 0.1, "the old text fades out fully, then the new one in"],
-  ["arrive", "ARRIVE", 1, 12, 0.5, "bridge line, the age counting up, the world and the avatar changing"],
-  ["world_fade", "WORLD PAINTS IN", 0.3, 6, 0.1, "the crossfade from one world to the next"],
-  ["chapter", "CHAPTER BREATH", 3, 20, 0.5, "the longer arrive after Whom, the exams, Settling down"],
+  ["arrive", "ARRIVE", 1, 12, 0.5, "bridge line, the age counting up, the world and the avatar changing: the least it takes"],
+  ["arrive_year", "ARRIVE: PER YEAR", 0, 1.5, 0.05, "added for every year that passes, so eight years take longer than one: the life sets the pace"],
+  ["chapter", "CHAPTER BREATH", 3, 20, 0.5, "the least the arrive takes after Body, the exams, Settling down"],
+  ["turn", "WORLD TURNS", 1, 10, 0.5, "how long the world takes to become what happened (during the linger)"],
+  ["morph_frame", "ONE PICTURE EVERY", 0.6, 3, 0.1, "a change is painted as one picture per this many seconds of it (lower = more pictures, smoother, more GPU work)"],
+  ["world_fade", "BREATH FADE", 0.3, 6, 0.1, "how long one breath of the world takes to soak in"],
   ["CHOSEN", null],
   ["settle", "SETTLE", 0, 8, 0.5, "name + setup alone, before the cards"],
   ["card_rise", "CARDS RISE", 0, 1, 0.05, "between one card and the next"],
@@ -350,9 +368,10 @@ const PACE = [
   ["gene", "EACH TRAIT", 0.5, 8, 0.5, "how long each trait stays named as it emerges on the baby"],
   ["takeover", "THE KID EMERGES", 1, 15, 0.5, "the baby fading into the live avatar, its generation ramping up"],
   ["WORLD", null],
-  ["w:keep", "WORLD KEEPS", 0, 0.9, 0.05, "how much of the last world survives into the next (0 = a new place each time)"],
-  ["w:chapter_keep", "AT A CHAPTER", 0, 0.9, 0.05, "the same, between phases (lower = repaints more)"],
-  ["w:morph_steps", "MORPH STEPS", 1, 6, 1, "between two events the world changes in this many painted steps (1 = one crossfade)"],
+  ["w:keep", "ARRIVING KEEPS", 0, 0.9, 0.05, "how much of the picture on screen survives when the life moves to the next event (lower = a more different place)"],
+  ["w:turn_keep", "AN OUTCOME KEEPS", 0, 0.9, 0.05, "the same, when the world turns into what happened (higher: it stays the same place, changed)"],
+  ["w:chapter_keep", "A CHAPTER KEEPS", 0, 0.9, 0.05, "the same, after a chapter (lowest: a new stretch of life)"],
+  ["w:morph_steps", "MOST PICTURES", 1, 12, 1, "the most pictures one change is painted in (1 = one picture, one dissolve)"],
   ["w:breathe", "WORLD BREATHES EVERY", 0, 20, 0.5, "inside an event a new variation of its world fades in this often, in seconds (0 = still)"],
   ["w:breathe_keep", "EACH BREATH KEEPS", 0.2, 0.9, 0.05, "how much of the event's world each variation keeps (lower = it wanders further)"],
   ["w:director", "DIRECTOR", 0, 1, 1, "an LLM writes each moment's world, its variations and clothes from the life so far (rules: director.json). Off = the written scenes"],
@@ -366,7 +385,7 @@ function paceTotal() {                                         // a rough length
   let t = 0;
   pace.events.forEach((ev, i) => {
     const prev = pace.events[i - 1];
-    if (prev) t += (prev.chapter ? p.chapter : p.arrive) + (prev.bridge ? 3 * f : 0);
+    if (prev) t += Math.max(prev.chapter ? p.chapter : 0, p.arrive + (p.arrive_year || 0) * Math.max(0, (ev.age || 0) - (prev.age || 0))) + (prev.bridge ? 3 * f : 0);
     if (ev.type === "chosen") t += 2 * f + p.settle + ev.cards.length * p.card_rise + 0.5 + p.lock + 0.7 + 0.5 + p.land + f + p.miss * 0.5 + 2 * f + p.linger;
     else if (ev.type === "happens") t += 2 * f + p.happen_hold + (ev.reveals ? p.reveal + 2 * f : 0) + 2 * f + p.happen_linger;
     else t += 2 * f + p.fluke_hold + (ev.flukes ? 2 * f + p.fluke_linger : 0);
@@ -376,6 +395,7 @@ function paceTotal() {                                         // a rough length
 }
 function paceFmt(k, v) {
   if (k === "w:morph_steps") return String(Math.round(v));
+  if (k === "arrive_year") return v.toFixed(2) + " s";
   if (k === "w:breathe") return v > 0 ? v.toFixed(1) + " s" : "off";
   if (k === "w:director" || k === "w:director_lines") return v >= 0.5 ? "on" : "off";
   if (k === "w:director_wait") return v.toFixed(1) + " s";
