@@ -169,6 +169,20 @@ A painted portrait, moved live by your face: LivePortrait warps the painting the
 - The parallax follows your head as found on the GPU machine (DWPose's nose in pose/both shape modes, or the
   animator's face detection), falling back to the browser's outline. GET /head says where it is.
 
+## The screen's two styles (U switches; the browser remembers)
+- GLASS: the soft narrative window, glass cards, the die in a disc (as before).
+- FOG (web/ui-fog.js): a clean sheet. Dark torn edges, a white fog drifting inside them, the painted world showing
+  through the middle. No boxes and no narrative window: only letters. The event's name is called out, the options come
+  up along the bottom, the one you pick is set in the middle with its throw ("throw 3 or more"), the die's number lands
+  alone, then hit or miss; what chance gave instead forms slowly out of the fog ("allotted"). What happened is shown
+  in a line of serif; the bridge lines, setups and card descriptions are not shown: the voice says them.
+- The lettering: Cinzel capitals, one letter per block drawn tall and narrow (Cormorant) rising above its line or
+  dropping through the next, lines justified to one width. Fonts are in web/fonts (OFL), so no internet is needed.
+- In the fog the portrait stands to the right (the event's name has the middle).
+- A switch during a pick waits until the pick is done.
+- For the Bookkeeper: every line the game would show fires a `pac-say` browser event {k, t, s, cls, shown}, in both
+  styles, so the voice can speak what the fog leaves out.
+
 ## The avatar: you, as a portrait at every age (AVATAR = portrait on /panel, the default)
 - Your photo is taken when the life begins (the BEGIN throw: you're at the screen). Each event's age is painted from it
   ahead of time (POST /portrait/from: this life's seed, so all ages look like one person; your clothes from Whom and

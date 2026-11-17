@@ -22,6 +22,7 @@
 //                                         // (LivePortrait on the server), cut out and standing in the world. A second
 //                                         // call dissolves into the new one over `fade` ms, both moving with you. null = none
 //   live.photo()                          // a still of the camera (mirrored), to paint the portraits from
+//   live.setPortraitPlace({ x, scale })   // where the portrait stands (x: 0..1 across); null = the middle
 //   live.stat                             // fps, timings, notes for a status line
 
 import { findCamera, builtInCamera, listCameras, saveCamera } from "./cameras.js";
@@ -374,7 +375,7 @@ export function createLive({ out, video, params }) {
   // plain background (MediaPipe, on the portrait itself, refreshed as it moves) and stands at the bottom of the
   // world, growing with your age, drifting a little with your head.
   const P = { ws: null, flying: 0, sentAt: 0, main: null, next: null, k: 0, fade: 2000, t0: 0, stage: "one",
-              done: null, x: 0.5, cut: null, mix: null, sendCanvas: null };
+              done: null, x: 0.5, place: null, cut: null, mix: null, sendCanvas: null };
   function pStream() { return { bmp: null, matte: document.createElement("canvas"), mattedAt: 0, alpha: null, cut: document.createElement("canvas"), cutOf: null, cutV: -1, matteV: 0 }; }
   const PFLY = 2;                                            // two frames in flight: the network's wait overlaps the GPU's work
   function pConnect() {
@@ -488,9 +489,10 @@ export function createLive({ out, video, params }) {
     pSend();
     if (!P.main.bmp) return;
     const age = control && control.age != null ? +control.age : 30;
-    const side = H * (0.66 + 0.3 * Math.max(0, Math.min(1, (age - 4) / 14)));   // a child stands smaller in the world
+    const pl = P.place || {}, home = pl.x ?? 0.5;
+    const side = H * (0.66 + 0.3 * Math.max(0, Math.min(1, (age - 4) / 14))) * (pl.scale || 1);   // a child stands smaller in the world
     const sh = serverHead && performance.now() - serverHead.at < 800 ? serverHead : null;
-    P.x += ((sh ? 0.5 + (sh.x - 0.5) * 0.5 : 0.5) - P.x) * 0.05;                   // drifts a little with you, never off screen
+    P.x += ((sh ? home + (sh.x - 0.5) * 0.5 : home) - P.x) * 0.05;                 // drifts a little with you, never off screen
     const x = Math.max(0, Math.min(W - side, P.x * W - side / 2)), y = H - side;
     const px2 = Math.round(side * S);                        // cut at screen resolution
     let k = 0;
@@ -535,6 +537,7 @@ export function createLive({ out, video, params }) {
     P.next = pStream(); P.fade = Math.max(300, fade); P.t0 = 0; P.stage = "two";
     return new Promise(res => { P.done = res; });
   }
+  function setPortraitPlace(p) { P.place = p || null; }      // where the portrait stands: { x: 0..1 across, scale } (null = the middle)
   function photo() {                                         // the camera, mirrored, full size
     if (!video.videoWidth) return Promise.resolve(null);
     const c = document.createElement("canvas"); c.width = video.videoWidth; c.height = video.videoHeight;
@@ -750,7 +753,7 @@ export function createLive({ out, video, params }) {
   const camera = startCamera();
   connect();
   return {
-    stat, setPerson, setBackground, world, setScene, portrait, photo, avatarMode: () => avatarCfg, refresh, camera, hold, setReal, setPersonAlpha, setControl, where, skinTone, nextCamera,
+    stat, setPerson, setBackground, world, setScene, portrait, photo, setPortraitPlace, avatarMode: () => avatarCfg, refresh, camera, hold, setReal, setPersonAlpha, setControl, where, skinTone, nextCamera,
     worldState: () => ({ queued: worlds.length, k: wk, textures: px ? px.textures : 0, webgl: !!(px && px.ok) }),
     whenReady: () => online ? Promise.resolve() : new Promise(r => ready.push(r)),
     get size() { return { W, H }; },

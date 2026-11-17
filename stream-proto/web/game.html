@@ -7,7 +7,9 @@
 <style>
 /* One life, unfolding. The painted world fills the whole window, edge to edge; the only text is one soft
    narrative window at the bottom and the option cards, spread evenly across the bottom. Minimal, a clean sans.
-   F = real fullscreen (the camera window hides there). D = a hidden debug line (die, fps). */
+   F = real fullscreen (the camera window hides there). D = a hidden debug line (die, fps).
+   U = switch the style of the screen: GLASS (this file's soft windows and cards) or FOG (ui-fog.js: dark edges, a white
+   fog the world forms in, letters only). Remembered in this browser. A switch during a pick waits until it's done. */
 :root {
   --ink: #141414; --dim: #8a8a8a; --bg: #fff; --fade: 1.2s;
   --glass: rgba(255,255,255,0.52); --glass-hi: rgba(255,255,255,0.82); --edge: rgba(255,255,255,0.7);
@@ -137,6 +139,7 @@ import { createBirth } from "./birth.js";
 import { createWorldMap } from "./worldmap.js";
 import { createHouse } from "./house.js";
 import { createBaby } from "./baby.js";
+import { createFog } from "./ui-fog.js";
 
 const $ = (id) => document.getElementById(id);
 const sayEl = $("say"), bigEl = $("big"), deckEl = $("deck"), flipEl = $("flip"), debugEl = $("debug");
@@ -151,6 +154,20 @@ const worldmap = createWorldMap($("map"));                     // Where: the wor
 const house = createHouse($("house"));                         // Whom: the home being built ("house")
 const baby = createBaby($("baby"), live);                      // Body: the baby, then the live kid takes over ("baby")
 const SCENES = { egg: birth, map: worldmap, house };
+
+// ---------- the style of the screen: GLASS or FOG (U switches; remembered in this browser) ----------
+const fog = createFog({ root: $("gen"), sec: (k) => sec(k) });
+let ui = "glass", uiNext = null, picking = false;
+try { ui = localStorage.getItem("pac-ui") === "fog" ? "fog" : "glass"; } catch (e) {}
+const FOG = () => ui === "fog";
+function applyUI(next) {
+  if (picking) { uiNext = next; return; }                       // never in the middle of a pick: right after it
+  ui = next; uiNext = null;
+  try { localStorage.setItem("pac-ui", ui); } catch (e) {}
+  sayEl.classList.remove("on"); sayOn = false;                  // whatever the other style was showing goes
+  fog.active(ui === "fog");
+  live.setPortraitPlace(ui === "fog" ? { x: 0.73, scale: 0.86 } : null);   // in the fog the event's name has the middle
+}
 let scene = null;                                              // the drawn scene on screen now
 let held = false;
 function holdAll(on) { held = !!on; live.hold(on); for (const x of [birth, worldmap, house, baby]) x.hold(on); }   // while the die rolls, everything holds still
@@ -197,11 +214,16 @@ async function draw(lo, hi) {
 // ---------- the one soft window: the old text fades out fully before the new one fades in ----------
 let sayOn = false;
 async function unsay() {
+  if (FOG()) return fog.unsay();
   if (!sayOn) return;
   sayOn = false; sayEl.classList.remove("on");
   await sleep(sec("fade"));
 }
+const plainText = (h) => { const d = document.createElement("div"); d.innerHTML = String(h || ""); return d.textContent.replace(/\s+/g, " ").trim(); };
 async function say({ k = "", t = "", s = "", cls = "", begin = false }) {
+  // every line, shown or not, goes to the Bookkeeper (Voice Lab): in the fog most words are only spoken
+  dispatchEvent(new CustomEvent("pac-say", { detail: { k: plainText(k), t: plainText(t), s: plainText(s), cls, shown: !FOG() || !/bridge/.test(cls) } }));
+  if (FOG()) return fog.say({ k, t, s, cls, begin, onBegin: () => beginAction && beginAction() });
   await unsay();
   sayEl.className = "say " + cls;
   sayEl.innerHTML = (k ? `<span class="k">${k}</span>` : "") + (t ? `<span class="t">${t}</span>` : "") + (s ? `<span class="s">${s}</span>` : "")
@@ -211,6 +233,7 @@ async function say({ k = "", t = "", s = "", cls = "", begin = false }) {
   sayEl.classList.add("on"); sayOn = true;
   await sleep(sec("fade"));
 }
+applyUI(ui);                                                   // the style this browser used last
 const kick = (ev) => `AGE ${Math.floor(S.ageF)} · ${esc(ev.title)}`;    // over an outcome
 const kickAge = () => `AGE ${Math.floor(S.ageF)}`;                           // over the event's own name
 
@@ -477,7 +500,9 @@ let screenRoll = null, beginAction = null;
 
 // ---------- the deck ----------
 let deckKeys = null;
-function deck(cards, onHover = null) {                         // cards rise one by one; resolves with the one you pick
+async function deck(cards, onHover = null) {                   // cards rise one by one; resolves with the one you pick
+  picking = true;
+  if (FOG()) return { i: await fog.deck(cards, onHover, (k) => { deckKeys = k; }), els: null };
   deckEl.hidden = false; deckEl.className = "deck";
   document.body.classList.add("cards");                         // the narrative box lifts above the row
   deckEl.innerHTML = cards.map((c) => `<button type="button" class="card pre" aria-label="${esc(c.name)}: ${esc(c.reveals)}">
@@ -503,18 +528,26 @@ function deck(cards, onHover = null) {                         // cards rise one
     };
   });
 }
-async function lock(els, i, label) {                           // your card glides to the centre; the others sink away
+async function lock(els, i, label, card) {                     // your card glides to the centre; the others sink away
+  if (FOG()) return fog.lock(i, label, card.name);
   const d = deckEl.getBoundingClientRect(), r = els[i].getBoundingClientRect();
   els[i].style.setProperty("--dx", Math.round(d.left + d.width / 2 - (r.left + r.width / 2)) + "px");
   els.forEach((e, k) => { e.classList.remove("focus"); e.classList.toggle("locked", k === i); e.classList.toggle("away", k !== i); });
   await sleep(sec("lock"));
   els[i].querySelector(".tg").innerHTML = `throw<b>${esc(label)}</b>`;
-  if (!diceOn) cardHint(els[i], "press R to roll");
+  if (!diceOn) cardHint(els, i, "press R to roll");
   els[i].classList.add("show");
   await sleep(700);
 }
-const cardHint = (el, html) => { el.querySelector(".hint").innerHTML = html; };
-function deckGone() { deckEl.hidden = true; deckEl.innerHTML = ""; document.body.classList.remove("cards"); }
+function cardHint(els, i, html) { if (FOG()) fog.hint(plainText(html)); else els[i].querySelector(".hint").innerHTML = html; }
+async function cardAway(els, i) { if (FOG()) await fog.hide(); else { els[i].classList.add("gone"); await sleep(500); } }
+async function cardBack(els, i) { if (FOG()) await fog.show(); else { els[i].classList.remove("gone"); await sleep(600); } }
+function deckGone() {
+  deckEl.hidden = true; deckEl.innerHTML = ""; document.body.classList.remove("cards");
+  fog.deckGone();
+  picking = false;
+  if (uiNext) applyUI(uiNext);
+}
 
 // "3 or more" · "a 6" · "exactly 1": the target is written the way the player sees it
 function target(text) {
@@ -526,6 +559,7 @@ function target(text) {
 
 // the number, big and alone; then hit or miss
 async function land(n, hit) {
+  if (FOG()) return fog.land(n, hit);
   $("bigN").textContent = n; $("bigW").textContent = hit ? "hit" : "miss"; $("bigW").classList.remove("on");
   bigEl.classList.add("on");
   await sleep(Math.max(600, sec("land") * 0.55));
@@ -534,6 +568,7 @@ async function land(n, hit) {
   bigEl.classList.remove("on"); await sleep(sec("fade"));
 }
 async function turnOver(card, note) {                          // the allotted card turns over slowly
+  if (FOG()) return fog.turnOver(card, note);
   $("flipFace").innerHTML = `<small>${esc(note)}</small><b>${esc(card.name)}</b><span>${esc(card.reveals)}</span>`;
   flipEl.className = "flip"; await nextFrame(); await nextFrame();
   flipEl.classList.add("on"); await sleep(700);
@@ -561,20 +596,21 @@ async function chosen(ev) {
   await sleep(sec("settle"));
   const { i, els } = await deck(ev.cards, ev.drawn === "map" ? (k) => worldmap.hover(k >= 0 ? ev.cards[k].name : null) : null);
   const c = ev.cards[i], tg = target(c.target);
-  await Promise.all([unsay(), lock(els, i, tg.label)]);
+  await Promise.all([unsay(), lock(els, i, tg.label, c)]);
+  if (FOG() && !diceOn) cardHint(els, i, "press R to roll");
   const tries = Math.max(1, ev.tries || 1);
   let hit = false, n = 0, t = 1;
   for (; t <= tries; t++) {
-    if (tries > 1) cardHint(els[i], (t === 1 ? `${tries} throws` : `${tries - t + 1} ${tries - t + 1 === 1 ? "throw" : "throws"} left`) + (diceOn ? "" : " · press R"));
+    if (tries > 1) cardHint(els, i, (t === 1 ? `${tries} throws` : `${tries - t + 1} ${tries - t + 1 === 1 ? "throw" : "throws"} left`) + (diceOn ? "" : " · press R"));
     if (ev.drawn === "egg") birth.ready(true);
     ({ n } = await waitThrow());
     setTurn("watch"); holdAll(false);
-    els[i].classList.add("gone"); await sleep(500);
+    await cardAway(els, i);
     hit = tg.hit(n);
     await land(n, hit);
     if (ev.drawn === "egg") await birth.attempt(hit);           // one reaches the egg, or they all fall short
     if (hit || t === tries) break;
-    els[i].classList.remove("gone"); await sleep(600);
+    await cardBack(els, i);
   }
   deckGone();
   let got = c, how = "hit";
@@ -786,6 +822,7 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "f" || e.key === "F") { setFull(!document.fullscreenElement); return; }
   if (e.key === "d" || e.key === "D") { debugEl.hidden = !debugEl.hidden; return; }
   if (e.key === "c" || e.key === "C") { switchCamera(); return; }
+  if (e.key === "u" || e.key === "U") { applyUI(ui === "fog" ? "glass" : "fog"); return; }
   if (deckKeys && (e.key.startsWith("Arrow") || e.key === "Enter" || e.key === " " || /^[1-9]$/.test(e.key))) { e.preventDefault(); deckKeys(e.key); return; }
   if ((e.key === " " || e.key === "Enter") && beginAction && !(e.target instanceof HTMLButtonElement)) { e.preventDefault(); beginAction(); return; }
   if ((e.key === "r" || e.key === "R" || e.key === " ") && screenRoll && turn === "throw") { e.preventDefault(); screenRoll(); return; }
