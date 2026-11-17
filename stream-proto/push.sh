@@ -8,7 +8,7 @@ ZONE="asia-south1-c"
 cd "$(dirname "$0")"
 
 # which Python files changed since the last push? (those need a server restart; web files don't)
-SUMS=$(shasum stream_server.py animate.py director.py download_models.py bench.py 2>/dev/null)
+SUMS=$(shasum stream_server.py animate.py director.py bookkeeper.py download_models.py bench.py 2>/dev/null)
 LAST="$HOME/.stream-proto-last-push"           # kept outside the folder, so replacing the folder doesn't lose it
 OLD=$(cat "$LAST" 2>/dev/null || true)
 
@@ -38,12 +38,13 @@ fi
 
 echo "sending code to $VM ..."
 gcloud compute scp --zone="$ZONE" --recurse \
-  web stream_server.py animate.py director.py director.json download_models.py bench.py bench_animate.py train_style_lora.py \
+  web stream_server.py animate.py director.py director.json bookkeeper.py bookkeeper.md bookkeeper.json \
+  download_models.py bench.py bench_animate.py train_style_lora.py \
   setup_sdxl.sh setup_liveportrait.sh \
   styles.json trajectory.json setup_cloud.sh CLOUD.md README.md \
   "$VM":~/stream-proto/ --quiet
 
-for k in random_org.key anthropic.key; do
+for k in random_org.key anthropic.key openai.key; do
   if [ -f "$k" ]; then
     gcloud compute scp --zone="$ZONE" "$k" "$VM":~/stream-proto/ --quiet
   fi

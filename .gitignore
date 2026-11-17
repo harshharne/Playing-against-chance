@@ -20,3 +20,6 @@ stream-proto/web/refs/*
 
 # speed-check output
 stream-proto/bench_animate.jpg
+
+# the Bookkeeper's transcripts (on the server)
+stream-proto/logs/

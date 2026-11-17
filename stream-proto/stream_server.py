@@ -1796,6 +1796,30 @@ async def direct(request: Request):
     return {"moments": out, "ms": director.stats["last_ms"], "error": director.stats["last_error"]}
 
 
+# ---------- the Bookkeeper (the voice in the room: OpenAI Realtime, bookkeeper.md + bookkeeper.json) ----------
+import bookkeeper
+
+
+@app.get("/voice/token")
+async def voice_token():
+    """A short-lived key for one life's voice session (the browser connects to OpenAI with it; the real key stays
+    here), with the personality and settings read fresh. {"error": ...} when there's no voice: the game uses text."""
+    try:
+        return JSONResponse(await asyncio.to_thread(bookkeeper.mint), headers={"Cache-Control": "no-store"})
+    except bookkeeper.VoiceError as e:
+        return JSONResponse({"error": str(e)}, status_code=503, headers={"Cache-Control": "no-store"})
+
+
+@app.post("/voice/log")
+async def voice_log(request: Request):
+    """{life, version, who: bookkeeper | player | game, text} -> one line in logs/voice-<date>.jsonl."""
+    try:
+        await asyncio.to_thread(bookkeeper.log, await request.json())
+    except (ValueError, OSError, AttributeError) as e:
+        return JSONResponse({"ok": False, "error": str(e)[:200]}, status_code=400)
+    return {"ok": True}
+
+
 # ---------- the life (trajectory.json) ----------
 def read_trajectory():
     with open(TRAJECTORY_FILE, encoding="utf-8") as fh:
