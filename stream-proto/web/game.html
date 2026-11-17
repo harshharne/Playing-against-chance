@@ -237,13 +237,60 @@ function who(desc, age) {
   return d + ", portrait";                                      // (the look's own words are added on the server, in front)
 }
 function avatarAt(age) {
-  live.setControl({ age });
-  if (!S.avatar) return;                                       // no live avatar until the kid takes over from the baby
+  live.setControl({ age });                                    // (the portrait grows with this too)
+  if (!S.avatar || pMode === "portrait") return;               // no painted avatar until the kid takes over; none with portraits
   let i = 0;
   while (i < AGES.length - 2 && age >= AGES[i + 1][0]) i++;
   const [a0, d0] = AGES[i], [a1, d1] = AGES[i + 1];
   const mix = Math.max(0, Math.min(1, (age - a0) / (a1 - a0)));
   live.setPerson(who(d0, age), who(d1, age), mix);
+}
+
+// ---------- you, as a portrait at every age (AVATAR = portrait on /panel) ----------
+// Your photo is taken as the life begins. Each event's age is painted from it ahead of time (this life's seed, your
+// clothes, what the Body throw gave you), and as the years pass you dissolve into it, both faces moving with you.
+// The same life's portraits share a seed, so they look like one person's. AVATAR = painted: the older frame-by-frame avatar.
+let pMode = "painted", photoBlob = null, photoTry = null, pCache = new Map(), pShown = { age: -99, wear: "" };
+function pWho(age) {
+  const g = S.gender, n = Math.round(age);
+  const kid = g === "boy" ? "boy" : g === "girl" ? "girl" : "child", adult = g === "boy" ? "man" : g === "girl" ? "woman" : "person";
+  return n <= 6 ? `a ${n}-year-old little ${kid}` : n < 13 ? `a ${n}-year-old ${kid}` : n < 20 ? `a ${n}-year-old teenage ${kid}`
+       : n < 60 ? `a ${n}-year-old ${adult}` : `a ${n}-year-old elderly ${adult}, grey hair, wrinkles`;
+}
+function pPrompt(age, wear) {
+  return [`head and shoulders portrait of ${pWho(age)}`, S.gender === "nb" ? "androgynous" : "", wear ? `in ${wear}` : "", ...S.life,
+          "looking straight at the viewer, calm face, mouth closed, soft plain background"].filter(Boolean).join(", ");
+}
+function getPhoto() {                                           // a still of you, taken once a life (again if it had no face)
+  if (photoBlob) return Promise.resolve(photoBlob);
+  if (!photoTry) photoTry = live.photo().then(b => { photoTry = null; return (photoBlob = b); });
+  return photoTry;
+}
+function paintAt(age, wear = S.wear) {                          // -> a jpeg blob of you at this age (cached), or null
+  const key = `${Math.round(age)}|${wear}|${S.gender}|${S.life.join(",")}`;
+  if (pCache.has(key)) return pCache.get(key);
+  const p = (async () => {
+    try {
+      const ph = await getPhoto(); if (!ph) return null;
+      const strength = age < 13 ? 0.75 : 0.6;                    // a child needs more repainting to stop looking like an adult
+      const r = await fetch(`/portrait/from?prompt=${encodeURIComponent(pPrompt(age, wear))}&strength=${strength}&seed=${S.seed}`,
+                            { method: "POST", body: ph, cache: "no-store" });
+      if (!r.ok) { pCache.delete(key); return null; }
+      if (r.headers.get("X-Face") === "0") photoBlob = null;    // no face in the photo: this portrait stays, the next age gets a new photo
+      return await r.blob();
+    } catch (e) { pCache.delete(key); return null; }
+  })();
+  pCache.set(key, p);
+  return p;
+}
+const pNeeds = (age) => pMode === "portrait" && age >= 4 && (Math.abs(age - pShown.age) >= 3 || S.wear !== pShown.wear);
+function prepPortrait(ev) { if (ev && pNeeds(ev.age)) paintAt(ev.age); }   // painted ahead, while this event plays
+async function portraitTo(ev, ms) {                             // as the years pass, you dissolve into your next age
+  if (!S.avatar || !pNeeds(ev.age)) return;
+  const age = ev.age, wear = S.wear, b = await paintAt(age, wear);
+  if (!b || pMode !== "portrait") return;
+  pShown = { age, wear };
+  await live.portrait(b, { fade: Math.max(2000, ms) });
 }
 function showAge() {}                                          // the age isn't shown: it lives in the avatar and the bridge lines
 async function ageTo(to, ms) {                                 // the age runs on; the avatar ages with it
@@ -503,6 +550,7 @@ function apply(c) {
   if (c.means) S.means = c.means;                                // what the family had: it shows in the worlds of your youth
 }
 async function linger(key, extraAge) {                         // what happened stays while the world turns into it
+  prepPortrait(T.events[evIdx + 1]);                           // the next age, in what you wear now
   await Promise.all([sleep(sec(key)), worldDone, extraAge ? ageTo(extraAge, sec(key) * 0.8) : null]);
 }
 
@@ -592,8 +640,13 @@ async function emerge(ev, got) {
     await sleep(sec("gene"));
   }
 }
-async function takeover(ms) {                                   // the live kid emerges from the baby: the avatar fades in while
-  S.avatar = true;                                              // its generation strength ramps up from loose to full
+async function takeover(ms, ev) {                               // the live kid emerges from the baby: the avatar fades in while
+  if (pMode === "portrait") {                                   // its generation strength ramps up from loose to full;
+    const b = await Promise.race([paintAt(ev.age), sleep(Math.max(4000, ms))]);   // or: your portrait at the coming age
+    if (b && await live.portrait(b)) pShown = { age: ev.age, wear: S.wear };
+    else { pMode = "painted"; live.stat.portraitNote = "no portrait (no face in the photo, or the animator is off): the painted avatar instead"; }
+  }
+  S.avatar = true;
   live.setPersonAlpha(0); live.setControl({ age: S.ageF, ramp: 0 }); avatarAt(S.ageF);
   const t0 = performance.now();
   for (;;) {
@@ -669,8 +722,9 @@ async function arrive(ev, prev) {
   if (chapter) { S.phase = Math.min(PHASES.length - 1, S.phase + 1); setPhase(S.phase); }
   const dur = arriveMs(ev, prev);
   let handover = null;
-  if (prev && prev.drawn === "baby") handover = takeover(sec("takeover"));     // the baby becomes the live kid
+  if (prev && prev.drawn === "baby") handover = takeover(sec("takeover"), ev);  // the baby becomes the live kid
   else if ((ev.drawn || null) !== (prev && prev.drawn || null)) toScene(ev.drawn === "baby" ? null : ev.drawn);   // drawn scene -> the next one, or the painted world
+  if (!handover) portraitTo(ev, dur * 0.8);                     // the years show on you, as the world changes
   bridging = true;                                              // (the world is about to change: no breath now)
   if (prev && prev.bridge) await say({ s: esc(prev.bridge), cls: "bridge" });
   const w = ev.scene ? worldFor(`${ev.id}:arrive`, ev.scene, { keep: +(chapter ? WK.chapter_keep : WK.keep), dur: dur * 0.92, age: ev.age }) : null;
@@ -685,6 +739,7 @@ async function life() {
   S = freshLife(); setPhase(0); D.clear(); evIdx = -1; lastLine = "";
   deckGone(); bigEl.classList.remove("on");
   live.setPerson(null); live.setReal(false); live.setPersonAlpha(1); live.setControl({ age: 0, ramp: 1 });
+  live.portrait(null); pCache.clear(); photoBlob = null; pShown = { age: -99, wear: "" };
   baby.hide(0); worldmap.reset(); house.reset(); if (scene) scene.hide(0); scene = null;
   worldmap.load().catch(() => {}); baby.preload();
   await live.whenReady();
@@ -692,6 +747,8 @@ async function life() {
   if (T.events[0].drawn === "egg") { birth.reset(); toScene("egg"); }
   await say({ k: "PLAYING AGAINST CHANCE", t: `One life. ${T.events.length} moments.`, s: diceOn ? "Throw the die to begin." : "", begin: true });
   await waitThrow("begin");
+  pMode = live.avatarMode();                                    // (set on /panel; "painted" if the animator isn't there)
+  if (pMode === "portrait") getPhoto();                         // you're at the screen now: your photo, for your portraits
   setTurn("watch"); holdAll(false);
   await unsay();
   avatarAt(0);
@@ -701,6 +758,7 @@ async function life() {
     evIdx++;
     if (!prev) { prewrite(ev); prewriteNext(); }
     if (prev) await arrive(ev, prev);
+    prepPortrait(T.events[evIdx + 1]);                          // your next age, painted while this one plays
     if (ev.type === "chosen") await chosen(ev);
     else if (ev.type === "happens") await happens(ev);
     else await fluke(ev);
@@ -751,7 +809,8 @@ function status() {                                             // the hidden de
   if (debugEl.dataset.flash && performance.now() > camFlash) { delete debugEl.dataset.flash; debugEl.hidden = true; }
   if (!debugEl.hidden) {
     const st = live.stat;
-    if (!debugEl.dataset.flash) debugEl.textContent = !st.online ? "server offline" : [`${st.fps} fps`, source && `chance ${source}`, `camera: ${st.camera || "?"}`, st.camNote, `die${diceSrc ? ` (${diceSrc})` : ""}: ${dieText}`, `turn: ${turn}`, st.worldError ? `WORLD ERROR: ${st.worldError}` : (st.worldId ? `world ${st.worldId}${st.bgMs ? ` (${st.bgMs} ms)` : ""}` : ""), st.worldTokens > 77 ? `PROMPT TOO LONG (${st.worldTokens} tokens, 77 are read)` : "", +WK.director ? (st.directorError ? `director: ${st.directorError}` : `directed ${st.directed || 0}`) : "director off", st.note, st.seg].filter(Boolean).join(" · ");
+    if (!debugEl.dataset.flash) debugEl.textContent = !st.online ? "server offline" : [`${st.fps} fps`, source && `chance ${source}`, `camera: ${st.camera || "?"}`, st.camNote, `die${diceSrc ? ` (${diceSrc})` : ""}: ${dieText}`, `turn: ${turn}`, st.worldError ? `WORLD ERROR: ${st.worldError}` : (st.worldId ? `world ${st.worldId}${st.bgMs ? ` (${st.bgMs} ms)` : ""}` : ""), st.worldTokens > 77 ? `PROMPT TOO LONG (${st.worldTokens} tokens, 77 are read)` : "",
+    pMode === "portrait" ? `portrait${pShown.age >= 0 ? " at " + pShown.age : ""}${st.portraitMs ? ` ${st.portraitMs} ms` : ""}${st.portraitNote ? " · " + st.portraitNote : ""}` : (st.portraitNote || ""), +WK.director ? (st.directorError ? `director: ${st.directorError}` : `directed ${st.directed || 0}`) : "director off", st.note, st.seg].filter(Boolean).join(" · ");
   }
   setTimeout(status, 250);
 }

@@ -169,6 +169,19 @@ A painted portrait, moved live by your face: LivePortrait warps the painting the
 - The parallax follows your head as found on the GPU machine (DWPose's nose in pose/both shape modes, or the
   animator's face detection), falling back to the browser's outline. GET /head says where it is.
 
+## The avatar: you, as a portrait at every age (AVATAR = portrait on /panel, the default)
+- Your photo is taken when the life begins (the BEGIN throw: you're at the screen). Each event's age is painted from it
+  ahead of time (POST /portrait/from: this life's seed, so all ages look like one person; your clothes from Whom and
+  the outcomes; what the Body throw gave you). Children are repainted more (0.75) than adults (0.6).
+- The animator (LivePortrait) moves the portrait with your face. It is cut out of its plain background (MediaPipe, in
+  the browser) and stands at the bottom of the world, growing with your age, drifting a little with your head.
+- As the years pass you DISSOLVE into the next age: the server moves both portraits with the same motion
+  (/animate/source?slot=next, then {"cmd":"promote"}), so both faces are alive while one becomes the other. A new
+  portrait is only painted when the age moves 3+ years or the clothes change.
+- The baby (Body) hands over to your portrait at the next event's age. If no portrait can be made (no face in the
+  photo, the animator didn't load), that life falls back to the painted avatar by itself; the debug line (D) says so.
+- AVATAR = painted: the older avatar, the camera repainted frame by frame by SDXL-Turbo.
+
 ## Portraits from the player (gate 2)
 POST /portrait/from (a photo in the body, ?prompt=&strength=): the face is found, framed head and shoulders, and
 repainted for the prompt. On animate.html: TAKE MY PHOTO, then PAINT ME AT 8 AGES (4 to 75); REPAINT sets how much

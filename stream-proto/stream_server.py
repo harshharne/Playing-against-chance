@@ -146,6 +146,8 @@ TUNE_DEFAULTS = {
     "ghost_guard": 0.5,       # how quickly that leaning lets go when you move (0 = never: smooth but ghosty, 1 = at once)
     "skip_still": 1.5,        # browser: don't send a new frame unless the camera changed at least this much (0 = always send)
     "parallax": 0.03,         # browser: how far the world shifts with your head (0 = flat)
+    "avatar": "portrait",     # the game's avatar: "portrait" = your face painted at each age, moved live by you (LivePortrait);
+                              # "painted" = the camera repainted frame by frame (SDXL-Turbo)
     # the world's consistency (one life = one seed, sent by the game)
     "layout_hold": 0.5,       # how much of its noise every world of one life shares, so compositions rhyme (0 = each its own)
     "drift": 0.3,             # how far a breath's noise swings from its event's noise (0 = the same picture again, 1 = unrelated)
@@ -1399,6 +1401,7 @@ async def config():
             "filter": current_style().get("filter", ""), "skip_still": TUNE["skip_still"], "pace": pace_version,
             "out_scale": 2, "world_w": WORLD_W, "world_h": WORLD_H, "parallax": TUNE["parallax"],
             "dissolve": TUNE["dissolve"], "push": TUNE["push"],
+            "avatar": TUNE["avatar"] if animator is not None else "painted", "animator": animator is not None,
             "server_pose": bool(_wb["model"]) or MOCK}
 
 
@@ -1426,6 +1429,8 @@ def clean_tune(d):
             if k in ("lora_a", "lora_b") and v and v not in list_loras():
                 v = ""
             if k == "shape" and v not in ("depth", "pose", "both", "off"):
+                continue
+            if k == "avatar" and v not in ("portrait", "painted"):
                 continue
             if k == "style" and v not in load_styles():
                 continue
@@ -1863,13 +1868,15 @@ def load_animator():
 async def animate_status():
     return {"ready": animator is not None, "note": animator_note if ANIMATE else "off (ANIMATE=0)",
             "source": bool(animator is not None and animator.src is not None), "mock": MOCK,
+            "next": bool(animator is not None and getattr(animator, "next", None) is not None),
             "detection": getattr(animator, "where", "mock" if MOCK else None),
             "opts": animator.opts if animator else None, "head": animator.last_head if animator else None}
 
 
 @app.post("/animate/source")
-async def animate_source(request: Request):
-    """The portrait to move: an image (jpeg/png) in the body."""
+async def animate_source(request: Request, slot: str = "main"):
+    """The portrait to move: an image (jpeg/png) in the body. slot=next: the one coming in (an age change), moved
+    alongside the portrait with the same motion; the WebSocket's {"cmd":"promote"} makes it the portrait."""
     if animator is None:
         return JSONResponse({"ok": False, "note": animator_note or "not loaded"}, status_code=503)
     import numpy as np
@@ -1878,7 +1885,7 @@ async def animate_source(request: Request):
     except Exception:
         return JSONResponse({"ok": False, "note": "that isn't an image"}, status_code=400)
     t0 = time.perf_counter()
-    ok = await asyncio.to_thread(animator.set_source, np.asarray(img))
+    ok = await asyncio.to_thread(animator.set_source, np.asarray(img), "next" if slot == "next" else "main")
     return {"ok": ok, "ms": round((time.perf_counter() - t0) * 1000), "size": img.size,
             "note": "" if ok else "no face found in that picture: try one where the face is clear and facing forward"}
 
@@ -1891,7 +1898,9 @@ def ws_pack(info, jpeg=b""):
 @app.websocket("/animate")
 async def animate_ws(ws: WebSocket):
     """Camera frames in (binary jpeg), animated portrait out: [4-byte length][json info][jpeg].
-    Text messages are commands: {"cmd":"reset"} or {"cmd":"opts", "multiplier":..., "smooth":..., "quality":...}."""
+    During an age change the incoming portrait comes too: info "jpeg" = the first one's length, "next" = the second's.
+    Text messages are commands: {"cmd":"reset"}, {"cmd":"promote"} (the incoming portrait is now the portrait),
+    {"cmd":"drop"} (let it go), or {"cmd":"opts", "multiplier":..., "smooth":..., "quality":...}."""
     await ws.accept()
     try:
         while True:
@@ -1905,6 +1914,10 @@ async def animate_ws(ws: WebSocket):
                     continue
                 if animator is not None and cmd.get("cmd") == "reset":
                     animator.reset()
+                elif animator is not None and cmd.get("cmd") == "promote":
+                    animator.promote()
+                elif animator is not None and cmd.get("cmd") == "drop":
+                    animator.drop_next()
                 elif animator is not None and cmd.get("cmd") == "opts":
                     for k in ("multiplier", "smooth", "face_smooth", "follow", "turn_limit", "redetect", "quality"):
                         if k in cmd:

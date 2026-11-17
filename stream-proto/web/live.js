@@ -17,6 +17,11 @@
 // The output canvas is drawn at OUT_SCALE x the painting size (from /config), so big worlds keep their detail,
 // and the world gets a little depth (parallax.js) when the server sends its depth map.
 //   live.setScene(fn)                     // draw your own scene instead (fn(ctx, W, H, now)); null = back to live
+//   live.avatarMode()                     // "portrait" (the animator is there and /panel says so) or "painted"
+//   await live.portrait(jpegBlob, { fade })   // the game's avatar: a painted portrait of you, moved live by your face
+//                                         // (LivePortrait on the server), cut out and standing in the world. A second
+//                                         // call dissolves into the new one over `fade` ms, both moving with you. null = none
+//   live.photo()                          // a still of the camera (mirrored), to paint the portraits from
 //   live.stat                             // fps, timings, notes for a status line
 
 import { findCamera, builtInCamera, listCameras, saveCamera } from "./cameras.js";
@@ -34,7 +39,7 @@ export function createLive({ out, video, params }) {
   let person = null, personAt = 0, fade = 150, lastSig = null, held = false;
   let showReal = true, personAlpha = 1, control = null, serverPose = false;
   const px = createParallax(); let par = [0, 0], parallax = 0.03, dissolve = 0.5, pushAmt = 0.02, serverHead = null;
-  let personPose = null, prevPose = null, livePose = null;
+  let personPose = null, prevPose = null, livePose = null, avatarCfg = "painted";
   let segmenter = null, segImage = null, segOk = false, camCover = 0, scene = null;
   const stat = { ms: 0, bgMs: 0, times: [], note: "", seg: "", online: false, engine: "", references: true, fps: "–" };
 
@@ -237,7 +242,8 @@ export function createLive({ out, video, params }) {
       else {
         drawBackground(octx);
         livePose = smoothPose(livePose, poseOf(mask));
-        if (fgPrompt && person && personAlpha > 0.003) {                     // the re-imagined you
+        if (P.main && personAlpha > 0.003) drawPortrait(octx, now);          // you, as your portrait at this age
+        else if (fgPrompt && person && personAlpha > 0.003) {                // the re-imagined you
           octx.globalAlpha = personAlpha;
           follow(octx, personPose, () => octx.drawImage(cutout(person, personMask), 0, 0));
           const k = Math.min(1, (performance.now() - personAt) / fade);
@@ -360,13 +366,189 @@ export function createLive({ out, video, params }) {
     g.save(); g.translate(tx, ty); g.scale(s, s); draw(); g.restore();   // (on top of the screen's own scale)
   }
 
+
+  // ---------- the portrait: your face painted at your age, moved live by you, standing in the world ----------
+  // The server's animator (LivePortrait) moves the portrait with your face: camera frames go out over a WebSocket,
+  // the moved portrait comes back. During an age change it moves TWO portraits with the same motion (the one you
+  // were and the one you're becoming) and they dissolve into each other here, both alive. Each is cut out of its
+  // plain background (MediaPipe, on the portrait itself, refreshed as it moves) and stands at the bottom of the
+  // world, growing with your age, drifting a little with your head.
+  const P = { ws: null, flying: 0, sentAt: 0, main: null, next: null, k: 0, fade: 2000, t0: 0, stage: "one",
+              done: null, x: 0.5, cut: null, mix: null, sendCanvas: null };
+  function pStream() { return { bmp: null, matte: document.createElement("canvas"), mattedAt: 0, alpha: null, cut: document.createElement("canvas"), cutOf: null, cutV: -1, matteV: 0 }; }
+  const PFLY = 2;                                            // two frames in flight: the network's wait overlaps the GPU's work
+  function pConnect() {
+    if (P.ws && P.ws.readyState <= 1) return;
+    P.ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/animate");
+    P.ws.binaryType = "arraybuffer";
+    P.ws.onopen = () => { P.flying = 0; };
+    P.ws.onclose = () => { P.ws = null; P.flying = 0; if (P.main) setTimeout(pConnect, 1500); };
+    P.ws.onmessage = async (e) => {
+      const buf = e.data, n = new DataView(buf).getUint32(0);
+      const info = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 4, n)));
+      const all = new Uint8Array(buf, 4 + n), a = info.next ? all.subarray(0, info.jpeg) : all, b = info.next ? all.subarray(info.jpeg) : null;
+      P.flying = Math.max(0, P.flying - 1);
+      if (info.head) { serverHead = { x: info.head.x, y: info.head.y, at: performance.now() }; stat.headBy = "animator"; }
+      stat.portraitNote = info.note || ""; stat.portraitMs = info.ms ? Math.round(info.ms.total) : 0;
+      if (a.length && P.main) {
+        const [ba, bb] = await Promise.all([createImageBitmap(new Blob([a], { type: "image/jpeg" })), b && b.length ? createImageBitmap(new Blob([b], { type: "image/jpeg" })) : null]);
+        if (!P.main) { ba.close(); if (bb) bb.close(); return; }
+        if (P.stage === "promoting" && !bb) {               // the incoming portrait is the portrait now
+          P.stage = "one"; swapIn(P.main, ba); P.next = null; finishAge(true);
+        } else {
+          swapIn(P.main, ba);
+          if (bb && P.next) { swapIn(P.next, bb); if (!P.t0) P.t0 = performance.now(); }   // the dissolve starts with its first frame
+          else if (bb) bb.close();
+        }
+        stat.times.push(performance.now()); while (stat.times.length && performance.now() - stat.times[0] > 2000) stat.times.shift();
+      }
+    };
+  }
+  function swapIn(st, bmp) { if (st.bmp) st.bmp.close(); st.bmp = bmp; }
+  setInterval(() => { if (P.flying && performance.now() - P.sentAt > 4000) P.flying = 0; }, 1000);   // never stall
+  // camera frames are encoded in a worker (encoder.js), so the busy main thread never slows the portrait down
+  let enc = null;
+  try { enc = new Worker(new URL("./encoder.js", import.meta.url)); } catch (e) { enc = null; }
+  if (enc) enc.onmessage = (e) => {
+    if (!e.data || !P.ws || P.ws.readyState !== 1) { P.flying = Math.max(0, P.flying - 1); return; }
+    P.ws.send(e.data);
+  };
+  function pSend() {                                         // the next frame goes as soon as one comes back
+    if (!P.main || held || P.flying >= PFLY || !P.ws || P.ws.readyState !== 1 || !video.videoWidth) return;
+    if (P.flying && performance.now() - P.sentAt < 15) return;   // (not two at once)
+    P.flying++; P.sentAt = performance.now();
+    const w = 480, h = Math.round(w * video.videoHeight / video.videoWidth);
+    if (enc) {
+      createImageBitmap(video, { resizeWidth: w, resizeHeight: h, resizeQuality: "low" })
+        .then(bmp => enc.postMessage({ bmp, w, h, q: 0.8 }, [bmp]))
+        .catch(() => { P.flying = Math.max(0, P.flying - 1); });
+      return;
+    }
+    const c = P.sendCanvas || (P.sendCanvas = document.createElement("canvas"));   // (no workers: on the page)
+    if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+    const g = c.getContext("2d"); g.save(); g.translate(w, 0); g.scale(-1, 1); g.drawImage(video, 0, 0, w, h); g.restore();   // as in a mirror
+    c.toBlob(async (bl) => { if (!bl || !P.ws || P.ws.readyState !== 1) { P.flying = Math.max(0, P.flying - 1); return; } P.ws.send(await bl.arrayBuffer()); }, "image/jpeg", 0.8);
+  }
+  // the portrait's outline: MediaPipe on the moved portrait, at most ~8 times a second per portrait (the head moves
+  // inside a still painting, so the outline barely changes); a soft head-and-shoulders shape if MediaPipe isn't there
+  const SEG = 256;
+  const segCanvas = Object.assign(document.createElement("canvas"), { width: SEG, height: SEG });
+  function matteOf(st, now) {
+    const m = st.matte;
+    if (m.width !== SEG) { m.width = m.height = SEG; st.mattedAt = 0; }
+    if (now - st.mattedAt < 120 && st.mattedAt) return m;
+    st.mattedAt = now;
+    const g = m.getContext("2d");
+    if (segImage && st.bmp) {
+      const sg = segCanvas.getContext("2d"); sg.clearRect(0, 0, SEG, SEG); sg.drawImage(st.bmp, 0, 0, SEG, SEG);
+      try {
+        segImage.segment(segCanvas, (res) => {
+          const conf = res.confidenceMasks && res.confidenceMasks[0]; if (!conf) return;
+          const f = conf.getAsFloat32Array();
+          let cover = 0;
+          for (let i = 0; i < f.length; i++) cover += f[i];
+          if (cover / f.length < 0.08) return;               // no person found in it: keep the last outline
+          const first = !st.alpha;
+          if (first) st.alpha = new Float32Array(f.length);
+          const data = g.createImageData(SEG, SEG), d = data.data;
+          for (let i = 0, j = 3; i < f.length; i++, j += 4) {   // blend toward the new outline, so it never flickers
+            const v = f[i] > 0.2 ? Math.min(1, f[i] * 1.2) : 0;
+            st.alpha[i] = first ? v : st.alpha[i] * 0.4 + v * 0.6;
+            d[j] = st.alpha[i] * 255;
+          }
+          g.putImageData(data, 0, 0);
+          st.segOk = true; st.matteV++;
+        });
+      } catch (e) {}
+    }
+    if (!st.segOk) {                                         // a soft bust: a head and a pair of shoulders
+      g.clearRect(0, 0, SEG, SEG); g.fillStyle = "#000"; g.filter = "blur(10px)";
+      g.beginPath(); g.ellipse(SEG * 0.5, SEG * 0.42, SEG * 0.2, SEG * 0.26, 0, 0, Math.PI * 2); g.fill();
+      g.beginPath(); g.ellipse(SEG * 0.5, SEG * 1.02, SEG * 0.46, SEG * 0.3, 0, 0, Math.PI * 2); g.fill();
+      g.filter = "none"; st.matteV++;
+    }
+    return m;
+  }
+  function cutPortrait(st, now, size) {                      // the portrait without its background, its bottom melting into the world
+    const c = st.cut, m = matteOf(st, now);
+    if (c.width === size && st.cutOf === st.bmp && st.cutV === st.matteV) return c;   // nothing new since the last cut
+    if (c.width !== size) { c.width = c.height = size; }
+    st.cutOf = st.bmp; st.cutV = st.matteV;
+    const g = c.getContext("2d");
+    g.clearRect(0, 0, size, size);
+    g.drawImage(st.bmp, 0, 0, size, size);
+    g.globalCompositeOperation = "destination-in"; g.filter = "blur(2px)"; g.drawImage(m, 0, 0, size, size); g.filter = "none";
+    g.globalCompositeOperation = "destination-out";
+    const gr = g.createLinearGradient(0, size * 0.8, 0, size); gr.addColorStop(0, "rgba(0,0,0,0)"); gr.addColorStop(1, "rgba(0,0,0,1)");
+    g.fillStyle = gr; g.fillRect(0, size * 0.8, size, size * 0.2);
+    g.globalCompositeOperation = "source-over";
+    return c;
+  }
+  function drawPortrait(g, now) {
+    pSend();
+    if (!P.main.bmp) return;
+    const age = control && control.age != null ? +control.age : 30;
+    const side = H * (0.66 + 0.3 * Math.max(0, Math.min(1, (age - 4) / 14)));   // a child stands smaller in the world
+    const sh = serverHead && performance.now() - serverHead.at < 800 ? serverHead : null;
+    P.x += ((sh ? 0.5 + (sh.x - 0.5) * 0.5 : 0.5) - P.x) * 0.05;                   // drifts a little with you, never off screen
+    const x = Math.max(0, Math.min(W - side, P.x * W - side / 2)), y = H - side;
+    const px2 = Math.round(side * S);                        // cut at screen resolution
+    let k = 0;
+    if (P.next && P.next.bmp && P.t0) {
+      const r = Math.min(1, (now - P.t0) / P.fade); k = r * r * (3 - 2 * r);
+      if (r >= 1 && P.stage === "two") { P.stage = "promoting"; if (P.ws && P.ws.readyState === 1) P.ws.send(JSON.stringify({ cmd: "promote" })); }
+    }
+    if (P.stage === "promoting") k = 1;
+    g.globalAlpha = personAlpha;
+    if (k <= 0.001 || !(P.next && P.next.bmp)) g.drawImage(cutPortrait(P.main, now, px2), x, y, side, side);
+    else if (k >= 0.999) g.drawImage(cutPortrait(P.next, now, px2), x, y, side, side);
+    else {                                                   // a true crossfade of two cut-outs (their outlines differ: added, not stacked)
+      const m = P.mix || (P.mix = document.createElement("canvas"));
+      if (m.width !== px2) { m.width = m.height = px2; }
+      const mg = m.getContext("2d"); mg.clearRect(0, 0, px2, px2);
+      mg.globalAlpha = 1 - k; mg.drawImage(cutPortrait(P.main, now, px2), 0, 0);
+      mg.globalAlpha = k; mg.globalCompositeOperation = "lighter"; mg.drawImage(cutPortrait(P.next, now, px2), 0, 0);
+      mg.globalCompositeOperation = "source-over"; mg.globalAlpha = 1;
+      g.drawImage(m, x, y, side, side);
+    }
+    g.globalAlpha = 1;
+  }
+  function finishAge(ok) { const f = P.done; P.done = null; P.t0 = 0; if (f) f(ok); }
+  async function portrait(blob, { fade = 2000 } = {}) {
+    if (!blob) {                                             // no portrait: back to nothing
+      if (P.ws && P.ws.readyState === 1) P.ws.send(JSON.stringify({ cmd: "drop" }));
+      for (const st of [P.main, P.next]) if (st && st.bmp) st.bmp.close();
+      P.main = P.next = null; P.stage = "one"; finishAge(false); return true;
+    }
+    pConnect();
+    if (!P.main) {                                           // the first: set it, and it's there as soon as frames come
+      const r = await fetch("/animate/source", { method: "POST", body: blob }).then(r => r.json()).catch(() => ({ ok: false }));
+      if (!r.ok) { stat.portraitNote = r.note || "the portrait couldn't be set"; return false; }
+      P.main = pStream(); P.stage = "one";
+      return true;
+    }
+    if (P.stage !== "one") {                                 // a change is under way: let it land first (it never jumps)
+      await new Promise(r => { const t = setInterval(() => { if (P.stage === "one") { clearInterval(t); r(); } }, 100); });
+    }
+    const r = await fetch("/animate/source?slot=next", { method: "POST", body: blob }).then(r => r.json()).catch(() => ({ ok: false }));
+    if (!r.ok || !P.main) { stat.portraitNote = r.note || "the next portrait couldn't be set"; return false; }
+    P.next = pStream(); P.fade = Math.max(300, fade); P.t0 = 0; P.stage = "two";
+    return new Promise(res => { P.done = res; });
+  }
+  function photo() {                                         // the camera, mirrored, full size
+    if (!video.videoWidth) return Promise.resolve(null);
+    const c = document.createElement("canvas"); c.width = video.videoWidth; c.height = video.videoHeight;
+    const g = c.getContext("2d"); g.translate(c.width, 0); g.scale(-1, 1); g.drawImage(video, 0, 0);
+    return new Promise(r => c.toBlob(r, "image/jpeg", 0.92));
+  }
+
   // ---------- server ----------
   const ready = [];
   async function connect() {
     try {
       const m = await (await fetch("/config", { cache: "no-store" })).json();
       if (m.width !== W || m.height !== H || (m.out_scale || 2) !== S) { W = m.width; H = m.height; S = m.out_scale || 2; sizeCanvases(); }
-      serverPose = !!m.server_pose; worldLook(m);
+      serverPose = !!m.server_pose; worldLook(m); avatarCfg = m.avatar || "painted";
       stat.engine = m.engine; stat.references = m.references;
       if (lookSeen === null) { lookSeen = m.look; tuneSeen = m.tune; }
       stat.filter = m.filter || ""; stat.skip = m.skip_still;
@@ -390,7 +572,7 @@ export function createLive({ out, video, params }) {
       if (lookSeen !== null && m.look !== lookSeen && lastWorld)                     // the look: the same world again (same seed), in the new look
         world(lastWorld.prompt, { ...lastWorld.o, from: "", base: "none", keep: 0, frames: 1, breath: 0, fresh: false, polite: false, dur: 800 });
       lookSeen = m.look; tuneSeen = m.tune; shapeMode = m.shape || "depth"; stat.filter = m.filter || ""; stat.skip = m.skip_still;
-      serverPose = !!m.server_pose; worldLook(m);
+      serverPose = !!m.server_pose; worldLook(m); avatarCfg = m.avatar || "painted";
       if ((shapeMode === "pose" || shapeMode === "both") && !serverPose) startPoser();
     } catch (e) {}
   }, 1000);
@@ -568,7 +750,7 @@ export function createLive({ out, video, params }) {
   const camera = startCamera();
   connect();
   return {
-    stat, setPerson, setBackground, world, setScene, refresh, camera, hold, setReal, setPersonAlpha, setControl, where, skinTone, nextCamera,
+    stat, setPerson, setBackground, world, setScene, portrait, photo, avatarMode: () => avatarCfg, refresh, camera, hold, setReal, setPersonAlpha, setControl, where, skinTone, nextCamera,
     worldState: () => ({ queued: worlds.length, k: wk, textures: px ? px.textures : 0, webgl: !!(px && px.ok) }),
     whenReady: () => online ? Promise.resolve() : new Promise(r => ready.push(r)),
     get size() { return { W, H }; },

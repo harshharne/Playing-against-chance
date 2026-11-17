@@ -68,6 +68,7 @@ button.ghost { background: #fff; color: var(--ink); }
   <div class="grid">
     <section>
       <h2>STRUCTURE</h2>
+      <label class="txt">AVATAR (in the game)<select id="avatar"><option value="portrait">portrait: your face painted at each age, moved live by you</option><option value="painted">painted: the camera repainted frame by frame</option></select></label>
       <label class="txt">SHAPE (what holds your body)<select id="shape">
         <option value="depth">DEPTH (Depth Anything V2 → depth ControlNet)</option>
         <option value="pose">POSE (your whole body: DWPose on the GPU, or MediaPipe → OpenPose ControlNet)</option>
@@ -203,7 +204,7 @@ function send(k, v, wait = 120) {
 }
 SLIDERS.forEach(k => $(k).addEventListener("input", () => { $(k + "V").textContent = fmt(k, $(k).value); send(k, +$(k).value); }));
 TEXTS.forEach(k => $(k).addEventListener("input", () => send(k, $(k).value, 600)));
-["lora_a", "lora_b", "shape", "ref_mode"].forEach(k => $(k).addEventListener("change", () => send(k, $(k).value, 0)));
+["lora_a", "lora_b", "shape", "ref_mode", "avatar"].forEach(k => $(k).addEventListener("change", () => send(k, $(k).value, 0)));
 $("redraw").addEventListener("click", () => fetch("/redraw", { method: "POST" }));
 
 // ---------- showing ----------
@@ -242,7 +243,7 @@ function show(s, controls) {
   if (controls) {
     SLIDERS.forEach(k => { if (document.activeElement !== $(k)) { $(k).value = s.tune[k]; $(k + "V").textContent = fmt(k, s.tune[k]); } });
     TEXTS.forEach(k => { if (document.activeElement !== $(k)) $(k).value = s.tune[k]; });
-    $("shape").value = s.tune.shape; $("ref_mode").value = s.tune.ref_mode;
+    $("shape").value = s.tune.shape; $("ref_mode").value = s.tune.ref_mode; $("avatar").value = s.tune.avatar || "portrait";
     ["lora_a", "lora_b"].forEach(k => { $(k).value = s.tune[k]; });
   }
   fillLoras(s.loras);

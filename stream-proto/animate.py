@@ -98,11 +98,14 @@ class Animator:
         # face_smooth: steadies eyes and mouth (0 = raw: crisp but the tracker's noise shows)
         self.opts = {"multiplier": 1.0, "smooth": 0.3, "face_smooth": 0.3, "follow": 0.0, "turn_limit": 22, "redetect": 10, "quality": 85}
         self.src = None
+        self.next = None         # a second portrait, moved by the same motion: the game dissolves one age into the next
         self.last_head = None
         self.reset()
 
     # ---- the portrait ----
-    def set_source(self, rgb):
+    def set_source(self, rgb, slot="main"):
+        """slot "main": the portrait to move. slot "next": the one coming in, moved alongside it (same motion) until
+        promote() makes it the portrait, or drop_next() lets it go."""
         w, cfg = self.w, self.cfg
         with self.lock, self.torch.no_grad():
             img = self.resize_to_limit(np.ascontiguousarray(rgb), 1280, 2)
@@ -117,14 +120,28 @@ class Animator:
                 r = w.calc_combined_lip_ratio([0.0], info["lmk_crop"])
                 if r[0][0] >= cfg.lip_normalize_threshold:
                     lip = w.retarget_lip(x_s, r)
-            self.src = {
+            src = {
                 "img": img, "M_c2o": info["M_c2o"], "x_s_info": x_s_info, "x_c_s": x_s_info["kp"], "x_s": x_s,
                 "R_s": self.rot(x_s_info["pitch"], x_s_info["yaw"], x_s_info["roll"]),
                 "f_s": w.extract_feature_3d(I_s), "lip": lip,
                 "mask": self.prepare_paste_back(cfg.mask_crop, info["M_c2o"], dsize=(img.shape[1], img.shape[0])),
             }
-            self.prev = None
+            if slot == "next" and self.src is not None:
+                self.next = src                                       # (the driver's neutral and smoothing carry on)
+            else:
+                self.src, self.next = src, None
+                self.prev = None
         return True
+
+    def promote(self):
+        """The incoming portrait becomes the portrait (the age change is done). The motion carries on unbroken."""
+        with self.lock:
+            if self.next is not None:
+                self.src, self.next = self.next, None
+
+    def drop_next(self):
+        with self.lock:
+            self.next = None
 
     def reset(self):
         self.ref = None          # the neutral face: (kp info, rotation) of the first face seen after this
@@ -177,7 +194,7 @@ class Animator:
             if self.missing > LOST_AFTER:
                 self.ref, self.prev, self.ref_lmk = None, None, None  # they left: the next face is a new neutral
             self.last_head = None
-            return s["img"], {"face": False, "ms": t}
+            return [x["img"] for x in (s, self.next) if x is not None], {"face": False, "ms": t}
         self.missing = 0
         follow = max(0.0, min(1.0, float(self.opts.get("follow", 0.0))))
         if follow > 0 and self.ref_lmk is not None:                   # follow mode only: moved out of the neutral
@@ -210,28 +227,33 @@ class Animator:
                 L = lim * f
                 ang[k] = x0["ang"][k] + L * torch.tanh((pose[k] - x0["ang"][k]) / L)
             R_d = self.rot(ang["pitch"], ang["yaw"], ang["roll"])
-            xs = s["x_s_info"]
-            R_new = (R_d @ R0.permute(0, 2, 1)) @ s["R_s"]                     # relative motion: your change since neutral,
-            delta = xs["exp"] + (pose["exp"] - x0["exp"])                      # applied to the portrait's own pose and face
-            scale = xs["scale"] * (1 + (pose["scale"] / x0["scale"] - 1) * follow)
-            t_new = xs["t"] + (pose["t"] - x0["t"]) * follow
-            t_new[..., 2].fill_(0)
-            x_new = scale * (s["x_c_s"] @ R_new + delta) + t_new
-            x_new = w.stitching(s["x_s"], x_new)
-            if s["lip"] is not None:
-                x_new = x_new + s["lip"]
-            x_new = s["x_s"] + (x_new - s["x_s"]) * float(self.opts["multiplier"])
             t2 = time.perf_counter()
             t["motion"] = (t2 - t1) * 1000
-            out = w.warp_decode(s["f_s"], s["x_s"], x_new)
-            face = w.parse_output(out["out"])[0]
+            faces = [(src, self.move(src, R_d, R0, x0, pose, follow)) for src in (s, self.next) if src is not None]
             t3 = time.perf_counter()
             t["warp"] = (t3 - t2) * 1000
-        img = self.paste_back(face, s["M_c2o"], s["img"], s["mask"])
+        imgs = [self.paste_back(face, src["M_c2o"], src["img"], src["mask"]) for src, face in faces]
         t["paste"] = (time.perf_counter() - t3) * 1000
         head = _head_info(lmk, rgb.shape[1], rgb.shape[0], x_d["yaw"].item(), x_d["pitch"].item(), x_d["roll"].item())
         self.last_head, self.head_at = head, time.time()
-        return img, {"face": True, "head": head, "ms": t}
+        return imgs, {"face": True, "head": head, "ms": t}
+
+    def move(self, s, R_d, R0, x0, pose, follow):
+        """Your change since neutral, applied to one portrait's own pose and face -> its face, warped."""
+        w = self.w
+        xs = s["x_s_info"]
+        R_new = (R_d @ R0.permute(0, 2, 1)) @ s["R_s"]
+        delta = xs["exp"] + (pose["exp"] - x0["exp"])
+        scale = xs["scale"] * (1 + (pose["scale"] / x0["scale"] - 1) * follow)
+        t_new = xs["t"] + (pose["t"] - x0["t"]) * follow
+        t_new[..., 2].fill_(0)
+        x_new = scale * (s["x_c_s"] @ R_new + delta) + t_new
+        x_new = w.stitching(s["x_s"], x_new)
+        if s["lip"] is not None:
+            x_new = x_new + s["lip"]
+        x_new = s["x_s"] + (x_new - s["x_s"]) * float(self.opts["multiplier"])
+        out = w.warp_decode(s["f_s"], s["x_s"], x_new)
+        return w.parse_output(out["out"])[0]
 
     def drive_jpeg(self, jpeg):
         cv2 = self.cv2
@@ -244,13 +266,24 @@ class Animator:
         with self.lock:
             if self.src is None:
                 return b"", {"note": "no portrait yet"}
-            img, info = self.drive(rgb)
+            imgs, info = self.drive(rgb)
         t2 = time.perf_counter()
-        ok, buf = cv2.imencode(".jpg", cv2.cvtColor(img, cv2.COLOR_RGB2BGR), [cv2.IMWRITE_JPEG_QUALITY, int(self.opts["quality"])])
+        out = []
+        for img in imgs:
+            ok, buf = cv2.imencode(".jpg", cv2.cvtColor(img, cv2.COLOR_RGB2BGR), [cv2.IMWRITE_JPEG_QUALITY, int(self.opts["quality"])])
+            out.append(buf.tobytes() if ok else b"")
         t3 = time.perf_counter()
         info["ms"]["jpeg"] = ((t1 - t0) + (t3 - t2)) * 1000
         info["ms"]["total"] = (t3 - t0) * 1000
-        return buf.tobytes() if ok else b"", info
+        return pack_jpegs(out, info)
+
+
+def pack_jpegs(out, info):
+    """One jpeg: as it always was. Two (an age change): info["jpeg"] = the first one's length, info["next"] = the second's;
+    the bytes are the two one after the other."""
+    if len(out) > 1:
+        info["jpeg"], info["next"] = len(out[0]), len(out[1])
+    return b"".join(out), info
 
 
 class MockAnimator:
@@ -260,14 +293,28 @@ class MockAnimator:
         self.lock = threading.Lock()
         self.opts = {"multiplier": 1.0, "smooth": 0.3, "redetect": 10, "quality": 85}
         self.src = None
+        self.next = None
         self.last_head = None
         self.t0 = time.time()
 
-    def set_source(self, rgb):
+    def set_source(self, rgb, slot="main"):
         from PIL import Image
         with self.lock:
-            self.src = Image.fromarray(np.ascontiguousarray(rgb))
+            img = Image.fromarray(np.ascontiguousarray(rgb))
+            if slot == "next" and self.src is not None:
+                self.next = img
+            else:
+                self.src, self.next = img, None
         return True
+
+    def promote(self):
+        with self.lock:
+            if self.next is not None:
+                self.src, self.next = self.next, None
+
+    def drop_next(self):
+        with self.lock:
+            self.next = None
 
     def reset(self):
         self.t0 = time.time()
@@ -286,11 +333,17 @@ class MockAnimator:
             k = time.time() - self.t0
             m = float(self.opts["multiplier"])
             yaw, roll = 12 * m * np.sin(k * 0.9), 4 * m * np.sin(k * 0.6)
-            img = self.src.rotate(roll, resample=Image.BICUBIC, translate=(yaw * 0.6, 0), fillcolor=(235, 225, 215))
-        buf = io.BytesIO()
-        img.save(buf, "JPEG", quality=int(self.opts["quality"]))
+            out = []
+            for src in (self.src, self.next):
+                if src is None:
+                    continue
+                img = src.rotate(roll, resample=Image.BICUBIC, translate=(yaw * 0.6, 0), fillcolor=(235, 225, 215))
+                buf = io.BytesIO()
+                img.save(buf, "JPEG", quality=int(self.opts["quality"]))
+                out.append(buf.getvalue())
         ms = (time.perf_counter() - t0) * 1000
         head = {"x": round(0.5 + yaw / 100, 3), "y": 0.45, "size": 0.25, "yaw": round(yaw, 1), "pitch": 0.0, "roll": round(roll, 1)}
         self.last_head = head
-        return buf.getvalue(), {"face": True, "head": head, "mock": True,
-                                "ms": {"track": 0.0, "motion": 0.0, "warp": ms, "paste": 0.0, "jpeg": 0.0, "total": ms}}
+        self.head_at = time.time()
+        return pack_jpegs(out, {"face": True, "head": head, "mock": True,
+                                "ms": {"track": 0.0, "motion": 0.0, "warp": ms, "paste": 0.0, "jpeg": 0.0, "total": ms}})
