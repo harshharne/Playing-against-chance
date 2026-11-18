@@ -1411,7 +1411,7 @@ async def config():
             "filter": current_style().get("filter", ""), "skip_still": TUNE["skip_still"], "pace": pace_version,
             "out_scale": 2, "world_w": WORLD_W, "world_h": WORLD_H, "parallax": TUNE["parallax"],
             "dissolve": TUNE["dissolve"], "push": TUNE["push"],
-            "avatar": TUNE["avatar"] if animator is not None else "painted", "animator": animator is not None,
+            "avatar": TUNE["avatar"], "animator": animator is not None,   # (the animator loads ~45 s after the painter)
             "server_pose": bool(_wb["model"]) or MOCK}
 
 

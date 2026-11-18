@@ -679,9 +679,14 @@ async function emerge(ev, got) {
 }
 async function takeover(ms, ev) {                               // the live kid emerges from the baby: the avatar fades in while
   if (pMode === "portrait") {                                   // its generation strength ramps up from loose to full;
-    const b = await Promise.race([paintAt(ev.age), sleep(Math.max(4000, ms))]);   // or: your portrait at the coming age
-    if (b && await live.portrait(b)) pShown = { age: ev.age, wear: S.wear };
-    else { pMode = "painted"; live.stat.portraitNote = "no portrait (no face in the photo, or the animator is off): the painted avatar instead"; }
+    for (let t = 0; t < 40 && live.avatarMode() !== "portrait"; t++) await sleep(500);   // or: your portrait at the coming age
+    if (live.avatarMode() !== "portrait") {                     // (a server just restarted: the animator loads ~45 s after the painter)
+      pMode = "painted"; live.stat.portraitNote = "the animator isn't loaded on the server: the painted avatar for this life";
+    } else {
+      const b = await Promise.race([paintAt(ev.age), sleep(Math.max(8000, ms))]);
+      if (b && await live.portrait(b)) pShown = { age: ev.age, wear: S.wear };
+      else { pMode = "painted"; live.stat.portraitNote = b ? "the animator found no face in your portrait: the painted avatar for this life" : "your portrait wasn't painted in time: the painted avatar for this life"; }
+    }
   }
   S.avatar = true;
   live.setPersonAlpha(0); live.setControl({ age: S.ageF, ramp: 0 }); avatarAt(S.ageF);
@@ -784,7 +789,7 @@ async function life() {
   if (T.events[0].drawn === "egg") { birth.reset(); toScene("egg"); }
   await say({ k: "PLAYING AGAINST CHANCE", t: `One life. ${T.events.length} moments.`, s: diceOn ? "Throw the die to begin." : "", begin: true });
   await waitThrow("begin");
-  pMode = live.avatarMode();                                    // (set on /panel; "painted" if the animator isn't there)
+  pMode = live.avatarWanted() === "portrait" ? "portrait" : "painted";   // (set on /panel; the animator only has to be up by age 8)
   if (pMode === "portrait") getPhoto();                         // you're at the screen now: your photo, for your portraits
   setTurn("watch"); holdAll(false);
   await unsay();

@@ -40,7 +40,7 @@ export function createLive({ out, video, params }) {
   let person = null, personAt = 0, fade = 150, lastSig = null, held = false;
   let showReal = true, personAlpha = 1, control = null, serverPose = false;
   const px = createParallax(); let par = [0, 0], parallax = 0.03, dissolve = 0.5, pushAmt = 0.02, serverHead = null;
-  let personPose = null, prevPose = null, livePose = null, avatarCfg = "painted";
+  let personPose = null, prevPose = null, livePose = null, avatarCfg = "painted", animatorCfg = false;
   let segmenter = null, segImage = null, segOk = false, camCover = 0, scene = null;
   const stat = { ms: 0, bgMs: 0, times: [], note: "", seg: "", online: false, engine: "", references: true, fps: "–" };
 
@@ -551,7 +551,7 @@ export function createLive({ out, video, params }) {
     try {
       const m = await (await fetch("/config", { cache: "no-store" })).json();
       if (m.width !== W || m.height !== H || (m.out_scale || 2) !== S) { W = m.width; H = m.height; S = m.out_scale || 2; sizeCanvases(); }
-      serverPose = !!m.server_pose; worldLook(m); avatarCfg = m.avatar || "painted";
+      serverPose = !!m.server_pose; worldLook(m); avatarCfg = m.avatar || "painted"; animatorCfg = !!m.animator;
       stat.engine = m.engine; stat.references = m.references;
       if (lookSeen === null) { lookSeen = m.look; tuneSeen = m.tune; }
       stat.filter = m.filter || ""; stat.skip = m.skip_still;
@@ -575,7 +575,7 @@ export function createLive({ out, video, params }) {
       if (lookSeen !== null && m.look !== lookSeen && lastWorld)                     // the look: the same world again (same seed), in the new look
         world(lastWorld.prompt, { ...lastWorld.o, from: "", base: "none", keep: 0, frames: 1, breath: 0, fresh: false, polite: false, dur: 800 });
       lookSeen = m.look; tuneSeen = m.tune; shapeMode = m.shape || "depth"; stat.filter = m.filter || ""; stat.skip = m.skip_still;
-      serverPose = !!m.server_pose; worldLook(m); avatarCfg = m.avatar || "painted";
+      serverPose = !!m.server_pose; worldLook(m); avatarCfg = m.avatar || "painted"; animatorCfg = !!m.animator;
       if ((shapeMode === "pose" || shapeMode === "both") && !serverPose) startPoser();
     } catch (e) {}
   }, 1000);
@@ -753,7 +753,9 @@ export function createLive({ out, video, params }) {
   const camera = startCamera();
   connect();
   return {
-    stat, setPerson, setBackground, world, setScene, portrait, photo, setPortraitPlace, avatarMode: () => avatarCfg, refresh, camera, hold, setReal, setPersonAlpha, setControl, where, skinTone, nextCamera,
+    stat, setPerson, setBackground, world, setScene, portrait, photo, setPortraitPlace, avatarMode: () => (avatarCfg === "portrait" && animatorCfg ? "portrait" : "painted"),   // what can run now
+    avatarWanted: () => avatarCfg,                           // what /panel asks for (the animator may still be loading)
+    refresh, camera, hold, setReal, setPersonAlpha, setControl, where, skinTone, nextCamera,
     worldState: () => ({ queued: worlds.length, k: wk, textures: px ? px.textures : 0, webgl: !!(px && px.ok) }),
     whenReady: () => online ? Promise.resolve() : new Promise(r => ready.push(r)),
     get size() { return { W, H }; },
