@@ -165,6 +165,16 @@ tune_version = 0              # goes up on any change, so the pages send a fresh
 app = FastAPI()
 
 
+@app.middleware("http")
+async def fresh_pages(request, call_next):
+    """The pages and their scripts are always checked with the server, so after ./push.sh a reload shows the new
+    version (without this, Chrome can keep using yesterday's copy for hours)."""
+    resp = await call_next(request)
+    if request.method == "GET" and "cache-control" not in resp.headers:
+        resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
+
 # ---------- looks (styles.json) ----------
 _styles = {"mtime": None, "data": {}}
 
