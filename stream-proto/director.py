@@ -64,12 +64,43 @@ TOOL = {
                         "line": {"type": "string", "description": "one line for the narrative box"},
                     },
                     "required": ["key", "world", "breathe", "clothes", "line"],
+                    "additionalProperties": False,
                 },
             }
         },
         "required": ["moments"],
+        "additionalProperties": False,
     },
 }
+# Claude Sonnet 5.5 (and later) refuse forced tool use (tool_choice "tool"/"any" -> HTTP 400). For them the director
+# asks for its answer as structured output instead: the reply is JSON that is guaranteed to match TOOL's schema.
+# Thinking is set to its lowest ("between_tools") with low effort: these are short writing jobs, and every second
+# counts (the game waits at most DIRECTOR WAIT for an answer). Older models keep the forced tool call.
+OLD_STYLE = ("claude-sonnet-5-2", "claude-sonnet-5-0", "claude-sonnet-5-20", "claude-sonnet-4", "claude-opus-4", "claude-haiku-4", "claude-3")
+
+
+def request_body(model, system, user, max_tokens, bible):
+    body = {"model": model, "max_tokens": max_tokens, "system": system, "messages": [{"role": "user", "content": user}]}
+    if bible.get("api") == "tool" or (bible.get("api") != "json" and model.startswith(OLD_STYLE)):
+        body.update(tools=[TOOL], tool_choice={"type": "tool", "name": "write_moments"})
+        return body
+    body["output_config"] = {"effort": bible.get("effort", "low"), "format": {"type": "json_schema", "schema": TOOL["input_schema"]}}
+    body["thinking"] = {"type": bible.get("thinking", "between_tools")}
+    return body
+
+
+def moments_of(data):
+    """The written moments from an answer: a forced tool call (older models) or structured JSON text (newer)."""
+    for block in data.get("content", []):
+        if block.get("type") == "tool_use":
+            return block.get("input", {}).get("moments", [])
+    for block in data.get("content", []):
+        if block.get("type") == "text" and block.get("text", "").strip():
+            try:
+                return json.loads(block["text"]).get("moments", [])
+            except (ValueError, AttributeError):
+                pass
+    return []
 
 
 def words(s):
@@ -132,9 +163,7 @@ class Director:
             if h in self.cache:
                 self.stats["cached"] += 1
                 return self.cache[h]
-        body = {"model": model, "max_tokens": 600 + 260 * len(moments), "system": system,
-                "tools": [TOOL], "tool_choice": {"type": "tool", "name": "write_moments"},
-                "messages": [{"role": "user", "content": user}]}
+        body = request_body(model, system, user, 1200 + 300 * len(moments), bible)
         t0 = time.perf_counter()
         data, err = None, ""
         for attempt in range(2):
@@ -159,11 +188,12 @@ class Director:
             self.stats["last_error"] = err
             print(f"[director] failed after {ms / 1000:.1f} s: {err}", flush=True)
             return {}
-        got = {}
-        for block in data.get("content", []):
-            if block.get("type") == "tool_use":
-                for m in block.get("input", {}).get("moments", []):
-                    got[m.get("key")] = m
+        got = {m.get("key"): m for m in moments_of(data) if isinstance(m, dict)}
+        if not got:                                              # refused, cut off by max_tokens, or empty
+            self.stats["failed"] += 1
+            self.stats["last_error"] = f"no moments in the answer (stop_reason {data.get('stop_reason')})"
+            print(f"[director] {self.stats['last_error']} after {ms / 1000:.1f} s", flush=True)
+            return {}
         out = {}
         for m in moments:
             c = self.check(got.get(m["key"], {}), m.get("scene", ""), bible)
