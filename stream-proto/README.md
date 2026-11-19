@@ -238,3 +238,25 @@ word limits) -> the written scene. It never decides anything; chance does.
 - For the Bookkeeper (Voice Lab): the game fires a `pac-moment` browser event with {key, line, world, written} each
   time a directed moment is used.
 
+## The Bookkeeper: the voice in the room (bookkeeper.md, bookkeeper.json, web/bookkeeper.js)
+An omnipresent voice that carries the life: no narrative box while it's there. OpenAI Realtime, speech to speech. The
+browser talks to OpenAI directly (WebRTC); the server only mints a short-lived key per life (GET /voice/token), so the
+real key never leaves the cloud machine.
+- Key: openai.key in stream-proto/ on the Mac (one line; git ignores it; push.sh sends it), or OPENAI_API_KEY.
+  Restart the server once after adding bookkeeper.py (push.sh says so). No key: the game runs with text, as before.
+- The personality: bookkeeper.md (from the personality map). The settings: bookkeeper.json (model, voice, accent,
+  predict_player, show_text, mic, ...). Both are read fresh when a life begins: edit, push, start a new life.
+- WHEN it speaks is the game's: three moments per event, each a [GAME] message with the facts it must carry.
+  ARRIVE (the bridge retold + what's coming, while the world changes) · CARDS (its opinion while they rise) ·
+  OUTCOME / HAPPENED (what happened, plainly, then its take). A fluke is one flat line. After Death it closes the
+  books, then the ledger shows. Silent during the lock, the throw and the landing.
+- The player can talk to it any time except the throw, and pick a card by saying its name (the choose_card tool;
+  a card named while the cards are still rising is taken once they're up). Clicks, keys and the die work as before.
+- The game waits for each line to finish (at most max_wait_s) before the next beat, so the pacing timings are
+  minimums, as before.
+- A new voice session per life: it remembers nothing of the last player.
+- Every line said and heard goes to logs/voice-<date>.jsonl on the server, with the prompt's version.
+- The debug line (D) shows the voice: ready / connecting / off (why), lines said and heard.
+- Sound: Chrome may block it until the first click or key. For the installation, start Chrome with
+  --autoplay-policy=no-user-gesture-required. The mic uses Chrome's echo cancellation; with speakers in a room,
+  set "mic": "far_field".
