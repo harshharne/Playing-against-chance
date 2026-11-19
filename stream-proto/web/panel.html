@@ -145,7 +145,7 @@ label.txt { display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; 
     <div class="acts">
       <button class="btn primary" id="b_new" type="button">New life<small>starts over (press twice)</small></button>
       <button class="btn" id="b_pause" type="button">Pause<small>holds the life where it is</small></button>
-      <button class="btn" id="b_roll" type="button">Roll<small>a throw, for the player</small></button>
+      <button class="btn" id="b_roll" type="button">Roll<small>a throw for the player (also wakes the screen)</small></button>
       <button class="btn" id="b_redraw" type="button">Redraw world<small>the same place, painted again</small></button>
     </div>
 
@@ -477,6 +477,9 @@ const PACE = [
   ["fluke_linger", "Fluke: linger", 1, 12, 0.5, "the job it led to", "pace"],
   ["reveal", "Fluke comes back", 1, 12, 0.5, "the quote, word for word", "pace"],
   ["final_silence", "Final silence", 0, 20, 0.5, "after Death, before anything else", "pace"],
+  ["The screen", null, 0, 0, 0, "", "pace"],
+  ["wake", "Wakes in", 0, 10, 0.5, "the screen is black until a throw; then it comes up over this long", "pace"],
+  ["rest", "Ledger stays", 0, 60, 5, "after a life, the ledger stays this long, then the screen goes black again (0 = until a throw)", "pace"],
   ["Body", null, 0, 0, 0, "", "pace"],
   ["gene", "Each trait", 0.5, 8, 0.5, "how long each trait is named as it emerges on the baby", "pace"],
   ["takeover", "The kid emerges", 1, 15, 0.5, "the baby fading into your portrait", "pace"],
@@ -508,6 +511,7 @@ function paceTotal() {
   $("pace_total").textContent = `One life at these timings: about ${Math.round(t / 60)} minutes, plus the player's own time with the options and the die.`;
 }
 function paceFmt(k, v) {
+  if (k === "rest" && v <= 0) return "until a throw";
   if (k === "w:morph_steps") return String(Math.round(v));
   if (k === "w:breathe") return v > 0 ? v.toFixed(1) + " s" : "off";
   if (k === "w:director_lines") return v >= 0.5 ? "on" : "off";
@@ -614,9 +618,9 @@ async function gamePoll() {
     $("c_voice").title = (fresh && (s.voice_note || s.voice_model)) || ""; }
     $("uiH").textContent = fresh && s.ui_next ? `${s.ui_next === "fog" ? "Fog" : "Glass"} comes in when this choice is over.` : "";
     $("now").classList.toggle("stale", !fresh);
-    chip("c_game", fresh ? (s.paused ? "warn" : "ok") : "bad", fresh ? (s.paused ? "paused" : `age ${s.age}`) : "not connected");
+    chip("c_game", fresh ? (s.paused ? "warn" : s.screen === "off" ? "" : "ok") : "bad", fresh ? (s.paused ? "paused" : s.screen === "off" ? "screen off" : `age ${s.age}`) : "not connected");
     if (fresh) {
-      $("n_age").textContent = `Age ${s.age} · moment ${s.n} of ${s.of}` + (s.paused ? " · paused" : "");
+      $("n_age").textContent = s.screen === "off" ? "Screen off · waiting for a throw" : `Age ${s.age} · moment ${s.n} of ${s.of}` + (s.paused ? " · paused" : "");
       $("n_ev").textContent = s.event || "–";
       $("n_meta").innerHTML = [["style", s.ui], ["avatar", s.avatar], ["screen", s.screen_fps + " fps"], s.portrait_ms ? ["portrait", s.portrait_ms + " ms"] : null, s.place ? ["born in", s.place] : null]
         .filter(Boolean).map(([a, b]) => `<span>${a} <b>${String(b).replace(/</g, "&lt;")}</b></span>`).join("");

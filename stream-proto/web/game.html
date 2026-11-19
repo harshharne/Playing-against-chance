@@ -19,6 +19,10 @@
 html, body { height: 100%; margin: 0; overflow: hidden; }
 body { background: var(--bg); color: var(--ink); font-family: "Inter", ui-sans-serif, system-ui, -apple-system, "Helvetica Neue", sans-serif; -webkit-font-smoothing: antialiased; }
 .gen { position: fixed; inset: 0; overflow: hidden; background: #eceae6; }
+/* the screen is OFF (black) until a throw begins a life; it fades up over WAKE, and back down REST after the ledger */
+.off { position: absolute; inset: 0; z-index: 1000; background: #000; opacity: 1; transition: opacity var(--offT, 3s) ease; cursor: none; }
+.off.up { opacity: 0; pointer-events: none; }
+.gen .debug { z-index: 1001; }
 .gen canvas { width: 100%; height: 100%; object-fit: cover; display: block; }
 .gen canvas.birth, .gen canvas.baby { position: absolute; inset: 0; opacity: 0; pointer-events: none; }   /* drawn scenes and the baby, over the live picture */
 .pip { position: absolute; top: 14px; right: 14px; width: clamp(96px, 12%, 170px); aspect-ratio: 16 / 9; object-fit: cover; transform: scaleX(-1); border-radius: 8px; opacity: 0.85; background: #ddd; transition: opacity 0.4s; }
@@ -113,6 +117,7 @@ button:focus-visible { outline: 3px solid #888; outline-offset: 2px; }
   <div class="big" id="big" aria-live="polite"><div class="disc"><b id="bigN"></b><span id="bigW"></span></div></div>
   <div class="deck" id="deck" role="group" aria-label="Your options" hidden></div>
   <div class="flip" id="flip" aria-live="polite"><div class="in"><div class="face" id="flipFace"></div><div class="back"></div></div></div>
+  <div class="off" id="off" aria-hidden="true"></div>
   <div class="debug" id="debug" hidden></div>
 </div>
 
@@ -893,7 +898,19 @@ async function arrive(ev, prev) {
   await unsay();
 }
 
-async function life() {
+// ---------- the screen: off (black) until the die begins a life ----------
+const offEl = $("off");
+let screenUp = false;
+async function screenTo(up, ms) {
+  screenUp = up;
+  offEl.style.setProperty("--offT", Math.max(0, ms) / 1000 + "s");
+  offEl.classList.toggle("up", up);
+  await sleep(ms);
+}
+
+async function life(begun = false) {                            // begun: the throw that starts it already came (on the ledger)
+  if (screenUp) await screenTo(false, begun ? 1200 : sec("wake"));   // the last life goes dark first
+  await unsay();
   if (!T) await loadLife();
   S = freshLife(); setPhase(0); D.clear(); evIdx = -1; lastLine = "";
   V.stop();                                                     // each life gets a fresh voice, with no memory of the last
@@ -905,16 +922,15 @@ async function life() {
   await live.whenReady();
   world(T.events[0].scene, { fresh: true, age: 0 });          // a new life: a fresh world, its own seed
   if (T.events[0].drawn === "egg") { birth.reset(); toScene("egg"); }
-  await say({ k: "PLAYING AGAINST CHANCE", t: `One life. ${T.events.length} moments.`, s: diceOn ? "Throw the die to begin." : "", begin: true });
-  await waitThrow("begin");
+  if (!begun) await waitThrow("begin");                         // black, still, until the die is thrown (or R / Enter, or ROLL on /panel)
+  const lit = screenTo(true, sec("wake"));                      // the screen comes up on the first world
   const voice = voiceOn ? V.start(`${new Date().toISOString().slice(0, 19)}-${S.seed}`)   // you're at the screen now: the voice comes in
                         : (V.stat.note = "off on the panel", false);
   pMode = live.avatarWanted() === "portrait" ? "portrait" : "painted";   // (set on /panel; the animator only has to be up by age 8)
-  if (pMode === "portrait") getPhoto();                         // you're at the screen now: your photo, for your portraits
+  if (pMode === "portrait") lit.then(() => getPhoto());         // your photo, for your portraits (once the screen lights your face)
   setTurn("watch"); holdAll(false);
-  await unsay();
   avatarAt(0);
-  await Promise.all([sleep(sec("arrive") * 0.6), Promise.race([voice, sleep(8000)])]);
+  await Promise.all([lit, sleep(sec("arrive") * 0.6), Promise.race([voice, sleep(8000)])]);
   let prev = null;
   for (const ev of T.events) {
     evIdx++;
@@ -933,10 +949,11 @@ async function life() {
   await V.cue(G("close", ["the life, as the game recorded it:", ...lifeLines()]));   // it closes the books
   V.listen("open");
   await ending();
-  await waitThrow("begin");
-  setTurn("watch"); await unsay();
+  const rest = sec("rest");                                     // the ledger stays REST seconds (0 = until a throw), then the screen goes off
+  const again = await (rest > 0 ? Promise.race([waitThrow("begin").then(() => true), sleep(rest).then(() => false)]) : waitThrow("begin").then(() => true));
+  setTurn("watch");
   T = null;                                                     // the next life re-reads trajectory.json (edits show up)
-  life().catch(e => say({ k: "COULDN'T START", s: esc(e.message || e), force: true }));
+  life(again).catch(e => { screenTo(true, 0); say({ k: "COULDN'T START", s: esc(e.message || e), force: true }); });
 }
 
 async function ending() {                                       // the life, read back
@@ -978,7 +995,7 @@ setInterval(() => {                                              // what the gam
     event: ev ? ev.title : (evIdx < 0 ? "not started" : "the end"), n: evIdx + 1, of: T ? T.events.length : 0, age: Math.floor(S.ageF),
     ui, ui_next: uiNext || "", avatar: S.avatar ? pMode : "none yet", portrait: st.portraitNote || "", portrait_ms: st.portraitMs || 0, screen_fps: st.drawFps || 0,
     world: worldOn || "", directed: st.directed || 0, director_error: st.directorError || "", paused, turn, tempo,
-    place: S.place || "", gender: S.gender || "", wear: S.wear || "",
+    place: S.place || "", gender: S.gender || "", wear: S.wear || "", screen: screenUp ? "on" : "off",
     voice: V.stat.state, voice_note: V.stat.note || "", voice_said: V.stat.said, voice_heard: V.stat.heard, voice_last: (V.stat.last || "").slice(0, 240),
     voice_model: V.model, subtitles: V.showText }) }).catch(() => {});
 }, 1000);
@@ -1019,13 +1036,13 @@ function status() {                                             // the hidden de
     const st = live.stat;
     if (!debugEl.dataset.flash) debugEl.textContent = !st.online ? "server offline" : [`${st.fps} fps`, source && `chance ${source}`, `camera: ${st.camera || "?"}`, st.camNote, `die${diceSrc ? ` (${diceSrc})` : ""}: ${dieText}`, `turn: ${turn}`, `screen ${st.drawFps || 0} fps`, st.worldError ? `WORLD ERROR: ${st.worldError}` : (st.worldId ? `world ${st.worldId}${st.bgMs ? ` (${st.bgMs} ms)` : ""}` : ""), st.worldTokens > 77 ? `PROMPT TOO LONG (${st.worldTokens} tokens, 77 are read)` : "",
     pMode === "portrait" ? `portrait${pShown.age >= 0 ? " at " + pShown.age : ""}${st.portraitMs ? ` ${st.portraitMs} ms` : ""}${st.portraitNote ? " · " + st.portraitNote : ""}` : (st.portraitNote || ""), +WK.director ? (st.directorError ? `director: ${st.directorError}` : `directed ${st.directed || 0}`) : "director off",
-    `voice: ${V.stat.state}${V.stat.note ? " (" + V.stat.note + ")" : ""}${V.on ? ` · said ${V.stat.said} · heard ${V.stat.heard}` : ""}`, st.note, st.seg].filter(Boolean).join(" · ");
+    screenUp ? "" : "screen off: waiting for a throw", `voice: ${V.stat.state}${V.stat.note ? " (" + V.stat.note + ")" : ""}${V.on ? ` · said ${V.stat.said} · heard ${V.stat.heard}` : ""}`, st.note, st.seg].filter(Boolean).join(" · ");
   }
   setTimeout(status, 250);
 }
 status();
-live.camera.catch(e => say({ k: "NO CAMERA", s: esc(e.message || e.name), force: true }));
-life().catch(e => say({ k: "COULDN'T START", s: esc(e.message || e), force: true }));
+live.camera.catch(e => { screenTo(true, 0); say({ k: "NO CAMERA", s: esc(e.message || e.name), force: true }); });
+life().catch(e => { screenTo(true, 0); say({ k: "COULDN'T START", s: esc(e.message || e), force: true }); });
 </script>
 </body>
 </html>

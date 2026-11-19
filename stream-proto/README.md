@@ -29,6 +29,11 @@ How: a picture of the EMPTY throwing area is remembered; after a throw, whatever
 - With no dice camera saved the game works as before.
 
 ## The game screen
+- The screen is OFF (black, no words, no cursor) until a throw: the die, R / Enter, or ROLL on /panel. Then it comes
+  up over WAKE IN seconds on the first world (painted while it was dark), the voice comes in, and your photo is taken
+  once the screen lights your face. After a life the ledger stays LEDGER STAYS seconds, then the screen goes black
+  again (0 = it stays until a throw); a throw while the ledger is up goes dark and starts the next life at once.
+  Both timings are on /panel → PACE → THE SCREEN. The panel shows "screen off" while it waits.
 - The look is picked on the panel (/panel → STYLE), not in the game.
 - FULL SCREEN (button under the stage names, or the F key): the picture covers the whole screen edge to edge, the choices float over its bottom. Esc leaves it.
 
