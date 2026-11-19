@@ -143,7 +143,13 @@ import { createFog } from "./ui-fog.js";
 
 const $ = (id) => document.getElementById(id);
 const sayEl = $("say"), bigEl = $("big"), deckEl = $("deck"), flipEl = $("flip"), debugEl = $("debug");
-const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+// every wait in the life goes through this, so PAUSE on /panel holds the whole life where it is
+let paused = false;
+const sleep = (ms) => new Promise(r => {
+  let left = ms, last = performance.now();
+  const tick = () => { const now = performance.now(); if (!paused) left -= now - last; last = now; if (left <= 0) r(); else setTimeout(tick, Math.min(100, Math.max(1, left))); };
+  setTimeout(tick, Math.min(100, Math.max(0, ms)));
+});
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const up = (s) => String(s).toUpperCase();
 const nextFrame = () => new Promise(r => requestAnimationFrame(() => r()));
@@ -180,9 +186,10 @@ async function toScene(name) {                                 // crossfade from
 }
 
 // ---------- the life and its timings (trajectory.json; the timings change live from /panel) ----------
-const WK0 = { keep: 0.25, turn_keep: 0.45, chapter_keep: 0.1, breathe: 5, breathe_keep: 0.55, morph_steps: 8, director: 1, director_lines: 0, director_wait: 2 };
+const WK0 = { keep: 0.25, turn_keep: 0.45, chapter_keep: 0.1, breathe: 5, breathe_keep: 0.4, morph_steps: 12, director: 1, director_lines: 0, director_wait: 2 };
 let T = null, P = {}, WK = { ...WK0 };
-const sec = (k) => Math.max(0, +P[k] || 0) * 1000;
+let tempo = 1;                                                  // TEMPO on /panel: every timing x this
+const sec = (k) => Math.max(0, +P[k] || 0) * 1000 * tempo;
 function setPacing(doc) {
   P = doc.pacing || {}; WK = { ...WK0, ...(doc.world || {}) };
   if (T && doc.context) T.context = doc.context;
@@ -308,6 +315,25 @@ function paintAt(age, wear = S.wear) {                          // -> a jpeg blo
 }
 const pNeeds = (age) => pMode === "portrait" && age >= 4 && (Math.abs(age - pShown.age) >= 3 || S.wear !== pShown.wear);
 function prepPortrait(ev) { if (ev && pNeeds(ev.age)) paintAt(ev.age); }   // painted ahead, while this event plays
+// The avatar follows /panel (AVATAR) and what's running, at every event: the portrait when it's asked for and the
+// animator is up (also when the animator came up late, or came back), the painted avatar otherwise.
+async function syncAvatar(ev) {
+  if (!S.avatar) return;
+  const want = live.avatarWanted() === "portrait", can = live.avatarMode() === "portrait";
+  if (pMode === "portrait" && !want) {                          // switched to painted on the panel
+    pMode = "painted"; await live.portrait(null); live.stat.portraitNote = ""; avatarAt(S.ageF);
+  } else if (pMode === "painted" && want && can) {              // the portrait is possible (again): over to it
+    pMode = "portrait";
+    const b = await paintAt(ev.age);
+    if (b && await live.portrait(b)) {
+      pShown = { age: ev.age, wear: S.wear }; live.setPerson(null); live.stat.portraitNote = "";
+    } else { pMode = "painted"; avatarAt(S.ageF); }
+  }
+}
+addEventListener("pac-portrait-lost", () => {                   // the animator stopped: the painted avatar until the next event
+  if (pMode !== "portrait") return;
+  pMode = "painted"; live.portrait(null); avatarAt(S.ageF);
+});
 async function portraitTo(ev, ms) {                             // as the years pass, you dissolve into your next age
   if (!S.avatar || !pNeeds(ev.age)) return;
   const age = ev.age, wear = S.wear, b = await paintAt(age, wear);
@@ -349,18 +375,18 @@ function compose(scene, { directed = false, mood = "", age = null } = {}) {
 // Every change is painted on the server as a run of pictures (live.world): all from the picture on screen, each
 // repainted a little more, the words moving from the old scene to the new; the screen dissolves through them and
 // pushes in. How many pictures: one every MORPH FRAME seconds of the change, at most MORPH STEPS. The last one is
-// the new scene itself and becomes this moment's own world, which then breathes.
+// the new scene itself and becomes this moment's own world. Then the life moves on through its PASSAGE (below).
 //   keep: how much of the old picture survives · dur: ms for the whole change · fresh: a new life
-let worldDone = Promise.resolve(), worldScene = null, worldGen = 0, worldBreaths = null, breathN = 0, worldNoise = 0, worldAt = 0;
+let worldDone = Promise.resolve(), worldScene = null, worldGen = 0, worldBreaths = null, breathN = 0, worldNoise = 0, worldAt = 0, worldOn = "";
 function world(scene, { keep = 0, fresh = false, breaths = null, dur = 0, directed = false, mood = "", age = null, turn = false } = {}) {
   const prompt = compose(scene, { directed, mood, age });
   const from = fresh ? "" : (worldScene || ""), ms = dur || sec("world_fade");
   const each = Math.max(300, sec("morph_frame") || 1200);
   const n = fresh || !from || from === prompt || sceneCovers() ? 1 : Math.max(1, Math.min(Math.round(+WK.morph_steps || 1), Math.round(ms / each)));
   ++worldGen;
-  worldScene = prompt; breathN = 0;
+  worldScene = prompt; worldOn = prompt; breathN = 0;
   worldNoise = Math.max(0, evIdx) * 2 + (turn ? 1 : 0);         // an event and its outcome: related noises, not the same one
-  worldBreaths = breaths && breaths.length ? breaths.map(b => compose(b, { directed: true, age })) : null;
+  worldBreaths = breaths && breaths.length ? breaths.map(b => compose(b, { directed, age })) : null;
   if (FOG() && !fresh) fog.swell(ms);                           // in the fog: it rolls in, and the new place forms out of it
   worldAt = Infinity;                                           // no breath until this change has landed, and a while after
   const my = worldGen;
@@ -391,11 +417,13 @@ function momentsOf(ev) {
 function ask(ev, list) {
   if (!list.length) return;
   const p = fetch("/direct", { method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ life: lifeNow(), event: { id: ev.id, title: ev.title, type: ev.type, setup: ev.setup || ev.text || "" }, moments: list }) })
+    body: JSON.stringify({ life: lifeNow(), event: { id: ev.id, title: ev.title, type: ev.type, setup: ev.setup || ev.text || "", age: ev.age,
+                                                    until: nextAge(ev), passage: ev.passage || null }, moments: list }) })
     .then(r => r.json()).then(j => { live.stat.directorError = j.error || ""; for (const m of list) D.set(m.key, (j.moments || {})[m.key] || null); })
     .catch(() => { for (const m of list) D.set(m.key, null); });
   for (const m of list) D.set(m.key, p.then(() => D.get(m.key)));
 }
+function nextAge(ev) { const i = T.events.indexOf(ev), nx = i >= 0 ? T.events[i + 1] : null; return nx ? nx.age : 80; }
 function prewrite(ev) {                                        // the arrival on its own (needed first, quick), then every branch
   if (!ev || !(+WK.director)) return;
   const ms = momentsOf(ev).filter(m => !D.has(m.key));
@@ -411,38 +439,50 @@ async function directed(key) {
 }
 // the world for a moment: the director's if it's ready, the written scene (in the life's context) if not.
 // outcome: what happened (its clothes count too; the world TURNS into it); otherwise an arrival.
-function worldFor(key, scene, { keep = 0, dur = 0, outcome = false, mood = "", age = null } = {}) {
+// passage: the event's written passage, used when the director hasn't written one.
+function worldFor(key, scene, { keep = 0, dur = 0, outcome = false, mood = "", age = null, passage = null } = {}) {
   const p = (async () => {
     const d = await directed(key);
     if (d && outcome && d.clothes) S.wear = d.clothes;
     if (d) { live.stat.directed = (live.stat.directed || 0) + 1; dispatchEvent(new CustomEvent("pac-moment", { detail: { key, line: d.line, world: d.world, written: scene } })); }
     lastLine = d && +WK.director_lines ? d.line : "";
-    await world(d ? d.world : scene, { keep, dur, directed: !!d, breaths: d ? d.breathe : null, mood, age, turn: outcome });
+    await world(d ? d.world : scene, { keep, dur, directed: !!d, breaths: d && d.breathe && d.breathe.length > 1 ? d.breathe : passage, mood, age, turn: outcome });
   })();
   worldDone = p;
   return p;
 }
 // what happened: the world turns into it, over TURN seconds (trajectory.json pacing), keeping TURN KEEPS of the place
-const turnTo = (key, scene, mood = "") => worldFor(key, scene, { keep: +WK.turn_keep, dur: sec("turn") || sec("world_fade") * 1.6, outcome: true, mood });
+const turnTo = (key, scene, mood = "") => worldFor(key, scene, { keep: +WK.turn_keep, dur: sec("turn") || sec("world_fade") * 1.6, outcome: true, mood,
+                                                                  passage: T && T.events[evIdx] ? T.events[evIdx].passage : null });
 let lastLine = "", bridging = false;
 const dline = () => lastLine ? `<br><span style="color:#555;font-style:italic">${esc(lastLine)}</span>` : "";
 
-// Inside an event the world keeps changing: every WK.breathe seconds a new variation of the event's own world
-// (WK.breathe_keep of it survives; its noise swings a little: the server's DRIFT), soaked in over the old one.
-// The director's variations if it wrote them, otherwise the small changes in trajectory.json context.breaths.
-// Never while the die rolls, never during a change or the words between events, never under a drawn scene.
-(async function breathe() {
+// Inside an event the life moves on: every WK.breathe seconds the world changes to the next scene of the PASSAGE
+// (the years until the next event: the director's, written from this life, or the event's own in trajectory.json),
+// painted as a change of its own (a run of pictures over PASSAGE seconds, keeping WK.breathe_keep of the last).
+// When the passage runs out, the last scene breathes (small variations) until the next event. Never while the
+// die rolls, never during a change or the words between events, never under a drawn scene.
+(async function passage() {
   let last = 0;
   for (;;) {
     await sleep(250);
-    const every = (+WK.breathe || 0) * 1000, now = performance.now();
-    if (!(every > 0) || !worldScene || held || scene || bridging || document.hidden || now - last < every || now - worldAt < every) continue;
-    const my = worldGen;
-    const list = worldBreaths || (CX().breaths || []).map(b => `${worldScene}, ${b}`);
-    const p = list.length ? list[breathN % list.length] : worldScene;
-    breathN++; last = performance.now();
-    await live.world(p, { keep: +WK.breathe_keep || 0.55, frames: 1, dur: Math.min(every * 0.8, Math.max(1200, sec("world_fade"))),
-                          base: "anchor", seed: S.seed, event: worldNoise, breath: breathN, anchor: false, polite: true });
+    const every = (+WK.breathe || 0) * 1000 * tempo, now = performance.now();
+    if (!(every > 0) || !worldScene || held || scene || bridging || document.hidden || now - last < every || now - worldAt < every * 0.6) continue;
+    const list = worldBreaths || [];
+    const step = breathN < list.length, n0 = breathN++;
+    last = performance.now();
+    let p, o;
+    if (step) {                                                 // the next scene of the passage
+      const dur = Math.max(1500, sec("passage") || 3500), n = Math.max(1, Math.min(Math.round(+WK.morph_steps || 1), Math.round(dur / Math.max(300, sec("morph_frame") || 600))));
+      p = list[n0];
+      o = { from: worldOn, keep: +WK.breathe_keep || 0.4, frames: n, dur, base: "last", seed: S.seed, event: worldNoise * 16 + 1 + n0, anchor: false, polite: true, push: n > 1 };
+    } else {                                                    // the passage is over: the last scene breathes
+      const tail = list.length ? list[list.length - 1] : worldScene;
+      const extra = CX().breaths || [];
+      p = extra.length ? `${tail}, ${extra[n0 % extra.length]}` : tail;
+      o = { keep: 0.6, frames: 1, dur: Math.max(1200, sec("world_fade")), base: "last", seed: S.seed, event: worldNoise * 16 + list.length, breath: n0 + 1, anchor: false, polite: true };
+    }
+    if (await live.world(p, o) && step) worldOn = p;
   }
 })();
 
@@ -766,10 +806,10 @@ async function arrive(ev, prev) {
   let handover = null;
   if (prev && prev.drawn === "baby") handover = takeover(sec("takeover"), ev);  // the baby becomes the live kid
   else if ((ev.drawn || null) !== (prev && prev.drawn || null)) toScene(ev.drawn === "baby" ? null : ev.drawn);   // drawn scene -> the next one, or the painted world
-  if (!handover) portraitTo(ev, dur * 0.8);                     // the years show on you, as the world changes
+  if (!handover) syncAvatar(ev).then(() => portraitTo(ev, dur * 0.8));   // the years show on you, as the world changes
   bridging = true;                                              // (the world is about to change: no breath now)
   if (prev && prev.bridge) await say({ s: esc(prev.bridge), cls: "bridge" });
-  const w = ev.scene ? worldFor(`${ev.id}:arrive`, ev.scene, { keep: +(chapter ? WK.chapter_keep : WK.keep), dur: dur * 0.92, age: ev.age }) : null;
+  const w = ev.scene ? worldFor(`${ev.id}:arrive`, ev.scene, { keep: +(chapter ? WK.chapter_keep : WK.keep), dur: dur * 0.92, age: ev.age, passage: ev.passage }) : null;
   prewrite(ev);                                                 // its branches, if they weren't asked for yet
   bridging = false;
   await Promise.all([ageTo(ev.age, dur * 0.85), sleep(dur), w, handover]);
@@ -822,13 +862,50 @@ async function ending() {                                       // the life, rea
   await say({ k: "A LIFE", t: "", s: `<table>${rows}</table>` + (diceOn ? `<br><span style="color:#777;font-size:12px">Throw the die for another life.</span>` : ""), cls: "end", begin: true });
 }
 
+// ---------- the panel runs the game (through the server): commands, live settings, and what's happening ----------
+let ctlSeq = -1, liveSeen = "";
+async function fromPanel() {
+  try {
+    const j = await (await fetch(`/game/commands?after=${Math.max(0, ctlSeq)}`, { cache: "no-store" })).json();
+    const first = ctlSeq < 0; ctlSeq = j.seq;
+    if (!first) for (const c of j.cmds || []) {                  // (a page that just opened doesn't replay old commands)
+      if (c.cmd === "new_life") location.reload();
+      else if (c.cmd === "pause") paused = true;
+      else if (c.cmd === "resume") paused = false;
+      else if (c.cmd === "roll") { if (beginAction) beginAction(); else if (screenRoll && turn === "throw") screenRoll(); }
+      else if (c.cmd === "redraw") fetch("/redraw", { method: "POST" });
+    }
+    const L = j.live || {}, key = JSON.stringify(L);
+    if (key !== liveSeen) {
+      liveSeen = key;
+      tempo = Math.max(0.4, Math.min(2, +L.tempo || 1));
+      fog.setScale(+L.type_scale || 1);
+      if ((L.ui === "glass" || L.ui === "fog") && L.ui !== ui) applyUI(L.ui);
+      if (L.animator) live.setAnimatorOpts(L.animator);
+    }
+  } catch (e) {}
+}
+setInterval(fromPanel, 600); fromPanel();
+setInterval(() => {                                              // what the game is doing, for the panel
+  const ev = T && T.events[evIdx], st = live.stat;
+  fetch("/game/report", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+    event: ev ? ev.title : (evIdx < 0 ? "not started" : "the end"), n: evIdx + 1, of: T ? T.events.length : 0, age: Math.floor(S.ageF),
+    ui, ui_next: uiNext || "", avatar: S.avatar ? pMode : "none yet", portrait: st.portraitNote || "", portrait_ms: st.portraitMs || 0, screen_fps: st.drawFps || 0,
+    world: worldOn || "", directed: st.directed || 0, director_error: st.directorError || "", paused, turn, tempo,
+    place: S.place || "", gender: S.gender || "", wear: S.wear || "" }) }).catch(() => {});
+}, 1000);
+
 // ---------- keys: cards = ← → Enter or 1–9 · R / Space = roll on screen · Space / Enter = BEGIN · F = fullscreen · D = debug · C = next camera ----------
 document.addEventListener("keydown", (e) => {
   if (e.repeat || e.target instanceof HTMLInputElement) return;
   if (e.key === "f" || e.key === "F") { setFull(!document.fullscreenElement); return; }
   if (e.key === "d" || e.key === "D") { debugEl.hidden = !debugEl.hidden; return; }
   if (e.key === "c" || e.key === "C") { switchCamera(); return; }
-  if (e.key === "u" || e.key === "U") { applyUI(ui === "fog" ? "glass" : "fog"); return; }
+  if (e.key === "u" || e.key === "U") {                         // (the panel hears of it too, so the two never disagree)
+    const next = (uiNext || ui) === "fog" ? "glass" : "fog"; applyUI(next);
+    fetch("/game/live", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ui: next }) }).catch(() => {});
+    return;
+  }
   if (deckKeys && (e.key.startsWith("Arrow") || e.key === "Enter" || e.key === " " || /^[1-9]$/.test(e.key))) { e.preventDefault(); deckKeys(e.key); return; }
   if ((e.key === " " || e.key === "Enter") && beginAction && !(e.target instanceof HTMLButtonElement)) { e.preventDefault(); beginAction(); return; }
   if ((e.key === "r" || e.key === "R" || e.key === " ") && screenRoll && turn === "throw") { e.preventDefault(); screenRoll(); return; }
@@ -852,7 +929,7 @@ function status() {                                             // the hidden de
   if (debugEl.dataset.flash && performance.now() > camFlash) { delete debugEl.dataset.flash; debugEl.hidden = true; }
   if (!debugEl.hidden) {
     const st = live.stat;
-    if (!debugEl.dataset.flash) debugEl.textContent = !st.online ? "server offline" : [`${st.fps} fps`, source && `chance ${source}`, `camera: ${st.camera || "?"}`, st.camNote, `die${diceSrc ? ` (${diceSrc})` : ""}: ${dieText}`, `turn: ${turn}`, st.worldError ? `WORLD ERROR: ${st.worldError}` : (st.worldId ? `world ${st.worldId}${st.bgMs ? ` (${st.bgMs} ms)` : ""}` : ""), st.worldTokens > 77 ? `PROMPT TOO LONG (${st.worldTokens} tokens, 77 are read)` : "",
+    if (!debugEl.dataset.flash) debugEl.textContent = !st.online ? "server offline" : [`${st.fps} fps`, source && `chance ${source}`, `camera: ${st.camera || "?"}`, st.camNote, `die${diceSrc ? ` (${diceSrc})` : ""}: ${dieText}`, `turn: ${turn}`, `screen ${st.drawFps || 0} fps`, st.worldError ? `WORLD ERROR: ${st.worldError}` : (st.worldId ? `world ${st.worldId}${st.bgMs ? ` (${st.bgMs} ms)` : ""}` : ""), st.worldTokens > 77 ? `PROMPT TOO LONG (${st.worldTokens} tokens, 77 are read)` : "",
     pMode === "portrait" ? `portrait${pShown.age >= 0 ? " at " + pShown.age : ""}${st.portraitMs ? ` ${st.portraitMs} ms` : ""}${st.portraitNote ? " · " + st.portraitNote : ""}` : (st.portraitNote || ""), +WK.director ? (st.directorError ? `director: ${st.directorError}` : `directed ${st.directed || 0}`) : "director off", st.note, st.seg].filter(Boolean).join(" · ");
   }
   setTimeout(status, 250);

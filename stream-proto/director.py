@@ -59,7 +59,7 @@ TOOL = {
                     "properties": {
                         "key": {"type": "string", "description": "the moment's key, exactly as given"},
                         "world": {"type": "string", "description": "the scene prompt for the painter"},
-                        "breathe": {"type": "array", "items": {"type": "string"}, "description": "three small variations of the same scene"},
+                        "breathe": {"type": "array", "items": {"type": "string"}, "description": "the passage: 4 to 6 scenes of the life moving on after this moment, in order"},
                         "clothes": {"type": "string", "description": "what the player wears now, or empty to leave it"},
                         "line": {"type": "string", "description": "one line for the narrative box"},
                     },
@@ -130,7 +130,7 @@ class Director:
         if not world or any(re.search(r"\b" + re.escape(b) + r"\b", world.lower()) for b in bad):
             return None
         br = [clip_words(b, MAX_WORLD_WORDS) for b in (m.get("breathe") or []) if isinstance(b, str) and b.strip()]
-        br = [b for b in br if not any(re.search(r"\b" + re.escape(x) + r"\b", b.lower()) for x in bad)][:3] or [world]
+        br = [b for b in br if not any(re.search(r"\b" + re.escape(x) + r"\b", b.lower()) for x in bad)][:6] or [world]
         return {"world": world, "breathe": br, "clothes": clip_words(m.get("clothes", ""), 14),
                 "line": clip_words(m.get("line", ""), int(bible.get("line_words", 28))), "written": written}
 
@@ -147,7 +147,10 @@ class Director:
             f'- key "{m["key"]}": {m.get("what", "")}\n  written scene: {m.get("scene", "")}' + (f'\n  card says: {m["reveals"]}' if m.get("reveals") else "")
             for m in moments)
         return (f"THE LIFE SO FAR\n{ledger}\n\nSMALL THINGS PLANTED (flukes; they may show quietly in later pictures)\n{planted}\n\n"
-                f"THE PLAYER NOW\n{who}\n\nTHIS EVENT\n{event.get('title', '')} ({event.get('type', '')}): {event.get('setup', '')}\n\n"
+                f"THE PLAYER NOW\n{who}\n\nTHIS EVENT\n{event.get('title', '')} ({event.get('type', '')}): {event.get('setup', '')}\n"
+                + (f"The passage covers the years from age {int(event['age'])} until age {int(event['until'])}.\n" if event.get('until') is not None and event.get('age') is not None else "")
+                + (f"The author's passage for these years (sharpen it, keep it this life's): {' | '.join(event['passage'])}\n" if event.get('passage') else "")
+                + "\n"
                 f"WRITE THESE MOMENTS (one entry each, same keys)\n{ms}")
 
     def write(self, life, event, moments):
@@ -163,7 +166,7 @@ class Director:
             if h in self.cache:
                 self.stats["cached"] += 1
                 return self.cache[h]
-        body = request_body(model, system, user, 1200 + 300 * len(moments), bible)
+        body = request_body(model, system, user, 1500 + 700 * len(moments), bible)
         t0 = time.perf_counter()
         data, err = None, ""
         for attempt in range(2):
@@ -202,6 +205,8 @@ class Director:
             else:
                 self.stats["rejected"] += 1
         self.stats["last_error"] = ""
+        self.stats["last"] = {"event": event.get("title", ""), "moments": {k: {"world": v["world"], "passage": v["breathe"], "clothes": v["clothes"], "line": v["line"]}
+                                                                         for k, v in list(out.items())[:4]}}
         print(f"[director] {event.get('title', '')}: {len(out)}/{len(moments)} moments in {ms / 1000:.1f} s ({model})", flush=True)
         for k, v in out.items():
             print(f"  {k}: {v['world'][:110]}", flush=True)

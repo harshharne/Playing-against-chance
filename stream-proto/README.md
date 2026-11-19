@@ -7,7 +7,7 @@ cd ~/stream-proto && source .venv/bin/activate && python download_models.py
 If the download stops halfway, run it again: it carries on.
 
 ## Pages
-- http://localhost:8766/panel — the tuning panel (see below).
+- http://localhost:8766/panel — the control panel: runs the show live, and every setting (see below).
 - http://localhost:8766/game — the game: one life, 19 events, birth to death (see "The life"). Edge to edge, no bars: only the narrative box (bottom) and the cards. F = real fullscreen (the camera window hides there). Cards: hover / click, or ← → and Enter, or 1–9. No die: R or Space rolls on screen. D = a hidden debug line (die state, fps).
 - http://localhost:8766/dice.html — set up the physical die (see below).
 - http://localhost:8766 — the lab: type prompts and add references by hand to tune the look. References set here carry over into the game.
@@ -74,7 +74,7 @@ On the cloud machine (chance-rtx), see CLOUD.md for the full routine:
 cd ~/stream-proto && source .venv/bin/activate && PAINTER=sdxl python stream_server.py
 ```
 (Leave out PAINTER=sdxl for the SD 1.5 painter.)
-Then on the Mac, through the tunnel: http://localhost:8766/game (the game), http://localhost:8766 (the lab), http://localhost:8766/panel (tuning).
+Then on the Mac, through the tunnel: http://localhost:8766/game (the game), http://localhost:8766 (the lab), http://localhost:8766/panel (control).
 
 ## The lab (http://localhost:8766)
 - YOU / BACKGROUND: a prompt for each, press Enter. Either can be left empty.
@@ -83,30 +83,37 @@ Then on the Mac, through the tunnel: http://localhost:8766/game (the game), http
 - LOOK: a browser filter over everything (8-bit, line drawing, or as generated).
 - When you stand still, no new frames are made, so a still you stays perfectly still. Every Enter makes a new background.
 
-## The tuning panel (http://localhost:8766/panel)
-All painting settings live on the server, so the panel tunes the game and the lab live, while they run. Nothing needs a restart.
-- STRUCTURE: what holds your body while it's repainted, through ControlNet, with a live preview of what the painter follows.
-  - DEPTH (default): Depth Anything V2 small reads a depth map of each frame on the GPU (~10 ms) -> depth ControlNet.
-  - POSE: the browser finds your joints with MediaPipe Pose (like the cut-out) and sends them with each frame; the server
-    draws them in OpenPose's format -> OpenPose ControlNet. (The original OpenPose detector is ~100 ms+ a frame and drags in
-    many libraries, so it isn't used.) The first switch to pose loads its ControlNet: a few seconds.
-  - CONTROLNET STRENGTH: too high = stiff, photo-like edges; too low = melting. With a shape on, try CHANGE 0.8–1.0.
-- STYLE: the LOOK (cartoon, caricature, comic, pop art, pixel art, line drawing, pencil, watercolour, oil, impressionist, woodblock, vintage poster, paper cut-out, claymation, 3D animated, low poly, stained glass, mosaic, graffiti, film noir, cyberpunk, blueprint, Matrix green code). Each look = words added to every prompt + a browser filter (pixel / line / matrix) + optionally a LoRA put in slot A. The list is styles.json: edit it (on the Mac, then ./push.sh); the panel picks up changes in a few seconds, no restart.
-- STYLE, continued: two LoRA slots with weights, reference style strength (IP-Adapter), style prompt (added to every prompt), negative prompt, prompt guidance.
-  Guidance 1.0 = off (fastest). The negative prompt only does something above 1.0, and then each frame costs about twice as long.
-- CHANGE: how much of you is repainted; world steps (1–4).
-- STYLE, reference: a STYLE REFERENCE slot (one painting for the avatar and the world) and where it acts:
-  STYLE ONLY (InstantStyle: only the painter's style layers, so you get its look without its subject), STYLE + LAYOUT, or EVERYTHING.
-  The layers were picked for SD 1.5 by analogy with InstantStyle's SDXL ones: judge by eye. The reference isn't saved in presets.
-- STABILITY: every frame uses the same noise (the style can't wander). STEADY = how much a frame leans on the last one while you're
-  still; GHOST GUARD = how quickly that lets go when you move; SKIP WHEN STILL = how much the camera must change before a new frame.
-- READOUT: painter, avatar frames per second, ms per frame and WHERE IT GOES (shape, encode, painter, decode, jpeg, queued),
-  NETWORK + BROWSER (the browser's round trip minus all of that), world time, GPU memory. If network + browser is bigger than the
-  server's time, a bigger GPU won't help much.
-- PACING: every timing of the unfolding (arrive, settle, lock, land, miss, linger, the happen / fluke holds, chapter breath, final
-  silence) and how much of each world survives into the next. Saved straight into trajectory.json; the game takes changes in ~2 s.
-  It also shows roughly how long a life runs at those timings.
-- PRESETS: save / load all of the above by name (files in presets/ on the server).
+## The control panel (http://localhost:8766/panel)
+Open it next to the game (another window, or a laptop on the same tunnel). Everything saves on the server and reaches the
+running game within a second; nothing needs a restart. The bar on top: SERVER (painter), ANIMATOR, DIRECTOR, GAME (green =
+fine, amber = loading or waiting, red = off or failing; hover the animator for why).
+- THE SHOW, on the left, acts on the game now (through POST /game/command and /game/live; the game polls
+  GET /game/commands and reports back to /game/report every second, GET /game/state is what the panel reads):
+  - what the game is on: age, moment n of N, the event, the style and avatar, the screen's frame rate, what is being
+    painted, and any warning (no portrait, the director failing, a slow screen).
+  - NEW LIFE (press twice: a stray click never ends a life), PAUSE / RESUME (every wait in the game holds; the world
+    and the portrait keep moving), ROLL (a random.org throw for the player when the die is away), REDRAW WORLD.
+  - STYLE OF THE SCREEN glass / fog (a switch in the middle of a choice waits until the choice is over; U in the game
+    tells the panel too), AVATAR portrait / painted (at the next event), DIRECTOR on / off.
+  - TEMPO: every timing at once (0.7 = faster, 1.3 = slower; cards and die still wait for the player). TYPE SIZE: the
+    fog style's letters, all together. Both are kept in game_live.json on the server (git ignores it).
+- The tabs:
+  - PACE: every timing of a life, in seconds, and how long a life runs at them (with the tempo). Saved into trajectory.json.
+  - WORLD: how far the world moves (what each kind of change keeps, the PASSAGE: a scene every / each takes / each keeps,
+    one picture every, most pictures), one life one look (layout hold, palette hold, breath drift), how the change looks
+    (dissolve, push in, parallax), speed and the GPU (in-between steps, REST BETWEEN PICTURES: raise it if the portrait
+    stutters while the world changes).
+  - STYLE: the look (styles.json), two LoRA slots with weights, a style reference painting (style only / style and
+    layout / everything), style prompt, negative prompt, guidance (1.0 = off; the negative prompt needs more, and the
+    painted avatar then costs about twice as long).
+  - AVATAR: the portrait's movement (movement, head smoothing, face smoothing, turn limit), sent to the animator live;
+    the painted avatar's shape (depth / pose / both, ControlNet strength, child until, youngest hold, change) and
+    steadiness (steady, ghost guard, skip when still).
+  - DIRECTOR: its lines on screen, how long to wait for it, its calls and errors, and its last answer: each moment's
+    world and the passage it wrote.
+  - SYSTEM: the readout (painter, frames, where the time goes, network, world run, GPU memory) and PRESETS (every
+    painting setting by name, files in presets/).
+- The camera preview that used to be on the panel is gone: the panel is for running the show.
 
 ## The painter
 - default `dmd`: DreamShaper 8, distilled to ONE step with DMD (`aaronb/dreamshaper-8-dmd-1kstep`, from the OpenDMD project).
@@ -158,9 +165,12 @@ A painted portrait, moved live by your face: LivePortrait warps the painting the
   family had (Whom, "means", until 24), the light of your age (a life as one day: dawn at birth, night at the end;
   a scene that names its own light keeps it), and after a Happens, the air (good: clear; bad: a grey sky). The
   director gets the same context and writes it in itself.
-- Inside an event it BREATHES: every WORLD BREATHES EVERY seconds a variation of the moment's own world (its noise
-  swung by BREATH DRIFT, its words from the director or context.breaths) soaks in. Never during a change or the words
-  between events, never while the die rolls, never under the egg, map or house.
+- Inside an event the life MOVES ON: every event in trajectory.json has a PASSAGE, 2-5 scenes of the years until the
+  next event (school: the yard in rain, a classroom in winter, a bus home at dusk ...). Every PASSAGE: A SCENE EVERY
+  seconds the next one is painted in as a change of its own (PASSAGE: EACH TAKES, so several pictures, never a jump),
+  each keeping PASSAGE: EACH KEEPS of the last. The director rewrites the passage for this life (4-6 scenes). When the
+  passage is over the last scene BREATHES (small variations, BREATH DRIFT). Never during a change or the words between
+  events, never while the die rolls, never under the egg, map or house.
 - Scenes are written as things a painter can paint: no readable writing (notices, signs saying X): it comes out as
   scribble. Several were rewritten for that.
 - The server prints one line per picture ([world N] change 3/6 · time · how much repainted · how far the words are).
@@ -183,7 +193,9 @@ A painted portrait, moved live by your face: LivePortrait warps the painting the
 - The fog moves: it rolls and curls, its edges breathe, wisps drift over the picture, and at every change of place it
   thickens over the middle and clears as the new place forms (SWELL in ui-fog.js).
 - In the fog the portrait stands to the right (the event's name has the middle).
-- A switch during a pick waits until the pick is done.
+- Legibility: every line is fitted to the screen (a long option or title shrinks before it would run off), the options
+  sit on one fog bank, more than five options go on two rows, and TYPE SIZE on the panel scales it all.
+- A switch during a choice waits until the choice is over.
 - For the Bookkeeper: every line the game would show fires a `pac-say` browser event {k, t, s, cls, shown}, in both
   styles, so the voice can speak what the fog leaves out.
 
@@ -211,16 +223,18 @@ painters load LoRAs from loras/ onto both pipelines (worlds + portraits, and the
 
 ## The director (an LLM writes each moment's world)
 director.py + director.json. For every moment of the life it writes, from the life so far: the WORLD prompt (your
-written scene elaborated: light, weather, season, viewpoint, things that carry over), three BREATHE variations for
-while the moment lasts, CLOTHES when the moment changes them, and one quiet LINE. The written trajectory stays the
+written scene elaborated: light, weather, season, viewpoint, things that carry over), the PASSAGE (4-6 scenes of the
+years until the next event, from the author's passage), CLOTHES when the moment changes them, and one quiet LINE. The written trajectory stays the
 spine and the fallback: off, too slow (WAIT FOR IT UP TO), or failing its checks (director.json never_in_pictures,
 word limits) -> the written scene. It never decides anything; chance does.
 - Asked AHEAD: the next event's arrival as soon as this one's outcome is known, and all of an event's branches as it
   begins, so answers are there when the die lands. About 2 calls per event (~40 a life), cached.
 - Key: anthropic.key in stream-proto/ on the Mac (one line; git ignores it; push.sh sends it), or ANTHROPIC_API_KEY.
 - Model and rules: director.json (re-read on every call, no restart). Default claude-sonnet-5-5.
-- Panel (PACING): DIRECTOR on/off, DIRECTOR'S LINES (its line under each outcome), WAIT FOR IT UP TO. Readout
-  DIRECTOR: calls, cached, rejected, last time, errors. The server prints each answer ([director] lines).
+- Claude Sonnet 5.5 refuses a forced tool call, so newer models answer as structured JSON (output_config json_schema,
+  low effort); older models (OLD_STYLE in director.py) keep the tool call. "api": "tool" / "json" in director.json forces one.
+- Panel: DIRECTOR on/off (left), and the DIRECTOR tab: its lines, WAIT FOR IT UP TO, calls / cached / rejected / errors,
+  its last answer. The server prints each answer ([director] lines).
 - For the Bookkeeper (Voice Lab): the game fires a `pac-moment` browser event with {key, line, world, written} each
   time a directed moment is used.
 

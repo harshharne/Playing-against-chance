@@ -3,211 +3,344 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Tuning Panel</title>
+<title>Control · Playing Against Chance</title>
 <style>
-/* The tuning panel: every control changes the painting live, for the game and the lab at once.
-   Groups: Structure / Style / Change / Stability / Readout, plus presets. White, minimal, like the other pages. */
-:root { --ink: #111; --dim: #8a8a8a; --line: #d6d6d6; --bad: #c0392b; color-scheme: light; }
-body { margin: 0; background: #fff; color: var(--ink); font-family: ui-sans-serif, system-ui, -apple-system, "Helvetica Neue", sans-serif; }
-.wrap { max-width: 1180px; margin: 0 auto; padding: 24px; }
-header { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
-h1 { margin: 0; font-size: 20px; }
-header .links { font-size: 13px; color: var(--dim); }
-header a { color: var(--ink); }
-.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; align-items: start; }
-section { border: 1.5px solid var(--ink); border-radius: 4px; padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 12px; }
-section.wide { grid-column: span 2; }
-@media (max-width: 720px) { section.wide { grid-column: auto; } }
-h2 { margin: 0; font-size: 11px; font-weight: 700; letter-spacing: 0.14em; }
-.note { margin: 0; font-size: 12px; line-height: 1.45; color: #555; }
-label.ctl { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; align-items: center; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; color: var(--dim); }
-label.ctl input[type=range] { grid-column: 1 / -1; width: 100%; margin: 0; accent-color: var(--ink); }
-label.ctl .v { font-weight: 500; letter-spacing: 0; color: var(--ink); font-variant-numeric: tabular-nums; }
-label.ctl small { grid-column: 1 / -1; font-size: 11px; font-weight: 400; letter-spacing: 0; color: var(--dim); }
-label.txt { display: flex; flex-direction: column; gap: 6px; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; color: var(--dim); }
-textarea, select, input[type=text] { font: inherit; font-size: 14px; color: var(--ink); border: 1.5px solid var(--ink); border-radius: 4px; padding: 8px; background: #fff; letter-spacing: 0; }
-textarea { resize: vertical; min-height: 54px; }
-.lora { display: grid; grid-template-columns: 1fr; gap: 6px; padding: 10px; border: 1px solid var(--line); border-radius: 4px; }
-.lora .meta { font-size: 11px; color: var(--dim); min-height: 1em; }
-.lora .meta.bad { color: var(--bad); }
-.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.row > * { flex: 1; min-width: 0; }
-button { font: inherit; font-size: 12px; font-weight: 600; letter-spacing: 0.08em; padding: 9px 12px; border: 1.5px solid var(--ink); border-radius: 4px; background: var(--ink); color: #fff; cursor: pointer; flex: none; }
-button.ghost { background: #fff; color: var(--ink); }
-.read { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 13px; font-variant-numeric: tabular-nums; }
-.read dt { color: var(--dim); font-size: 11px; font-weight: 600; letter-spacing: 0.08em; align-self: center; }
-.read dd { margin: 0; }
-.shapebox { position: relative; aspect-ratio: 5 / 3; background: #111; border-radius: 3px; overflow: hidden; display: grid; place-items: center; }
-.shapebox img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
-.shapebox span { color: #888; font-size: 12px; padding: 12px; text-align: center; }
-.looks { display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 6px; }
-.looks button { background: #fff; color: var(--ink); font-size: 11px; letter-spacing: 0.04em; padding: 8px 6px; text-align: center; }
-.looks button[aria-pressed="true"] { background: var(--ink); color: #fff; }
-.refrow { display: flex; gap: 12px; align-items: stretch; }
-.refslot { position: relative; flex: none; width: 96px; min-height: 96px; border: 1.5px dashed #9a9a9a; border-radius: 4px; display: grid; place-items: center; cursor: pointer; overflow: hidden; background: #fafafa; font-size: 10px; font-weight: 600; letter-spacing: 0.08em; color: var(--dim); text-align: center; line-height: 1.4; }
+/* The control desk. Left: the SHOW, which acts on the running game straight away (through the server: /game/*).
+   Right: the tabs, one per part of the system. Every control saves on the server and reaches the game within a second.
+   Dark, so it doesn't glare in the installation room. */
+@font-face { font-family: "PAC Display"; src: url("fonts/noto-serif-display-latin-wdth-normal.woff2") format("woff2"); font-weight: 100 900; font-stretch: 62.5% 100%; }
+:root { --bg: #0d0d0c; --panel: #151514; --panel2: #1c1c1a; --line: #2b2a27; --ink: #ecebe6; --dim: #8e8c85; --faint: #5d5b56;
+        --on: #f4f1e8; --ok: #8fc28f; --warn: #e2b04f; --bad: #e8735e; color-scheme: dark; }
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Helvetica Neue", sans-serif; }
+button, select, input, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--on); outline-offset: 2px; }
+
+/* the bar */
+.bar { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 18px; padding: 12px 22px; background: rgba(13,13,12,0.92); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.brand { font: 400 21px/1 "PAC Display", serif; letter-spacing: 0.02em; white-space: nowrap; }
+.brand b { font-weight: 600; } .brand span { font: 600 11px/1 ui-sans-serif, system-ui, sans-serif; letter-spacing: 0.18em; color: var(--dim); margin-left: 10px; text-transform: uppercase; }
+.chips { display: flex; gap: 8px; flex-wrap: wrap; flex: 1; }
+.chip { display: inline-flex; align-items: center; gap: 7px; padding: 5px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 12px; color: var(--dim); white-space: nowrap; }
+.chip i { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); flex: none; }
+.chip.ok i { background: var(--ok); } .chip.warn i { background: var(--warn); } .chip.bad i { background: var(--bad); }
+.chip b { color: var(--ink); font-weight: 600; }
+.open { color: var(--ink); text-decoration: none; border: 1px solid var(--line); padding: 6px 12px; border-radius: 6px; font-size: 13px; }
+.open:hover { border-color: var(--dim); }
+
+/* the desk */
+.desk { display: grid; grid-template-columns: minmax(300px, 360px) 1fr; gap: 0; min-height: calc(100vh - 58px); }
+@media (max-width: 900px) { .desk { grid-template-columns: 1fr; } .bar { position: static; } .tabs { top: 0; } }
+.show { border-right: 1px solid var(--line); padding: 20px 22px 40px; display: flex; flex-direction: column; gap: 18px; background: var(--panel); }
+@media (min-width: 901px) { .show { position: sticky; top: 58px; height: calc(100vh - 58px); overflow-y: auto; } }
+h2 { margin: 0; font: 600 11px/1 ui-sans-serif, system-ui, sans-serif; letter-spacing: 0.18em; color: var(--dim); text-transform: uppercase; }
+h3 { margin: 0 0 2px; font: 500 19px/1.2 "PAC Display", serif; letter-spacing: 0.01em; }
+
+.now { padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel2); display: flex; flex-direction: column; gap: 6px; }
+.now .ev { font: 400 26px/1.1 "PAC Display", serif; }
+.now .age { font: 600 12px/1 ui-sans-serif, system-ui, sans-serif; letter-spacing: 0.14em; color: var(--dim); text-transform: uppercase; }
+.now .meta { font-size: 12px; color: var(--dim); display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.now .meta b { color: var(--ink); font-weight: 500; }
+.now .world { font: italic 400 13px/1.4 "PAC Display", serif; color: #c9c6bd; border-top: 1px solid var(--line); padding-top: 8px; margin-top: 4px; }
+.now .warn { font-size: 12px; color: var(--warn); }
+.now.stale { opacity: 0.55; }
+
+.acts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.btn { border: 1px solid var(--line); background: var(--panel2); border-radius: 8px; padding: 11px 12px; cursor: pointer; font-weight: 600; font-size: 13px; letter-spacing: 0.04em; text-align: left; display: flex; flex-direction: column; gap: 2px; }
+.btn small { font-weight: 400; color: var(--dim); font-size: 11px; letter-spacing: 0; }
+.btn:hover { border-color: var(--dim); }
+.btn.primary { background: var(--on); color: #111; border-color: var(--on); } .btn.primary small { color: #555; }
+.btn.armed { border-color: var(--warn); color: var(--warn); }
+.btn:active { transform: translateY(1px); }
+
+.seg { display: grid; gap: 6px; }
+.seg .opts { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; border: 1px solid var(--line); border-radius: 8px; padding: 3px; gap: 3px; }
+.seg button { border: 0; background: transparent; border-radius: 6px; padding: 8px 6px; cursor: pointer; font-size: 12.5px; font-weight: 600; letter-spacing: 0.04em; color: var(--dim); }
+.seg button[aria-pressed="true"] { background: var(--on); color: #111; }
+.seg .help, .ctl small, .note { font-size: 12px; color: var(--dim); line-height: 1.45; }
+.keys { font-size: 12px; color: var(--dim); border-top: 1px solid var(--line); padding-top: 14px; line-height: 1.8; }
+kbd { display: inline-block; min-width: 20px; padding: 1px 6px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; font: 600 11px/1.4 ui-monospace, monospace; color: var(--ink); text-align: center; }
+
+/* sliders */
+.ctl { display: grid; grid-template-columns: 1fr auto; gap: 3px 10px; align-items: baseline; }
+.ctl > span:first-child { font-size: 12.5px; font-weight: 600; letter-spacing: 0.03em; }
+.ctl .v { font: 500 12.5px/1 ui-monospace, "SF Mono", monospace; color: var(--on); font-variant-numeric: tabular-nums; }
+.ctl input[type=range] { grid-column: 1 / -1; width: 100%; margin: 4px 0 2px; accent-color: var(--on); height: 18px; }
+.ctl small { grid-column: 1 / -1; }
+input[type=range]:disabled { opacity: 0.3; }
+
+/* tabs */
+.main { padding: 0 26px 60px; min-width: 0; }
+.tabs { position: sticky; top: 58px; z-index: 4; display: flex; gap: 2px; border-bottom: 1px solid var(--line); background: var(--bg); padding-top: 14px; overflow-x: auto; }
+.tabs button { border: 0; background: none; padding: 10px 14px 12px; cursor: pointer; font-size: 13px; font-weight: 600; letter-spacing: 0.08em; color: var(--dim); border-bottom: 2px solid transparent; white-space: nowrap; }
+.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--on); }
+.tab { display: none; padding-top: 22px; }
+.tab.on { display: block; }
+.lead { margin: 0 0 18px; color: var(--dim); max-width: 70ch; font-size: 13px; }
+.lead b { color: var(--ink); font-weight: 600; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; align-items: start; }
+.card { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+.card.wide { grid-column: 1 / -1; }
+.card .grid2 { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px 22px; }
+
+select, textarea, input[type=text] { background: var(--panel2); border: 1px solid var(--line); border-radius: 7px; padding: 8px 10px; font-size: 13.5px; width: 100%; }
+textarea { min-height: 64px; resize: vertical; }
+label.txt { display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; font-weight: 600; letter-spacing: 0.03em; }
+.looks { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 6px; }
+.looks button { border: 1px solid var(--line); background: var(--panel2); border-radius: 7px; padding: 9px 8px; cursor: pointer; font-size: 12.5px; }
+.looks button[aria-pressed="true"] { background: var(--on); color: #111; border-color: var(--on); }
+.loras { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; } @media (max-width: 1100px) { .loras { grid-template-columns: 1fr; } }
+.lora { border: 1px solid var(--line); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.lora .meta { font-size: 12px; color: var(--dim); min-height: 1em; } .lora .meta.bad { color: var(--bad); }
+.refrow { display: flex; gap: 14px; align-items: stretch; }
+.refslot { position: relative; flex: none; width: 104px; min-height: 104px; border: 1px dashed var(--faint); border-radius: 8px; display: grid; place-items: center; cursor: pointer; overflow: hidden; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; color: var(--dim); text-align: center; line-height: 1.4; }
 .refslot:hover, .refslot.drag { border-color: var(--ink); color: var(--ink); }
 .refslot input { position: absolute; width: 1px; height: 1px; opacity: 0; }
 .refslot img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-.refslot .x { position: absolute; top: 3px; right: 3px; z-index: 1; width: 20px; height: 20px; padding: 0; border-radius: 50%; font-size: 13px; line-height: 18px; display: none; }
-.refslot.full { border-style: solid; border-color: var(--ink); }
-.refslot.full .x { display: block; }
-.refctl { flex: 1; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-.status { font-size: 12px; color: var(--dim); min-height: 1.3em; }
-.pace { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px 18px; }
-.pace h3 { grid-column: 1 / -1; margin: 6px 0 -4px; font-size: 10px; font-weight: 700; letter-spacing: 0.14em; color: var(--ink); }
-.status.bad { color: var(--bad); }
+.refslot .x { position: absolute; top: 4px; right: 4px; z-index: 1; width: 22px; height: 22px; padding: 0; border-radius: 50%; border: 0; background: #000a; cursor: pointer; display: none; }
+.refslot.full { border-style: solid; } .refslot.full .x { display: block; }
+.refctl { flex: 1; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.read { display: grid; grid-template-columns: max-content 1fr; gap: 8px 18px; font-size: 13px; }
+.read dt { color: var(--dim); font-size: 12px; font-weight: 600; letter-spacing: 0.06em; }
+.read dd { margin: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.row { display: flex; gap: 8px; align-items: center; } .row > * { flex: 1; min-width: 0; } .row > button { flex: none; }
+.small-btn { border: 1px solid var(--line); background: var(--panel2); border-radius: 7px; padding: 8px 12px; cursor: pointer; font-size: 12.5px; font-weight: 600; }
+.small-btn:hover { border-color: var(--dim); }
+.status { font-size: 12px; color: var(--dim); min-height: 1.3em; } .status.bad { color: var(--bad); }
+.total { font: 400 17px/1.3 "PAC Display", serif; color: var(--on); }
+.pace h4 { grid-column: 1 / -1; margin: 8px 0 -4px; font: 600 11px/1 ui-sans-serif, system-ui, sans-serif; letter-spacing: 0.16em; color: var(--dim); text-transform: uppercase; }
+.dirlist { display: flex; flex-direction: column; gap: 10px; }
+.dirlist .m { border-left: 2px solid var(--line); padding-left: 12px; }
+.dirlist .k { font: 600 11px/1.4 ui-monospace, monospace; color: var(--dim); }
+.dirlist .w { font: 400 15px/1.4 "PAC Display", serif; }
+.dirlist ol { margin: 4px 0 0; padding-left: 18px; color: #c9c6bd; font: italic 400 13px/1.5 "PAC Display", serif; }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <h1>Tuning panel</h1>
-    <span class="links">Changes apply live to <a href="/game" target="_blank" rel="noopener">the game</a> and <a href="/" target="_blank" rel="noopener">the lab</a>. Keep one of them open next to this.</span>
-  </header>
-
-  <div class="grid">
-    <section>
-      <h2>STRUCTURE</h2>
-      <label class="txt">AVATAR (in the game)<select id="avatar"><option value="portrait">portrait: your face painted at each age, moved live by you</option><option value="painted">painted: the camera repainted frame by frame</option></select></label>
-      <label class="txt">SHAPE (what holds your body)<select id="shape">
-        <option value="depth">DEPTH (Depth Anything V2 → depth ControlNet)</option>
-        <option value="pose">POSE (your whole body: DWPose on the GPU, or MediaPipe → OpenPose ControlNet)</option>
-        <option value="both">BOTH (depth + pose together; costs a little more per frame)</option>
-        <option value="off">OFF (only CHANGE keeps your shape)</option>
-      </select></label>
-      <label class="ctl">CONTROLNET STRENGTH <span class="v" id="cn_strengthV"></span><input id="cn_strength" type="range" min="0" max="1.5" step="0.05"><small>How hard the shape is held. Too high = stiff and photo-like edges; too low = melting. With a shape on, try CHANGE 0.8–1.0.</small></label>
-      <label class="ctl">CHILD UNTIL (age) <span class="v" id="child_untilV"></span><input id="child_until" type="range" min="0" max="20" step="1"><small>Below this age the avatar ignores depth (an adult's depth forces adult proportions) and follows a pose reshaped to a child's: smaller body, same-size head.</small></label>
-      <label class="ctl">YOUNGEST HOLD <span class="v" id="child_cnV"></span><input id="child_cn" type="range" min="0" max="1" step="0.05"><small>How hard the youngest avatar is held (× ControlNet strength), rising to full by CHILD UNTIL. Lower = looser, more painted, fewer broken shapes.</small></label>
-      <div class="shapebox"><img id="shapeImg" alt="The shape the painter is following" hidden><span id="shapeNone">no shape yet (open the game or the lab, stand in front of the camera)</span></div>
-      <p class="note">Depth: near = white. Pose: OpenPose's coloured skeleton; the first switch to pose loads its ControlNet (a few seconds).</p>
-    </section>
-
-    <section class="wide">
-      <h2>STYLE</h2>
-      <div class="looks" id="looks" role="group" aria-label="Look"></div>
-      <p class="note" id="lookNote">Picking a look adds its words to every prompt, sets its browser filter, and puts its LoRA (if it has one) in slot A. The list is <b>styles.json</b>: edit it to add or change looks.</p>
-      <div class="row" style="align-items:stretch">
-        <div class="lora" data-slot="a">
-          <label class="txt">LORA A<select id="lora_a"></select></label>
-          <label class="ctl">WEIGHT <span class="v" id="lora_a_wV"></span><input id="lora_a_w" type="range" min="0" max="1.5" step="0.05"></label>
-          <div class="meta" id="lora_aM"></div>
-        </div>
-        <div class="lora" data-slot="b">
-          <label class="txt">LORA B<select id="lora_b"></select></label>
-          <label class="ctl">WEIGHT <span class="v" id="lora_b_wV"></span><input id="lora_b_w" type="range" min="0" max="1.5" step="0.05"></label>
-          <div class="meta" id="lora_bM"></div>
-        </div>
-      </div>
-      <p class="note">LoRAs live in the <b>loras/</b> folder on the machine running the server. A new file shows up here within a few seconds. Trigger words (a .txt with the same name) are added to the prompt while a LoRA is on.</p>
-      <div class="refrow">
-        <label class="refslot" id="refslot" title="A painting whose look you want: click or drop an image">
-          <input type="file" accept="image/*" id="refFile"><span id="refLab">STYLE<br>REFERENCE</span><button type="button" class="x" id="refX" aria-label="Remove">×</button>
-        </label>
-        <div class="refctl">
-          <label class="txt">REFERENCE ACTS ON<select id="ref_mode">
-            <option value="style">STYLE ONLY: its look, not its subject (InstantStyle)</option>
-            <option value="layout">STYLE + LAYOUT: also its composition</option>
-            <option value="all">EVERYTHING: look and content (the old way)</option>
-          </select></label>
-          <label class="ctl">REFERENCE STRENGTH <span class="v" id="ip_styleV"></span><input id="ip_style" type="range" min="0" max="1.5" step="0.05"></label>
-        </div>
-      </div>
-      <p class="note">The reference steers the avatar and the world in the game and the lab (the lab's own slots still work too). Style only puts it just in the painter's style layers, so a portrait of a fisherman gives you its brushwork, not a fisherman. Try strength 0.6–1.0.</p>
-      <div class="row" style="align-items:stretch">
-        <label class="txt">STYLE PROMPT (added to every prompt)<textarea id="style_prompt" placeholder="e.g. flat colours, bold shapes"></textarea></label>
-        <label class="txt">NEGATIVE PROMPT<textarea id="negative"></textarea></label>
-      </div>
-      <label class="ctl">PROMPT GUIDANCE <span class="v" id="guidanceV"></span><input id="guidance" type="range" min="1" max="3" step="0.1"><small>1.0 = off, the painter's own guidance (fastest). The negative prompt only works above 1.0, and each frame then costs about twice as long. DMD wasn't trained for it, so keep it low (1.2–1.8).</small></label>
-    </section>
-
-    <section>
-      <h2>CHANGE</h2>
-      <label class="ctl">CHANGE (avatar) <span class="v" id="changeV"></span><input id="change" type="range" min="0.1" max="1" step="0.05"><small>How much of you is repainted. 1.0 = from pure noise, where the one-step painter is at its best; with a SHAPE on, the shape keeps your body. With SHAPE off, high CHANGE melts you.</small></label>
-      <label class="ctl">WORLD STEPS <span class="v" id="world_stepsV"></span><input id="world_steps" type="range" min="1" max="4" step="1"><small>The SD 1.5 painter's background only (the SDXL world painter always takes 4). 1 = what the one-step painter is trained for.</small></label>
-    </section>
-
-    <section>
-      <h2>THE WORLD, UNFOLDING</h2>
-      <p class="note">A change of place is painted as a run of pictures the screen dissolves through. These settle how one life stays one life, and how the change looks. How long, how many pictures and how much of each place survives: PACING, below.</p>
-      <label class="ctl">LAYOUT HOLD <span class="v" id="layout_holdV"></span><input id="layout_hold" type="range" min="0" max="1" step="0.05"><small>One life has one seed. This much of every world's noise is the life's own, so its places rhyme in composition. 0 = every place composed afresh. High = the places change less.</small></label>
-      <label class="ctl">PALETTE HOLD <span class="v" id="palette_holdV"></span><input id="palette_hold" type="range" min="0" max="0.9" step="0.05"><small>How far each world's brightness and colour lean toward the life's running colours, so one place doesn't jump to the next in colour. 0 = off.</small></label>
-      <label class="ctl">BREATH DRIFT <span class="v" id="driftV"></span><input id="drift" type="range" min="0" max="1" step="0.05"><small>Inside an event the world breathes: how far each variation swings from the event's own world. 0 = barely moves, 1 = wanders freely.</small></label>
-      <label class="ctl">IN-BETWEEN STEPS <span class="v" id="between_stepsV"></span><input id="between_steps" type="range" min="1" max="4" step="1"><small>Painting steps for the pictures on the way (the last one is always full quality). 2 = fast and soft, like wet paint; 4 = each as finished as the last, slower.</small></label>
-      <label class="ctl">DISSOLVE <span class="v" id="dissolveV"></span><input id="dissolve" type="range" min="0" max="1" step="0.05"><small>How one picture turns into the next. 0 = a plain crossfade (the whole frame ghosts at once). Higher = the new one soaks in in soft patches, the far parts first.</small></label>
-      <label class="ctl">PUSH IN <span class="v" id="pushV"></span><input id="push" type="range" min="0" max="0.05" step="0.005"><small>The view moves in through each picture of a change, so the years read as travelling forward. 0 = still.</small></label>
-      <label class="ctl">PARALLAX <span class="v" id="parallaxV"></span><input id="parallax" type="range" min="0" max="0.08" step="0.005"><small>How far the world shifts with your head, so the painting reads in depth (every picture comes with its depth map). 0 = flat.</small></label>
-      <button class="ghost" id="redraw">REDRAW THE WORLD</button>
-    </section>
-
-    <section>
-      <h2>STABILITY</h2>
-      <label class="ctl">STEADY <span class="v" id="steadyV"></span><input id="steady" type="range" min="0" max="0.9" step="0.05"><small>How much each frame leans on the last one while you're still. Higher = less flicker.</small></label>
-      <label class="ctl">GHOST GUARD <span class="v" id="ghost_guardV"></span><input id="ghost_guard" type="range" min="0" max="1" step="0.05"><small>How fast that leaning lets go when you move. Low = smooth but ghosty trails; high = crisp movement, a little more flicker.</small></label>
-      <label class="ctl">SKIP WHEN STILL <span class="v" id="skip_stillV"></span><input id="skip_still" type="range" min="0" max="6" step="0.25"><small>No new frame unless the camera changed at least this much. 0 = paint every frame. Higher = calmer, but small gestures get ignored.</small></label>
-      <p class="note">Every frame also uses the same noise, so the style can't wander between frames. Right now: <b id="r_lean">–</b></p>
-    </section>
-
-    <section>
-      <h2>READOUT</h2>
-      <dl class="read">
-        <dt>PAINTER</dt><dd id="r_painter">–</dd>
-        <dt>DETECTION</dt><dd id="r_detect">–</dd>
-        <dt>AVATAR</dt><dd id="r_fps">–</dd>
-        <dt>PER FRAME</dt><dd id="r_ms">–</dd>
-        <dt>WHERE IT GOES</dt><dd id="r_parts">–</dd>
-        <dt>NETWORK + BROWSER</dt><dd id="r_net">–</dd>
-        <dt>SHAPE READER</dt><dd id="r_shape">–</dd>
-        <dt>WORLD</dt><dd id="r_world">–</dd>
-        <dt>DIRECTOR</dt><dd id="r_director">–</dd>
-        <dt>GPU MEMORY</dt><dd id="r_gpu">–</dd>
-      </dl>
-    </section>
-
-    <section class="wide">
-      <h2>PACING</h2>
-      <p class="note">The unfolding, in seconds. Every one is a <b>minimum</b>: cards and throws always wait for the player. Saved straight into <b>trajectory.json</b>; the game picks a change up within two seconds. <b id="pace_total"></b></p>
-      <div class="pace" id="pace"></div>
-      <div class="status" id="pace_stat"></div>
-    </section>
-
-    <section>
-      <h2>PRESETS</h2>
-      <div class="row"><input type="text" id="pname" placeholder="name, e.g. watercolor-soft"><button id="psave">SAVE</button></div>
-      <div class="row"><select id="plist"></select><button class="ghost" id="pload">LOAD</button></div>
-      <button class="ghost" id="reset">BACK TO DEFAULTS</button>
-      <div class="status" id="pstat"></div>
-      <p class="note">Presets are saved as files in <b>presets/</b> next to the server.</p>
-    </section>
+<header class="bar">
+  <div class="brand"><b>Playing Against Chance</b><span>control</span></div>
+  <div class="chips" aria-live="polite">
+    <span class="chip" id="c_server"><i></i>server <b>–</b></span>
+    <span class="chip" id="c_anim"><i></i>animator <b>–</b></span>
+    <span class="chip" id="c_dir"><i></i>director <b>–</b></span>
+    <span class="chip" id="c_game"><i></i>game <b>–</b></span>
   </div>
+  <a class="open" href="/game" target="_blank" rel="noopener">Open the game ↗</a>
+</header>
+
+<div class="desk">
+  <!-- ======================= THE SHOW: acts on the running game ======================= -->
+  <aside class="show" aria-label="The show">
+    <h2>The show, now</h2>
+    <div class="now stale" id="now">
+      <div class="age" id="n_age">no game connected</div>
+      <div class="ev" id="n_ev">Open the game</div>
+      <div class="meta" id="n_meta"></div>
+      <div class="world" id="n_world" hidden></div>
+      <div class="warn" id="n_warn" hidden></div>
+    </div>
+
+    <div class="acts">
+      <button class="btn primary" id="b_new" type="button">New life<small>starts over (press twice)</small></button>
+      <button class="btn" id="b_pause" type="button">Pause<small>holds the life where it is</small></button>
+      <button class="btn" id="b_roll" type="button">Roll<small>a throw, for the player</small></button>
+      <button class="btn" id="b_redraw" type="button">Redraw world<small>the same place, painted again</small></button>
+    </div>
+
+    <div class="seg"><h2>Style of the screen</h2>
+      <div class="opts" id="s_ui"><button type="button" data-v="glass">Glass</button><button type="button" data-v="fog">Fog</button></div>
+      <div class="help" id="uiH"></div>
+    </div>
+    <div class="seg"><h2>Avatar</h2>
+      <div class="opts" id="s_avatar"><button type="button" data-v="portrait">Portrait</button><button type="button" data-v="painted">Painted</button></div>
+      <div class="help">Portrait: your face painted at each age, moved live. Painted: the camera repainted frame by frame. Switches at the next event.</div>
+    </div>
+    <div class="seg"><h2>Director</h2>
+      <div class="opts" id="s_dir"><button type="button" data-v="1">On</button><button type="button" data-v="0">Off</button></div>
+      <div class="help">On: Claude writes each moment's world and the years after it from this life. Off: the written scenes.</div>
+    </div>
+    <label class="ctl"><span>Tempo</span><span class="v" id="tempoV">1.00×</span><input id="tempo" type="range" min="0.5" max="1.8" step="0.05" aria-describedby="tempoH"><small id="tempoH">Every timing at once. Above 1 = slower, below 1 = faster. The cards and the die still wait for the player.</small></label>
+    <label class="ctl"><span>Type size (fog)</span><span class="v" id="tsV">1.00×</span><input id="type_scale" type="range" min="0.7" max="1.4" step="0.05"><small>The fog style's letters, all together.</small></label>
+
+    <div class="keys">In the game: <kbd>U</kbd> style · <kbd>F</kbd> fullscreen · <kbd>D</kbd> debug line · <kbd>R</kbd> roll · <kbd>C</kbd> next camera</div>
+  </aside>
+
+  <!-- ======================= THE TABS ======================= -->
+  <main class="main">
+    <nav class="tabs" role="tablist" aria-label="Parts of the system">
+      <button role="tab" data-t="pace">Pace</button>
+      <button role="tab" data-t="world">World</button>
+      <button role="tab" data-t="style">Style</button>
+      <button role="tab" data-t="avatar">Avatar</button>
+      <button role="tab" data-t="director">Director</button>
+      <button role="tab" data-t="system">System</button>
+    </nav>
+
+    <!-- PACE -->
+    <section class="tab" id="t_pace" role="tabpanel">
+      <p class="lead">How long each beat of a life takes, in seconds. Every one is a <b>minimum</b>: the cards and the die always wait for the player. Saved into <b>trajectory.json</b>; the game picks a change up within two seconds. <b>Tempo</b> (left) scales all of them at once.</p>
+      <div class="cards">
+        <div class="card wide"><div class="total" id="pace_total">–</div><div class="status" id="pace_stat"></div></div>
+        <div class="card wide"><div class="grid2 pace" id="pace"></div></div>
+      </div>
+    </section>
+
+    <!-- WORLD -->
+    <section class="tab" id="t_world" role="tabpanel">
+      <p class="lead">The world is always on its way somewhere. A change of place is painted as a run of pictures the screen dissolves through; inside each event the life moves on through its <b>passage</b> (the years until the next event).</p>
+      <div class="cards">
+        <div class="card"><h3>How far it moves</h3><div class="grid2 pace" id="pace_world"></div></div>
+        <div class="card"><h3>One life, one look</h3>
+          <label class="ctl"><span>Layout hold</span><span class="v" id="layout_holdV"></span><input id="layout_hold" type="range" min="0" max="1" step="0.05"><small>How much every world of a life shares its composition. 0 = each place composed afresh; high = places change less.</small></label>
+          <label class="ctl"><span>Palette hold</span><span class="v" id="palette_holdV"></span><input id="palette_hold" type="range" min="0" max="0.9" step="0.05"><small>Each world's colours lean toward the life's running colours. 0 = off.</small></label>
+          <label class="ctl"><span>Breath drift</span><span class="v" id="driftV"></span><input id="drift" type="range" min="0" max="1" step="0.05"><small>When a passage is over, the last scene breathes: how far each variation wanders.</small></label>
+        </div>
+        <div class="card"><h3>How the change looks</h3>
+          <label class="ctl"><span>Dissolve</span><span class="v" id="dissolveV"></span><input id="dissolve" type="range" min="0" max="1" step="0.05"><small>0 = a plain crossfade. Higher = the new picture soaks in in patches, far parts first.</small></label>
+          <label class="ctl"><span>Push in</span><span class="v" id="pushV"></span><input id="push" type="range" min="0" max="0.05" step="0.005"><small>The view moves forward through each change.</small></label>
+          <label class="ctl"><span>Parallax</span><span class="v" id="parallaxV"></span><input id="parallax" type="range" min="0" max="0.08" step="0.005"><small>How far the world shifts with your head. 0 = flat.</small></label>
+        </div>
+        <div class="card"><h3>Speed and the GPU</h3>
+          <label class="ctl"><span>In-between steps</span><span class="v" id="between_stepsV"></span><input id="between_steps" type="range" min="1" max="4" step="1"><small>Painting steps for the pictures on the way (the last is always full quality). 2 = fast and soft.</small></label>
+          <label class="ctl"><span>Rest between pictures</span><span class="v" id="world_yieldV"></span><input id="world_yield" type="range" min="0" max="0.3" step="0.01"><small>Seconds the world painter pauses between pictures, so the portrait's frames get the GPU. Raise it if the portrait stutters during changes.</small></label>
+          <label class="ctl"><span>World steps (SD 1.5 only)</span><span class="v" id="world_stepsV"></span><input id="world_steps" type="range" min="1" max="4" step="1"><small>The older painter's background only; the SDXL world painter always takes 4.</small></label>
+        </div>
+      </div>
+    </section>
+
+    <!-- STYLE -->
+    <section class="tab" id="t_style" role="tabpanel">
+      <p class="lead">The look of every picture: the avatar and the world. A look adds its words to every prompt and may bring a LoRA; the list is <b>styles.json</b>.</p>
+      <div class="cards">
+        <div class="card wide"><h3>Look</h3><div class="looks" id="looks" role="group" aria-label="Look"></div></div>
+        <div class="card wide"><h3>LoRAs</h3>
+          <div class="loras">
+            <div class="lora"><label class="txt">LoRA A<select id="lora_a"></select></label>
+              <label class="ctl"><span>Weight</span><span class="v" id="lora_a_wV"></span><input id="lora_a_w" type="range" min="0" max="1.5" step="0.05"></label><div class="meta" id="lora_aM"></div></div>
+            <div class="lora"><label class="txt">LoRA B<select id="lora_b"></select></label>
+              <label class="ctl"><span>Weight</span><span class="v" id="lora_b_wV"></span><input id="lora_b_w" type="range" min="0" max="1.5" step="0.05"></label><div class="meta" id="lora_bM"></div></div>
+          </div>
+          <p class="note">From the <b>loras/</b> folder on the GPU machine; a new file shows up here within seconds. Its trigger words (a .txt with the same name) go into the prompt while it's on.</p>
+        </div>
+        <div class="card"><h3>Style reference</h3>
+          <div class="refrow">
+            <label class="refslot" id="refslot" title="A painting whose look you want: click or drop an image">
+              <input type="file" accept="image/*" id="refFile"><span id="refLab">DROP A<br>PAINTING</span><button type="button" class="x" id="refX" aria-label="Remove the reference">×</button>
+            </label>
+            <div class="refctl">
+              <label class="txt">Acts on<select id="ref_mode">
+                <option value="style">Style only: its look, not its subject</option>
+                <option value="layout">Style and layout</option>
+                <option value="all">Everything: look and content</option>
+              </select></label>
+              <label class="ctl"><span>Strength</span><span class="v" id="ip_styleV"></span><input id="ip_style" type="range" min="0" max="1.5" step="0.05"></label>
+            </div>
+          </div>
+        </div>
+        <div class="card"><h3>Words</h3>
+          <label class="txt">Style prompt (added to every prompt)<textarea id="style_prompt" placeholder="e.g. flat colours, bold shapes"></textarea></label>
+          <label class="txt">Negative prompt<textarea id="negative"></textarea></label>
+          <label class="ctl"><span>Prompt guidance</span><span class="v" id="guidanceV"></span><input id="guidance" type="range" min="1" max="3" step="0.1"><small>1.0 = off (fastest). The negative prompt only works above 1.0, and each avatar frame then costs about twice as long.</small></label>
+        </div>
+      </div>
+    </section>
+
+    <!-- AVATAR -->
+    <section class="tab" id="t_avatar" role="tabpanel">
+      <p class="lead">Two avatars. The <b>portrait</b>: your face painted at each age and moved live by LivePortrait. The <b>painted</b> avatar: the camera repainted frame by frame. Pick which one on the left.</p>
+      <div class="cards">
+        <div class="card"><h3>Portrait: how it moves</h3>
+          <label class="ctl"><span>Movement</span><span class="v" id="a_multiplierV"></span><input id="a_multiplier" data-a="multiplier" type="range" min="0.5" max="1.6" step="0.05"><small>How much of your movement the portrait makes. Above 1 exaggerates.</small></label>
+          <label class="ctl"><span>Head smoothing</span><span class="v" id="a_smoothV"></span><input id="a_smooth" data-a="smooth" type="range" min="0" max="0.9" step="0.05"><small>Higher = calmer head, a little behind you.</small></label>
+          <label class="ctl"><span>Face smoothing</span><span class="v" id="a_face_smoothV"></span><input id="a_face_smooth" data-a="face_smooth" type="range" min="0" max="0.9" step="0.05"><small>Eyes and mouth. Higher = steadier, slower.</small></label>
+          <label class="ctl"><span>Turn limit</span><span class="v" id="a_turn_limitV"></span><input id="a_turn_limit" data-a="turn_limit" type="range" min="8" max="40" step="1"><small>How far the head may turn, in degrees, before it stops following (beyond this the painting distorts).</small></label>
+        </div>
+        <div class="card"><h3>Painted: its shape</h3>
+          <label class="txt">Shape (what holds your body)<select id="shape">
+            <option value="depth">Depth</option><option value="pose">Pose</option><option value="both">Depth and pose</option><option value="off">Off</option>
+          </select></label>
+          <label class="ctl"><span>ControlNet strength</span><span class="v" id="cn_strengthV"></span><input id="cn_strength" type="range" min="0" max="1.5" step="0.05"><small>How hard the shape is held. Too high = stiff; too low = melting.</small></label>
+          <label class="ctl"><span>Child until (age)</span><span class="v" id="child_untilV"></span><input id="child_until" type="range" min="0" max="20" step="1"><small>Below this age the avatar follows a pose reshaped to a child's.</small></label>
+          <label class="ctl"><span>Youngest hold</span><span class="v" id="child_cnV"></span><input id="child_cn" type="range" min="0" max="1" step="0.05"></label>
+          <label class="ctl"><span>Change</span><span class="v" id="changeV"></span><input id="change" type="range" min="0.1" max="1" step="0.05"><small>How much of you is repainted.</small></label>
+        </div>
+        <div class="card"><h3>Painted: steadiness</h3>
+          <label class="ctl"><span>Steady</span><span class="v" id="steadyV"></span><input id="steady" type="range" min="0" max="0.9" step="0.05"><small>How much each frame leans on the last while you're still. Higher = less flicker.</small></label>
+          <label class="ctl"><span>Ghost guard</span><span class="v" id="ghost_guardV"></span><input id="ghost_guard" type="range" min="0" max="1" step="0.05"><small>How fast that lets go when you move. Low = smooth but trails.</small></label>
+          <label class="ctl"><span>Skip when still</span><span class="v" id="skip_stillV"></span><input id="skip_still" type="range" min="0" max="6" step="0.25"><small>No new frame unless the camera changed this much.</small></label>
+          <p class="note">Right now: <b id="r_lean">–</b></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- DIRECTOR -->
+    <section class="tab" id="t_director" role="tabpanel">
+      <p class="lead">Claude writes how each moment looks and the years after it, from the life so far. It never decides anything; chance does. Its rules are <b>director.json</b> (re-read on every call).</p>
+      <div class="cards">
+        <div class="card"><h3>Settings</h3><div class="pace" id="pace_dir" style="display:grid;gap:14px"></div></div>
+        <div class="card"><h3>Calls</h3><dl class="read"><dt>STATE</dt><dd id="d_state">–</dd><dt>LAST</dt><dd id="d_last">–</dd><dt>MODEL</dt><dd id="d_model">–</dd></dl></div>
+        <div class="card wide"><h3 id="d_event">Its last answer</h3><div class="dirlist" id="d_list"><p class="note">Nothing written yet.</p></div></div>
+      </div>
+    </section>
+
+    <!-- SYSTEM -->
+    <section class="tab" id="t_system" role="tabpanel">
+      <div class="cards">
+        <div class="card"><h3>Readout</h3>
+          <dl class="read">
+            <dt>PAINTER</dt><dd id="r_painter">–</dd><dt>DETECTION</dt><dd id="r_detect">–</dd>
+            <dt>AVATAR FRAMES</dt><dd id="r_fps">–</dd><dt>PER FRAME</dt><dd id="r_ms">–</dd><dt>WHERE IT GOES</dt><dd id="r_parts">–</dd>
+            <dt>NETWORK</dt><dd id="r_net">–</dd><dt>SHAPE READER</dt><dd id="r_shape">–</dd><dt>WORLD</dt><dd id="r_world">–</dd>
+            <dt>GPU MEMORY</dt><dd id="r_gpu">–</dd>
+          </dl>
+        </div>
+        <div class="card"><h3>Presets</h3>
+          <p class="note">Every setting of the painters at once, saved as a file in <b>presets/</b>.</p>
+          <div class="row"><input type="text" id="pname" placeholder="name, e.g. watercolor-soft" aria-label="Preset name"><button class="small-btn" id="psave" type="button">Save</button></div>
+          <div class="row"><select id="plist" aria-label="Saved presets"></select><button class="small-btn" id="pload" type="button">Load</button></div>
+          <button class="small-btn" id="reset" type="button">Back to defaults</button>
+          <div class="status" id="pstat"></div>
+        </div>
+      </div>
+    </section>
+  </main>
 </div>
 
 <script>
 const $ = (id) => document.getElementById(id);
 const SLIDERS = ["cn_strength", "lora_a_w", "lora_b_w", "ip_style", "guidance", "change", "world_steps", "steady", "ghost_guard", "skip_still", "child_until", "child_cn", "parallax",
-                 "layout_hold", "palette_hold", "drift", "between_steps", "dissolve", "push"];
+                 "layout_hold", "palette_hold", "drift", "between_steps", "dissolve", "push", "world_yield"];
 const TEXTS = ["style_prompt", "negative"];
-const fmt = (k, v) => k === "world_steps" || k === "child_until" || k === "between_steps" ? String(Math.round(v)) : k === "parallax" || k === "push" ? (+v).toFixed(3) : (+v).toFixed(2);
+const fmt = (k, v) => ["world_steps", "child_until", "between_steps"].includes(k) ? String(Math.round(v)) : ["parallax", "push"].includes(k) ? (+v).toFixed(3)
+  : k === "world_yield" ? (+v).toFixed(2) + " s" : (+v).toFixed(2);
 let state = null, defaults = null;
 
-// ---------- sending ----------
+// ---------- tabs (remembered) ----------
+const tabs = [...document.querySelectorAll(".tabs button")];
+function openTab(t) {
+  tabs.forEach(b => b.setAttribute("aria-selected", String(b.dataset.t === t)));
+  document.querySelectorAll(".tab").forEach(s => s.classList.toggle("on", s.id === "t_" + t));
+  try { localStorage.setItem("pac-panel-tab", t); } catch (e) {}
+}
+tabs.forEach(b => b.addEventListener("click", () => openTab(b.dataset.t)));
+let firstTab = "pace"; try { firstTab = localStorage.getItem("pac-panel-tab") || "pace"; } catch (e) {}
+openTab(firstTab);
+
+// ---------- the painters' settings (/settings) ----------
 let pending = {}, sendTimer = 0;
 function send(k, v, wait = 120) {
   pending[k] = v;
   clearTimeout(sendTimer);
   sendTimer = setTimeout(async () => {
     const body = pending; pending = {};
-    try {
-      const r = await fetch("/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-      show(await r.json(), false);
-    } catch (e) { $("pstat").textContent = "server offline"; $("pstat").className = "status bad"; }
+    try { const r = await fetch("/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); show(await r.json(), false); }
+    catch (e) { offline(); }
   }, wait);
 }
 SLIDERS.forEach(k => $(k).addEventListener("input", () => { $(k + "V").textContent = fmt(k, $(k).value); send(k, +$(k).value); }));
 TEXTS.forEach(k => $(k).addEventListener("input", () => send(k, $(k).value, 600)));
-["lora_a", "lora_b", "shape", "ref_mode", "avatar"].forEach(k => $(k).addEventListener("change", () => send(k, $(k).value, 0)));
-$("redraw").addEventListener("click", () => fetch("/redraw", { method: "POST" }));
+["lora_a", "lora_b", "shape", "ref_mode"].forEach(k => $(k).addEventListener("change", () => send(k, $(k).value, 0)));
 
-// ---------- showing ----------
 function fillLoras(loras) {
   for (const k of ["lora_a", "lora_b"]) {
     const sel = $(k), keep = state ? state.tune[k] : sel.value;
@@ -223,7 +356,7 @@ function fillLooks(s) {
   const box = $("looks"), key = JSON.stringify(s.styles.map(x => [x.id, x.name]));
   if (box.dataset.key !== key) {
     box.dataset.key = key;
-    box.innerHTML = s.styles.map(x => `<button type="button" data-id="${x.id}" title="${(x.prompt || "as the painter paints it").replace(/"/g, "&quot;")}${x.filter ? " · filter: " + x.filter : ""}">${x.name}</button>`).join("");
+    box.innerHTML = s.styles.map(x => `<button type="button" data-id="${x.id}" title="${(x.prompt || "as the painter paints it").replace(/"/g, "&quot;")}">${x.name}</button>`).join("");
     box.querySelectorAll("button").forEach(b => b.addEventListener("click", () => pickLook(b.dataset.id)));
   }
   box.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.id === s.tune.style)));
@@ -232,65 +365,46 @@ async function pickLook(id) {
   const st = state.styles.find(x => x.id === id), have = new Set(state.loras.map(l => l.file));
   const body = { style: id, lora_a: "" };
   if (st && st.lora && have.has(st.lora[0])) { body.lora_a = st.lora[0]; body.lora_a_w = st.lora[1]; }
-  try {
-    const r = await fetch("/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    show(await r.json(), true);
-  } catch (e) {}
+  try { const r = await fetch("/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); show(await r.json(), true); } catch (e) {}
 }
+function chip(id, cls, text) { const c = $(id); c.className = "chip " + cls; c.querySelector("b").textContent = text; }
+function offline() { chip("c_server", "bad", "offline"); }
 function show(s, controls) {
   state = s; defaults = s.defaults;
   fillLooks(s);
   if (controls) {
-    SLIDERS.forEach(k => { if (document.activeElement !== $(k)) { $(k).value = s.tune[k]; $(k + "V").textContent = fmt(k, s.tune[k]); } });
+    SLIDERS.forEach(k => { if (document.activeElement !== $(k) && s.tune[k] !== undefined) { $(k).value = s.tune[k]; $(k + "V").textContent = fmt(k, s.tune[k]); } });
     TEXTS.forEach(k => { if (document.activeElement !== $(k)) $(k).value = s.tune[k]; });
-    $("shape").value = s.tune.shape; $("ref_mode").value = s.tune.ref_mode; $("avatar").value = s.tune.avatar || "portrait";
+    $("shape").value = s.tune.shape; $("ref_mode").value = s.tune.ref_mode;
     ["lora_a", "lora_b"].forEach(k => { $(k).value = s.tune[k]; });
   }
+  segShow("s_avatar", s.tune.avatar || "portrait");
   fillLoras(s.loras);
   const r = s.readout;
+  chip("c_server", r.ready ? "ok" : "warn", r.ready ? r.painter : "loading…");
   $("r_painter").textContent = (r.ready ? r.painter.toUpperCase() : r.painter + " (loading…)") + (r.painter_note ? " · " + r.painter_note : "");
   $("r_detect").textContent = r.detection || "–";
-  $("r_fps").textContent = r.fps ? `${r.fps} frames/s served` : "idle (no frames in the last 3 s)";
+  $("r_fps").textContent = r.fps ? `${r.fps} frames/s served` : "idle (no painted-avatar frames in the last 3 s)";
   $("r_ms").textContent = r.ms ? `${r.ms} ms on the server` : "–";
   $("r_shape").textContent = s.tune.shape === "off" ? "off" : r.shape_ms ? `${r.shape_ms} ms (${s.tune.shape})` : "–";
   const P = r.parts || {}, names = { shape: "shape", encode: "encode", paint: "painter", decode: "decode", jpeg: "jpeg", queue: "queued" };
   $("r_parts").textContent = Object.keys(P).length ? Object.entries(names).filter(([k]) => P[k] !== undefined).map(([k, n]) => `${n} ${Math.round(P[k])}`).join(" · ") + " ms" : "–";
-  $("r_net").textContent = r.network_ms != null ? `${r.network_ms} ms per frame` + (r.ms && r.network_ms > r.ms ? " (more than the server: the GPU isn't the bottleneck)" : "") : "–";
+  $("r_net").textContent = r.network_ms != null ? `${r.network_ms} ms per frame` : "–";
   $("r_lean").textContent = r.lean != null ? `leaning ${Math.round(r.lean * 100)}% on the last frame (movement ${r.motion})` : "–";
-  const dr = r.director || {};
-  if ($("r_director")) $("r_director").textContent = !dr.ready ? "no Anthropic key: written scenes only" :
-    dr.last_error ? `ERROR: ${dr.last_error}` : `${dr.calls} calls · ${dr.cached} cached · ${dr.rejected} rejected · last ${dr.last_ms ? (dr.last_ms / 1000).toFixed(1) + " s" : "–"} · ${dr.model || ""}`;
   const wr = r.world_run || {}, wms = wr.ms || [];
   $("r_world").textContent = r.world_error ? `ERROR: ${r.world_error}` : !wms.length ? "–" :
-    (wr.n > 1 ? `last change: ${wms.length} of ${wr.n} pictures${wr.total_ms ? ` in ${(wr.total_ms / 1000).toFixed(1)} s` : ""} (${wms.slice(0, -1).length ? "in-between " + (wms.slice(0, -1).reduce((a, b) => a + b, 0) / wms.slice(0, -1).length / 1000).toFixed(2) + " s, " : ""}last ${(wms[wms.length - 1] / 1000).toFixed(2)} s)`
-               : `last picture ${(wms[wms.length - 1] / 1000).toFixed(2)} s (${wr.kind})`)
-    + ` · ${r.world_count} painted · change ${r.world_change ?? "–"}` + (r.world_tokens > 77 ? ` · PROMPT TOO LONG: ${r.world_tokens} tokens, the painter reads 77` : "");
+    (wr.n > 1 ? `last run: ${wms.length} of ${wr.n} pictures${wr.total_ms ? ` in ${(wr.total_ms / 1000).toFixed(1)} s` : ""} (in-between ${wms.length > 1 ? (wms.slice(0, -1).reduce((a, b) => a + b, 0) / (wms.length - 1) / 1000).toFixed(2) : "–"} s, last ${(wms[wms.length - 1] / 1000).toFixed(2)} s)`
+               : `last picture ${(wms[wms.length - 1] / 1000).toFixed(2)} s (${wr.kind})`) + ` · ${r.world_count} painted` + (r.world_tokens > 77 ? ` · PROMPT TOO LONG (${r.world_tokens} tokens)` : "");
   $("r_gpu").textContent = r.gpu_mb ? `${(r.gpu_mb / 1000).toFixed(1)} of ${(r.gpu_total_mb / 1000).toFixed(1)} GB` : "– (no GPU)";
 }
 async function poll(controls = false) {
-  try { show(await (await fetch("/settings", { cache: "no-store" })).json(), controls); }
-  catch (e) { $("r_painter").textContent = "server offline"; }
+  try { show(await (await fetch("/settings", { cache: "no-store" })).json(), controls); } catch (e) { offline(); }
 }
-poll(true);
-setInterval(() => poll(false), 1000);
+poll(true); setInterval(() => poll(false), 1000);
 
-// the shape the painter followed in the last frame
-const shapeImg = $("shapeImg");
-shapeImg.onload = () => { $("shapeNone").hidden = true; shapeImg.hidden = false; };
-setInterval(async () => {
-  if (state && state.tune.shape === "off") { shapeImg.hidden = true; $("shapeNone").hidden = false; $("shapeNone").textContent = "shape off"; return; }
-  try {
-    const res = await fetch("/shape", { cache: "no-store" });
-    if (res.status !== 200) return;
-    const url = URL.createObjectURL(await res.blob());
-    const old = shapeImg.src; shapeImg.src = url; if (old.startsWith("blob:")) URL.revokeObjectURL(old);
-  } catch (e) {}
-}, 700);
-
-// ---------- the style reference: one image for the avatar and the world ----------
-async function shrink(file) {                              // big photos are scaled down before sending
-  const bmp = await createImageBitmap(file);
-  const k = Math.min(1, 768 / Math.max(bmp.width, bmp.height));
+// ---------- the style reference ----------
+async function shrink(file) {
+  const bmp = await createImageBitmap(file), k = Math.min(1, 768 / Math.max(bmp.width, bmp.height));
   const c = document.createElement("canvas"); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
   c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height); bmp.close();
   return new Promise(r => c.toBlob(r, "image/jpeg", 0.9));
@@ -301,37 +415,29 @@ async function setRef(file) {
   slot.classList.toggle("full", !!file);
   if (file) { const img = new Image(); img.src = URL.createObjectURL(file); img.alt = ""; slot.prepend(img); }
   const body = file ? await shrink(file) : new Blob([]);
-  for (const side of ["person", "background"])
-    await fetch(`/reference?side=${side}&kind=style`, { method: "POST", body, headers: { "Content-Type": "image/jpeg" } });
-  fetch("/redraw", { method: "POST" });                     // show it in the world straight away
+  for (const side of ["person", "background"]) await fetch(`/reference?side=${side}&kind=style`, { method: "POST", body, headers: { "Content-Type": "image/jpeg" } });
+  fetch("/redraw", { method: "POST" });
 }
 $("refFile").addEventListener("change", () => { const f = $("refFile").files[0]; if (f) setRef(f); $("refFile").value = ""; });
 $("refX").addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); setRef(null); });
 $("refslot").addEventListener("dragover", (e) => { e.preventDefault(); $("refslot").classList.add("drag"); });
 $("refslot").addEventListener("dragleave", () => $("refslot").classList.remove("drag"));
-$("refslot").addEventListener("drop", (e) => {
-  e.preventDefault(); $("refslot").classList.remove("drag");
-  const f = [...e.dataTransfer.files].find(f => f.type.startsWith("image/")); if (f) setRef(f);
-});
+$("refslot").addEventListener("drop", (e) => { e.preventDefault(); $("refslot").classList.remove("drag"); const f = [...e.dataTransfer.files].find(f => f.type.startsWith("image/")); if (f) setRef(f); });
 
 // ---------- presets ----------
 async function listPresets() {
-  try {
-    const names = await (await fetch("/presets", { cache: "no-store" })).json();
-    $("plist").innerHTML = names.length ? names.map(n => `<option>${n}</option>`).join("") : `<option value="">— none saved —</option>`;
-  } catch (e) {}
+  try { const names = await (await fetch("/presets", { cache: "no-store" })).json();
+    $("plist").innerHTML = names.length ? names.map(n => `<option>${n}</option>`).join("") : `<option value="">— none saved —</option>`; } catch (e) {}
 }
 const say = (t, bad) => { $("pstat").textContent = t; $("pstat").className = "status" + (bad ? " bad" : ""); };
 $("psave").addEventListener("click", async () => {
-  const n = $("pname").value.trim();
-  if (!n) { say("give it a name first", true); return; }
+  const n = $("pname").value.trim(); if (!n) { say("give it a name first", true); return; }
   const r = await (await fetch("/presets?name=" + encodeURIComponent(n), { method: "POST" })).json();
   if (r.error) say(r.error, true); else { say("saved " + r.saved); listPresets(); }
 });
 $("pload").addEventListener("click", async () => {
   const n = $("plist").value; if (!n) return;
-  const res = await fetch("/presets/" + encodeURIComponent(n));
-  if (!res.ok) { say("couldn't load " + n, true); return; }
+  const res = await fetch("/presets/" + encodeURIComponent(n)); if (!res.ok) { say("couldn't load " + n, true); return; }
   show(await res.json(), true); say("loaded " + n); $("pname").value = n;
 });
 $("reset").addEventListener("click", async () => {
@@ -341,48 +447,48 @@ $("reset").addEventListener("click", async () => {
 });
 listPresets();
 
-// ---------- pacing (trajectory.json) ----------
+// ---------- pacing + world + director (trajectory.json) ----------
+// [key, label, min, max, step, help, where]   w: = trajectory.json "world"; where = which box it shows in
 const PACE = [
-  ["EVERY EVENT", null],
-  ["fade", "TEXT FADE", 0.2, 3, 0.1, "the old text fades out fully, then the new one in"],
-  ["arrive", "ARRIVE", 1, 12, 0.5, "bridge line, the age counting up, the world and the avatar changing: the least it takes"],
-  ["arrive_year", "ARRIVE: PER YEAR", 0, 1.5, 0.05, "added for every year that passes, so eight years take longer than one: the life sets the pace"],
-  ["chapter", "CHAPTER BREATH", 3, 20, 0.5, "the least the arrive takes after Body, the exams, Settling down"],
-  ["turn", "WORLD TURNS", 1, 10, 0.5, "how long the world takes to become what happened (during the linger)"],
-  ["morph_frame", "ONE PICTURE EVERY", 0.6, 3, 0.1, "a change is painted as one picture per this many seconds of it (lower = more pictures, smoother, more GPU work)"],
-  ["world_fade", "BREATH FADE", 0.3, 6, 0.1, "how long one breath of the world takes to soak in"],
-  ["CHOSEN", null],
-  ["settle", "SETTLE", 0, 8, 0.5, "name + setup alone, before the cards"],
-  ["card_rise", "CARDS RISE", 0, 1, 0.05, "between one card and the next"],
-  ["lock", "LOCK", 0.3, 4, 0.1, "your card glides to the centre, then the target"],
-  ["land", "LAND", 0.5, 5, 0.1, "the number, big and alone, then hit or miss"],
-  ["miss", "MISS", 1, 6, 0.1, "the allotted card turns over"],
-  ["linger", "LINGER", 1, 15, 0.5, "what happened stays while the new world paints in"],
-  ["HAPPENS AND FLUKES", null],
-  ["happen_hold", "HAPPENS: HOLD", 0.5, 6, 0.1, "\"Something happens.\""],
-  ["happen_linger", "HAPPENS: LINGER", 1, 15, 0.5, "the outcome stays"],
-  ["fluke_hold", "FLUKE: HOLD", 1, 8, 0.5, "the small text"],
-  ["fluke_linger", "FLUKE: LINGER", 1, 12, 0.5, "the job it led to"],
-  ["reveal", "FLUKE COMES BACK", 1, 12, 0.5, "the quote, word for word"],
-  ["final_silence", "FINAL SILENCE", 0, 20, 0.5, "after Death, before anything else"],
-  ["BODY", null],
-  ["gene", "EACH TRAIT", 0.5, 8, 0.5, "how long each trait stays named as it emerges on the baby"],
-  ["takeover", "THE KID EMERGES", 1, 15, 0.5, "the baby fading into the live avatar, its generation ramping up"],
-  ["WORLD", null],
-  ["w:keep", "ARRIVING KEEPS", 0, 0.9, 0.05, "how much of the picture on screen survives when the life moves to the next event (lower = a more different place)"],
-  ["w:turn_keep", "AN OUTCOME KEEPS", 0, 0.9, 0.05, "the same, when the world turns into what happened (higher: it stays the same place, changed)"],
-  ["w:chapter_keep", "A CHAPTER KEEPS", 0, 0.9, 0.05, "the same, after a chapter (lowest: a new stretch of life)"],
-  ["w:morph_steps", "MOST PICTURES", 1, 12, 1, "the most pictures one change is painted in (1 = one picture, one dissolve)"],
-  ["w:breathe", "WORLD BREATHES EVERY", 0, 20, 0.5, "inside an event a new variation of its world fades in this often, in seconds (0 = still)"],
-  ["w:breathe_keep", "EACH BREATH KEEPS", 0.2, 0.9, 0.05, "how much of the event's world each variation keeps (lower = it wanders further)"],
-  ["w:director", "DIRECTOR", 0, 1, 1, "an LLM writes each moment's world, its variations and clothes from the life so far (rules: director.json). Off = the written scenes"],
-  ["w:director_lines", "DIRECTOR'S LINES", 0, 1, 1, "also show its one quiet line under each outcome"],
-  ["w:director_wait", "WAIT FOR IT UP TO", 0, 8, 0.5, "if its answer isn't ready yet, wait this long, then use the written scene"],
+  ["Every event", null, 0, 0, 0, "", "pace"],
+  ["fade", "Text fade", 0.2, 3, 0.1, "the old text fades out fully, then the new one in", "pace"],
+  ["arrive", "Arrive", 1, 12, 0.5, "the least an arrival takes: the age counting up, the world and the avatar changing", "pace"],
+  ["arrive_year", "Arrive: per year", 0, 1.5, 0.05, "added for every year that passes, so a decade takes longer than a year", "pace"],
+  ["chapter", "Chapter breath", 3, 20, 0.5, "the least an arrival takes after Body, the exams, Settling down", "pace"],
+  ["turn", "World turns", 1, 10, 0.5, "how long the world takes to become what happened", "pace"],
+  ["Chosen", null, 0, 0, 0, "", "pace"],
+  ["settle", "Settle", 0, 8, 0.5, "the event's name alone, before the options", "pace"],
+  ["card_rise", "Options rise", 0, 1, 0.05, "between one option and the next", "pace"],
+  ["lock", "Lock", 0.3, 4, 0.1, "your option moves to the middle, then its throw", "pace"],
+  ["land", "Land", 0.5, 5, 0.1, "the number, alone, then hit or miss", "pace"],
+  ["miss", "Miss", 1, 6, 0.1, "what chance gave instead forms", "pace"],
+  ["linger", "Linger", 1, 15, 0.5, "what happened stays while the world turns into it", "pace"],
+  ["Happens and flukes", null, 0, 0, 0, "", "pace"],
+  ["happen_hold", "Happens: hold", 0.5, 6, 0.1, "\"Something happens.\"", "pace"],
+  ["happen_linger", "Happens: linger", 1, 15, 0.5, "the outcome stays", "pace"],
+  ["fluke_hold", "Fluke: hold", 1, 8, 0.5, "the small text", "pace"],
+  ["fluke_linger", "Fluke: linger", 1, 12, 0.5, "the job it led to", "pace"],
+  ["reveal", "Fluke comes back", 1, 12, 0.5, "the quote, word for word", "pace"],
+  ["final_silence", "Final silence", 0, 20, 0.5, "after Death, before anything else", "pace"],
+  ["Body", null, 0, 0, 0, "", "pace"],
+  ["gene", "Each trait", 0.5, 8, 0.5, "how long each trait is named as it emerges on the baby", "pace"],
+  ["takeover", "The kid emerges", 1, 15, 0.5, "the baby fading into your portrait", "pace"],
+  ["w:keep", "Arriving keeps", 0, 0.9, 0.05, "how much of the picture survives when the life moves to the next event (lower = a more different place)", "world"],
+  ["w:turn_keep", "An outcome keeps", 0, 0.9, 0.05, "the same, when the world turns into what happened", "world"],
+  ["w:chapter_keep", "A chapter keeps", 0, 0.9, 0.05, "the same, after a chapter (lowest: a new stretch of life)", "world"],
+  ["w:breathe", "Passage: a scene every", 0, 20, 0.5, "inside an event the life moves on to the next scene of its passage this often (0 = still)", "world"],
+  ["passage", "Passage: each takes", 1, 10, 0.5, "how long each step of the passage takes to paint in", "world"],
+  ["w:breathe_keep", "Passage: each keeps", 0.1, 0.9, 0.05, "how much of the last picture each step keeps (lower = a more different place)", "world"],
+  ["morph_frame", "One picture every", 0.3, 3, 0.05, "a change is painted as one picture per this many seconds (lower = smoother, more GPU)", "world"],
+  ["w:morph_steps", "Most pictures", 1, 12, 1, "the most pictures one change is painted in", "world"],
+  ["world_fade", "Breath fade", 0.3, 6, 0.1, "after a passage is over: how long each small variation takes", "world"],
+  ["w:director_lines", "Its lines on screen", 0, 1, 1, "also show its one quiet line under each outcome (glass style)", "dir"],
+  ["w:director_wait", "Wait for it up to", 0, 8, 0.5, "if its answer isn't ready, wait this long, then use the written scene", "dir"],
 ];
 let pace = null, paceTimer = 0, pacePending = { pacing: {}, world: {} };
-function paceTotal() {                                         // a rough length of one life, without the player's own time
+function paceTotal() {
   if (!pace || !pace.events) return;
-  const p = pace.pacing, f = p.fade;
+  const p = pace.pacing, f = p.fade, tempo = +$("tempo").value || 1;
   let t = 0;
   pace.events.forEach((ev, i) => {
     const prev = pace.events[i - 1];
@@ -391,52 +497,149 @@ function paceTotal() {                                         // a rough length
     else if (ev.type === "happens") t += 2 * f + p.happen_hold + (ev.reveals ? p.reveal + 2 * f : 0) + 2 * f + p.happen_linger;
     else t += 2 * f + p.fluke_hold + (ev.flukes ? 2 * f + p.fluke_linger : 0);
   });
-  t += p.arrive + 2 * f + p.final_silence;
-  $("pace_total").textContent = `One life at these timings: about ${Math.round(t / 60)} min, plus the player's own time with the cards and the die.`;
+  t = (t + p.arrive + 2 * f + p.final_silence) * tempo;
+  $("pace_total").textContent = `One life at these timings: about ${Math.round(t / 60)} minutes, plus the player's own time with the options and the die.`;
 }
 function paceFmt(k, v) {
   if (k === "w:morph_steps") return String(Math.round(v));
-  if (k === "arrive_year") return v.toFixed(2) + " s";
   if (k === "w:breathe") return v > 0 ? v.toFixed(1) + " s" : "off";
-  if (k === "w:director" || k === "w:director_lines") return v >= 0.5 ? "on" : "off";
+  if (k === "w:director_lines") return v >= 0.5 ? "on" : "off";
   if (k === "w:director_wait") return v.toFixed(1) + " s";
+  if (k === "arrive_year" || k === "morph_frame") return v.toFixed(2) + " s";
   return k.startsWith("w:") ? v.toFixed(2) : v.toFixed(1) + " s";
 }
+function paceSave(k, v) {
+  if (k.startsWith("w:")) { pacePending.world[k.slice(2)] = v; pace.world[k.slice(2)] = v; } else { pacePending.pacing[k] = v; pace.pacing[k] = v; }
+  clearTimeout(paceTimer);
+  paceTimer = setTimeout(async () => {
+    const body = pacePending; pacePending = { pacing: {}, world: {} };
+    try { await (await fetch("/trajectory/pacing", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })).json();
+      $("pace_stat").textContent = "saved to trajectory.json"; $("pace_stat").className = "status"; }
+    catch (e) { $("pace_stat").textContent = "couldn't save (server offline?)"; $("pace_stat").className = "status bad"; }
+  }, 250);
+}
 function paceBuild() {
-  $("pace").innerHTML = PACE.map(([k, label, lo, hi, step, help]) => !label ? `<h3>${k}</h3>` :
-    `<label class="ctl">${label} <span class="v" id="pv_${k}"></span><input type="range" data-k="${k}" min="${lo}" max="${hi}" step="${step}"><small>${help}</small></label>`).join("");
-  $("pace").querySelectorAll("input").forEach(inp => inp.addEventListener("input", () => {
+  const box = { pace: $("pace"), world: $("pace_world"), dir: $("pace_dir") };
+  for (const b of Object.values(box)) b.innerHTML = "";
+  for (const [k, label, lo, hi, step, help, where] of PACE) {
+    box[where].insertAdjacentHTML("beforeend", !label ? `<h4>${k}</h4>` :
+      `<label class="ctl"><span>${label}</span><span class="v" id="pv_${k}"></span><input type="range" data-k="${k}" min="${lo}" max="${hi}" step="${step}"><small>${help}</small></label>`);
+  }
+  document.querySelectorAll("input[data-k]").forEach(inp => inp.addEventListener("input", () => {
     const k = inp.dataset.k, v = +inp.value;
-    $("pv_" + k).textContent = paceFmt(k, v);
-    if (k.startsWith("w:")) { pacePending.world[k.slice(2)] = v; pace.world[k.slice(2)] = v; } else { pacePending.pacing[k] = v; pace.pacing[k] = v; }
-    paceTotal();
-    clearTimeout(paceTimer);
-    paceTimer = setTimeout(async () => {
-      const body = pacePending; pacePending = { pacing: {}, world: {} };
-      try {
-        const r = await (await fetch("/trajectory/pacing", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })).json();
-        $("pace_stat").textContent = "saved to trajectory.json"; $("pace_stat").className = "status";
-      } catch (e) { $("pace_stat").textContent = "couldn't save (server offline?)"; $("pace_stat").className = "status bad"; }
-    }, 250);
+    $("pv_" + k).textContent = paceFmt(k, v); paceSave(k, v); paceTotal();
   }));
 }
 function paceShow() {
-  $("pace").querySelectorAll("input").forEach(inp => {
+  document.querySelectorAll("input[data-k]").forEach(inp => {
     const k = inp.dataset.k, v = k.startsWith("w:") ? pace.world[k.slice(2)] : pace.pacing[k];
     if (v === undefined) { inp.disabled = true; return; }
     if (document.activeElement !== inp) inp.value = v;
     $("pv_" + k).textContent = paceFmt(k, +v);
   });
+  segShow("s_dir", +pace.world.director >= 0.5 ? "1" : "0");
   paceTotal();
 }
 async function paceLoad() {
-  try {
-    const doc = await (await fetch("/trajectory", { cache: "no-store" })).json();
+  try { const doc = await (await fetch("/trajectory", { cache: "no-store" })).json();
     if (doc.error) { $("pace_stat").textContent = doc.error; $("pace_stat").className = "status bad"; return; }
-    pace = doc; paceShow();
-  } catch (e) {}
+    pace = doc; paceShow(); } catch (e) {}
 }
-paceBuild(); paceLoad();
+paceBuild(); paceLoad(); setInterval(paceLoad, 5000);
+
+// ---------- the show: acts on the running game ----------
+function segShow(id, v) { $(id).querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.v === String(v)))); }
+function seg(id, onPick) { $(id).querySelectorAll("button").forEach(b => b.addEventListener("click", () => { segShow(id, b.dataset.v); onPick(b.dataset.v); })); }
+const liveSend = (body) => fetch("/game/live", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).catch(() => {});
+const command = (cmd) => fetch("/game/command", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cmd }) }).catch(() => {});
+seg("s_ui", (v) => liveSend({ ui: v }));
+seg("s_avatar", (v) => send("avatar", v, 0));
+seg("s_dir", (v) => { if (pace) paceSave("w:director", +v); });
+let liveTimer = 0, livePending = {};
+function liveLater(part) {                                      // gathers quick changes into one save (none is lost)
+  for (const [k, v] of Object.entries(part)) livePending[k] = k === "animator" ? { ...(livePending.animator || {}), ...v } : v;
+  clearTimeout(liveTimer);
+  liveTimer = setTimeout(() => { const body = livePending; livePending = {}; liveSend(body); }, 150);
+}
+function liveSlider(id, key, label) {
+  $(id).addEventListener("input", () => {
+    $(label).textContent = (+$(id).value).toFixed(2) + "×"; if (id === "tempo") paceTotal();
+    liveLater({ [key]: +$(id).value });
+  });
+}
+liveSlider("tempo", "tempo", "tempoV"); liveSlider("type_scale", "type_scale", "tsV");
+document.querySelectorAll("input[data-a]").forEach(inp => inp.addEventListener("input", () => {
+  $(inp.id + "V").textContent = inp.dataset.a === "turn_limit" ? Math.round(inp.value) + "°" : (+inp.value).toFixed(2);
+  liveLater({ animator: { [inp.dataset.a]: +inp.value } });
+}));
+let armed = 0;
+$("b_new").addEventListener("click", () => {                   // twice, so a stray click never ends a life
+  if (Date.now() - armed < 3000) { command("new_life"); armed = 0; $("b_new").classList.remove("armed"); $("b_new").firstChild.textContent = "New life"; return; }
+  armed = Date.now(); $("b_new").classList.add("armed"); $("b_new").firstChild.textContent = "Press again";
+  setTimeout(() => { if (armed && Date.now() - armed >= 3000) { armed = 0; $("b_new").classList.remove("armed"); $("b_new").firstChild.textContent = "New life"; } }, 3100);
+});
+let isPaused = false;
+$("b_pause").addEventListener("click", () => command(isPaused ? "resume" : "pause"));
+$("b_roll").addEventListener("click", () => command("roll"));
+$("b_redraw").addEventListener("click", () => command("redraw"));
+
+let liveShown = false;
+async function gamePoll() {
+  try {
+    const g = await (await fetch("/game/state", { cache: "no-store" })).json();
+    const s = g.state || {}, fresh = g.seconds_ago != null && g.seconds_ago < 4, L = g.live || {};
+    if (!liveShown) {                                          // the live settings, once (then the controls lead)
+      liveShown = true;
+      $("tempo").value = L.tempo || 1; $("tempoV").textContent = (+$("tempo").value).toFixed(2) + "×";
+      $("type_scale").value = L.type_scale || 1; $("tsV").textContent = (+$("type_scale").value).toFixed(2) + "×";
+      for (const [k, v] of Object.entries(L.animator || {})) { const el = $("a_" + k); if (el) { el.value = v; $("a_" + k + "V").textContent = k === "turn_limit" ? Math.round(v) + "°" : (+v).toFixed(2); } }
+      paceTotal();
+    }
+    const wantUi = (fresh && s.ui_next) || L.ui || (fresh ? s.ui : "");
+    segShow("s_ui", wantUi);
+    $("uiH").textContent = fresh && s.ui_next ? `${s.ui_next === "fog" ? "Fog" : "Glass"} comes in when this choice is over.` : "";
+    $("now").classList.toggle("stale", !fresh);
+    chip("c_game", fresh ? (s.paused ? "warn" : "ok") : "bad", fresh ? (s.paused ? "paused" : `age ${s.age}`) : "not connected");
+    if (fresh) {
+      $("n_age").textContent = `Age ${s.age} · moment ${s.n} of ${s.of}` + (s.paused ? " · paused" : "");
+      $("n_ev").textContent = s.event || "–";
+      $("n_meta").innerHTML = [["style", s.ui], ["avatar", s.avatar], ["screen", s.screen_fps + " fps"], s.portrait_ms ? ["portrait", s.portrait_ms + " ms"] : null, s.place ? ["born in", s.place] : null]
+        .filter(Boolean).map(([a, b]) => `<span>${a} <b>${String(b).replace(/</g, "&lt;")}</b></span>`).join("");
+      $("n_world").hidden = !s.world; $("n_world").textContent = s.world ? "Painting: " + s.world : "";
+      const warn = s.portrait || s.director_error || (s.screen_fps && s.screen_fps < 30 ? `the game's screen runs at ${s.screen_fps} fps: the computer showing it is struggling` : "");
+      $("n_warn").hidden = !warn; $("n_warn").textContent = warn;
+    } else { $("n_age").textContent = "no game connected"; $("n_ev").textContent = "Open the game"; $("n_meta").innerHTML = ""; $("n_world").hidden = true; $("n_warn").hidden = true; }
+    isPaused = !!(fresh && s.paused);
+    $("b_pause").firstChild.textContent = isPaused ? "Resume" : "Pause";
+    $("b_pause").querySelector("small").textContent = isPaused ? "the life carries on" : "holds the life where it is";
+    // director
+    const d = g.director || {};
+    const noKey = fresh && /no Anthropic key/i.test(s.director_error || "");
+    const dirOff = pace && +pace.world.director < 0.5;
+    chip("c_dir", dirOff ? "" : noKey || d.last_error ? "bad" : d.calls ? "ok" : "warn",
+         dirOff ? "off" : noKey ? "no key" : d.last_error ? "error" : d.calls ? `${d.calls} calls` : "waiting");
+    $("d_state").textContent = d.last_error ? "ERROR: " + d.last_error : `${d.calls || 0} calls · ${d.cached || 0} cached · ${d.failed || 0} failed · ${d.rejected || 0} rejected`;
+    $("d_last").textContent = d.last_ms ? (d.last_ms / 1000).toFixed(1) + " s for the last call" : "–";
+    $("d_model").textContent = d.model || "–";
+    if (d.last && d.last.moments) {
+      $("d_event").textContent = "Its last answer: " + d.last.event;
+      const key = JSON.stringify(d.last);
+      if ($("d_list").dataset.key !== key) {
+        $("d_list").dataset.key = key;
+        const esc = (x) => String(x || "").replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+        $("d_list").innerHTML = Object.entries(d.last.moments).map(([k, m]) => `<div class="m"><div class="k">${esc(k)}${m.clothes ? " · wears " + esc(m.clothes) : ""}</div><div class="w">${esc(m.world)}</div>
+          ${(m.passage || []).length ? `<ol>${m.passage.map(p => `<li>${esc(p)}</li>`).join("")}</ol>` : ""}</div>`).join("");
+      }
+    }
+  } catch (e) { chip("c_game", "bad", "–"); }
+  try {
+    const a = await (await fetch("/animate/status", { cache: "no-store" })).json();
+    const off = !a.ready && a.note && a.note !== "loading";
+    chip("c_anim", a.ready ? "ok" : off ? "bad" : "warn", a.ready ? (a.mock ? "ready (mock)" : "ready") : off ? "off" : "loading…");
+    $("c_anim").title = a.note || "";
+  } catch (e) { chip("c_anim", "bad", "–"); }
+}
+gamePoll(); setInterval(gamePoll, 1000);
 </script>
 </body>
 </html>

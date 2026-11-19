@@ -151,10 +151,16 @@ export function createLive({ out, video, params }) {
     m.putImageData(data, 0, 0);
     return cover / (255 * f.length);
   }
-  function segment() {
+  let segAt = 0;
+  function segment(now) {
     const m = mask.getContext("2d");
     if (!segOk) { m.fillStyle = "#000"; m.fillRect(0, 0, W, H); return; }   // no segmenter: everything counts as "you"
-    segmenter.segmentForVideo(grab, performance.now(), (res) => { const c = writeMask(res, mask); if (c >= 0) camCover = c; });
+    // the costliest thing the page does (a model + a loop over every pixel): 15 times a second is plenty, and the
+    // portrait doesn't need it at all (your head comes from the animator)
+    if (P.main && serverHead && now - serverHead.at < 1500) return;
+    if (now - segAt < 66) return;
+    segAt = now;
+    segmenter.segmentForVideo(grab, now, (res) => { const c = writeMask(res, mask); if (c >= 0) camCover = c; });
   }
   // the outline of the person the MODEL drew (hat, beard, costume and all), so nothing gets clipped.
   // If it doesn't look like a person any more, fall back to your camera outline.
@@ -232,12 +238,15 @@ export function createLive({ out, video, params }) {
     g.globalAlpha = 1; g.drawImage(a.img, 0, 0, W, H);        // flat (no WebGL, or the copy the painter gets): a plain crossfade
     if (b) { g.globalAlpha = k; g.drawImage(b.img, 0, 0, W, H); g.globalAlpha = 1; }
   }
+  const rTimes = [];                                         // when the screen was drawn: the page's own frame rate (D line)
   function render(now) {
     if (held) { requestAnimationFrame(render); return; }      // everything holds still (the die is rolling)
     stepWorld(now);
     octx.setTransform(S, 0, 0, S, 0, 0);                       // draw in painting units on the bigger screen canvas
+    rTimes.push(now); while (rTimes.length && now - rTimes[0] > 2000) rTimes.shift();
+    stat.drawFps = rTimes.length > 1 ? Math.round((rTimes.length - 1) / ((rTimes[rTimes.length - 1] - rTimes[0]) / 1000)) : 0;
     if (capture()) {
-      segment();
+      segment(now);
       if (scene) scene(octx, W, H, now);                                     // a drawn scene (e.g. birth)
       else if (!fgPrompt && !bgPrompt) { if (showReal) octx.drawImage(grab, 0, 0); else { octx.fillStyle = "#fff"; octx.fillRect(0, 0, W, H); } }   // nothing set: just you
       else {
@@ -374,7 +383,7 @@ export function createLive({ out, video, params }) {
   // were and the one you're becoming) and they dissolve into each other here, both alive. Each is cut out of its
   // plain background (MediaPipe, on the portrait itself, refreshed as it moves) and stands at the bottom of the
   // world, growing with your age, drifting a little with your head.
-  const P = { ws: null, flying: 0, sentAt: 0, main: null, next: null, k: 0, fade: 2000, t0: 0, stage: "one",
+  const P = { ws: null, flying: 0, sentAt: 0, main: null, next: null, k: 0, fade: 2000, t0: 0, stage: "one", lastOk: 0, lost: false,
               done: null, x: 0.5, place: null, cut: null, mix: null, sendCanvas: null };
   function pStream() { return { bmp: null, matte: document.createElement("canvas"), mattedAt: 0, alpha: null, cut: document.createElement("canvas"), cutOf: null, cutV: -1, matteV: 0 }; }
   const PFLY = 2;                                            // two frames in flight: the network's wait overlaps the GPU's work
@@ -382,7 +391,7 @@ export function createLive({ out, video, params }) {
     if (P.ws && P.ws.readyState <= 1) return;
     P.ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/animate");
     P.ws.binaryType = "arraybuffer";
-    P.ws.onopen = () => { P.flying = 0; };
+    P.ws.onopen = () => { P.flying = 0; if (P.opts) P.ws.send(JSON.stringify({ cmd: "opts", ...P.opts })); };
     P.ws.onclose = () => { P.ws = null; P.flying = 0; if (P.main) setTimeout(pConnect, 1500); };
     P.ws.onmessage = async (e) => {
       const buf = e.data, n = new DataView(buf).getUint32(0);
@@ -402,9 +411,20 @@ export function createLive({ out, video, params }) {
           else if (bb) bb.close();
         }
         stat.times.push(performance.now()); while (stat.times.length && performance.now() - stat.times[0] > 2000) stat.times.shift();
+        P.lastOk = performance.now();
       }
     };
   }
+  // the animator stopped answering (the server restarted, the GPU is gone): let the game fall back to the painted
+  // avatar instead of showing a frozen face. It tries the portrait again at the next event.
+  setInterval(() => {
+    if (!P.main || P.lost || held || document.hidden) return;
+    if (!P.lastOk) P.lastOk = performance.now();
+    if (performance.now() - P.lastOk > 8000) {
+      P.lost = true; stat.portraitNote = "the animator stopped answering";
+      dispatchEvent(new CustomEvent("pac-portrait-lost"));
+    }
+  }, 1000);
   function swapIn(st, bmp) { if (st.bmp) st.bmp.close(); st.bmp = bmp; }
   setInterval(() => { if (P.flying && performance.now() - P.sentAt > 4000) P.flying = 0; }, 1000);   // never stall
   // camera frames are encoded in a worker (encoder.js), so the busy main thread never slows the portrait down
@@ -520,13 +540,13 @@ export function createLive({ out, video, params }) {
     if (!blob) {                                             // no portrait: back to nothing
       if (P.ws && P.ws.readyState === 1) P.ws.send(JSON.stringify({ cmd: "drop" }));
       for (const st of [P.main, P.next]) if (st && st.bmp) st.bmp.close();
-      P.main = P.next = null; P.stage = "one"; finishAge(false); return true;
+      P.main = P.next = null; P.stage = "one"; P.lost = false; finishAge(false); return true;
     }
     pConnect();
     if (!P.main) {                                           // the first: set it, and it's there as soon as frames come
       const r = await fetch("/animate/source", { method: "POST", body: blob }).then(r => r.json()).catch(() => ({ ok: false }));
       if (!r.ok) { stat.portraitNote = r.note || "the portrait couldn't be set"; return false; }
-      P.main = pStream(); P.stage = "one";
+      P.main = pStream(); P.stage = "one"; P.lastOk = performance.now(); P.lost = false;
       return true;
     }
     if (P.stage !== "one") {                                 // a change is under way: let it land first (it never jumps)
@@ -536,6 +556,10 @@ export function createLive({ out, video, params }) {
     if (!r.ok || !P.main) { stat.portraitNote = r.note || "the next portrait couldn't be set"; return false; }
     P.next = pStream(); P.fade = Math.max(300, fade); P.t0 = 0; P.stage = "two";
     return new Promise(res => { P.done = res; });
+  }
+  function setAnimatorOpts(o) {                              // the portrait's movement, from /panel
+    P.opts = { ...(P.opts || {}), ...o };
+    if (P.ws && P.ws.readyState === 1) P.ws.send(JSON.stringify({ cmd: "opts", ...P.opts }));
   }
   function setPortraitPlace(p) { P.place = p || null; }      // where the portrait stands: { x: 0..1 across, scale } (null = the middle)
   function photo() {                                         // the camera, mirrored, full size
@@ -753,7 +777,7 @@ export function createLive({ out, video, params }) {
   const camera = startCamera();
   connect();
   return {
-    stat, setPerson, setBackground, world, setScene, portrait, photo, setPortraitPlace, avatarMode: () => (avatarCfg === "portrait" && animatorCfg ? "portrait" : "painted"),   // what can run now
+    stat, setPerson, setBackground, world, setScene, portrait, photo, setPortraitPlace, setAnimatorOpts, avatarMode: () => (avatarCfg === "portrait" && animatorCfg ? "portrait" : "painted"),   // what can run now
     avatarWanted: () => avatarCfg,                           // what /panel asks for (the animator may still be loading)
     refresh, camera, hold, setReal, setPersonAlpha, setControl, where, skinTone, nextCamera,
     worldState: () => ({ queued: worlds.length, k: wk, textures: px ? px.textures : 0, webgl: !!(px && px.ok) }),

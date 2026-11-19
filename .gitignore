@@ -20,3 +20,4 @@ stream-proto/web/refs/*
 
 # speed-check output
 stream-proto/bench_animate.jpg
+stream-proto/game_live.json

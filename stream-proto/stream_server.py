@@ -155,6 +155,7 @@ TUNE_DEFAULTS = {
     "between_steps": 2,       # steps for the in-between pictures of a change (tiny decoder below 4; 4 = as good as the last one)
     "dissolve": 0.5,          # browser: 0 = a plain crossfade between worlds, 1 = the new one soaks in in patches, far parts first
     "push": 0.02,             # browser: how far the view pushes in through each picture of a change (0 = still)
+    "world_yield": 0.04,      # seconds the world painter rests between the pictures of a change, so the animator's frames get the GPU
 }
 TUNE = dict(TUNE_DEFAULTS)
 LOOK_KEYS = {"style", "ref_mode", "world_steps", "lora_a", "lora_a_w", "lora_b", "lora_b_w", "ip_style", "style_prompt", "negative", "guidance"}
@@ -1423,7 +1424,7 @@ def clean_tune(d):
            "ip_style": (0, 1.5), "guidance": (1, 4), "steady": (0, 0.9), "cn_strength": (0, 1.5),
            "ghost_guard": (0, 1), "skip_still": (0, 10), "child_until": (0, 20), "child_cn": (0, 1), "parallax": (0, 0.1),
            "layout_hold": (0, 1), "drift": (0, 1), "palette_hold": (0, 0.9), "between_steps": (1, 4), "dissolve": (0, 1),
-           "push": (0, 0.05)}
+           "push": (0, 0.05), "world_yield": (0, 0.3)}
     for k, v in d.items():
         if k not in TUNE_DEFAULTS:
             continue
@@ -1516,6 +1517,121 @@ async def shape():
     if not data:
         return Response(status_code=204)
     return Response(data, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
+
+# ---------- the panel runs the game: live settings, commands, and what the game is doing ----------
+# The panel (another tab, or another computer through the tunnel) can't reach the game page directly, so the server
+# relays: the panel posts commands and live settings here; the game polls for them (GET /game/commands, every ~0.6 s)
+# and reports what it's doing (POST /game/report, every second), which the panel shows.
+GAME_LIVE_FILE = os.path.join(HERE, "game_live.json")
+GAME_LIVE_DEFAULTS = {
+    "ui": "",               # the screen's style: "glass" / "fog" ("" = whatever the game's browser last used)
+    "type_scale": 1.0,      # the fog style's letters: x this
+    "tempo": 1.0,           # every timing in PACING: x this (1.2 = 20% slower, 0.8 = faster)
+    "animator": {"multiplier": 1.0, "smooth": 0.3, "face_smooth": 0.3, "turn_limit": 22},   # the portrait's movement
+}
+game_cmds = collections.deque(maxlen=64)
+game_seq = 0
+game_report = {"at": 0.0, "state": {}}
+
+
+def load_game_live():
+    live = json.loads(json.dumps(GAME_LIVE_DEFAULTS))
+    try:
+        with open(GAME_LIVE_FILE, encoding="utf-8") as fh:
+            saved = json.load(fh)
+        for k in live:
+            if k in saved:
+                live[k] = {**live[k], **saved[k]} if isinstance(live[k], dict) and isinstance(saved[k], dict) else saved[k]
+    except (OSError, ValueError):
+        pass
+    return live
+
+
+game_live = load_game_live()
+
+
+def clean_live(body):
+    out = {}
+    if body.get("ui") in ("", "glass", "fog"):
+        out["ui"] = body["ui"]
+    for k, lo, hi in (("type_scale", 0.6, 1.6), ("tempo", 0.4, 2.0)):
+        if k in body:
+            try:
+                out[k] = round(max(lo, min(hi, float(body[k]))), 3)
+            except (TypeError, ValueError):
+                pass
+    if isinstance(body.get("animator"), dict):
+        a = {}
+        for k, lo, hi in (("multiplier", 0.3, 2.0), ("smooth", 0.0, 0.95), ("face_smooth", 0.0, 0.95), ("turn_limit", 5, 45)):
+            if k in body["animator"]:
+                try:
+                    a[k] = round(max(lo, min(hi, float(body["animator"][k]))), 3)
+                except (TypeError, ValueError):
+                    pass
+        out["animator"] = {**game_live["animator"], **a}
+    return out
+
+
+@app.post("/game/live")
+async def game_live_set(request: Request):
+    """The panel's live settings for the game: {ui, type_scale, tempo, animator: {...}} (any of them). Saved."""
+    global game_seq
+    try:
+        body = await request.json()
+    except ValueError:
+        return JSONResponse({"error": "not JSON"}, status_code=400)
+    game_live.update(clean_live(body if isinstance(body, dict) else {}))
+    try:
+        with open(GAME_LIVE_FILE, "w", encoding="utf-8") as fh:
+            json.dump(game_live, fh, indent=2)
+    except OSError:
+        pass
+    game_seq += 1                                            # the game picks the change up with its next poll
+    return {"live": game_live, "seq": game_seq}
+
+
+@app.post("/game/command")
+async def game_command(request: Request):
+    """One command for the running game: {cmd: "new_life" | "pause" | "resume" | "roll" | "redraw"}."""
+    global game_seq
+    try:
+        body = await request.json()
+    except ValueError:
+        return JSONResponse({"error": "not JSON"}, status_code=400)
+    cmd = str((body or {}).get("cmd") or "")
+    if cmd not in ("new_life", "pause", "resume", "roll", "redraw"):
+        return JSONResponse({"error": "unknown command"}, status_code=400)
+    game_seq += 1
+    game_cmds.append({"seq": game_seq, "cmd": cmd, "at": time.time()})
+    return {"ok": True, "seq": game_seq}
+
+
+@app.get("/game/commands")
+async def game_commands(after: int = 0):
+    """For the game: commands newer than `after` (the last 20 s only, so a reloaded page doesn't replay old ones),
+    and the live settings."""
+    now = time.time()
+    return {"seq": game_seq, "cmds": [c for c in game_cmds if c["seq"] > after and now - c["at"] < 20], "live": game_live}
+
+
+@app.post("/game/report")
+async def game_report_in(request: Request):
+    try:
+        body = await request.json()
+    except ValueError:
+        return Response(status_code=400)
+    game_report.update(at=time.time(), state=body if isinstance(body, dict) else {})
+    return {"ok": True}
+
+
+@app.get("/game/state")
+async def game_state():
+    """For the panel: what the game last reported (age, event, style, avatar, screen speed …), how fresh, and the live
+    settings."""
+    age = time.time() - game_report["at"] if game_report["at"] else None
+    return {"state": game_report["state"], "seconds_ago": round(age, 1) if age is not None else None, "live": game_live,
+            "director": director.stats if director is not None else {}}
 
 
 @app.post("/redraw")
@@ -1679,6 +1795,8 @@ async def world(request: Request):
                 i += 1
                 if i >= job["n"]:
                     break
+                if TUNE["world_yield"] > 0:                       # a breath for the GPU: the animator's frames go through here
+                    await asyncio.sleep(float(TUNE["world_yield"]))
         finally:
             if not polite:
                 world_morphs -= 1

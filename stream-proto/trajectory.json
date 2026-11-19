@@ -6,10 +6,11 @@
     "chapter: true = a longer breath after this event. tries: throws allowed (Birth = 3). allot: false = a miss allots nothing (Love).",
     "drawn: this event is drawn instead of painted: \"egg\" (birth.js), \"map\" (worldmap.js), \"house\" (house.js), \"baby\" (baby.js: the baby, then the live kid takes over).",
     "genes (Body cards): what emerges on the baby, one by one. life: true = it stays on the avatar for life (eyes, a birthmark). Skin always comes first and is taken from the player's own camera, never from a card.",
-    "pacing: seconds, all minimums. They're also sliders on /panel (PACING), which save back into this file. arrive + arrive_year x the years that pass = how long the world takes to change between two events (chapter = the least after a chapter event). turn = how long it takes to become an outcome. morph_frame = one painted picture per this many seconds of a change.",
-    "world: keep / turn_keep / chapter_keep = how much of the picture on screen survives a change (arriving at an event / its outcome / after a chapter): lower = it becomes a more different place. morph_steps = the most pictures one change is painted in. breathe = seconds between the small variations inside an event, breathe_keep = how much of the event's world each keeps. rev: leave it (push.sh uses it to know these settings were re-based).",
+    "pacing: seconds, all minimums. They're also sliders on /panel (PACING), which save back into this file. arrive + arrive_year x the years that pass = how long the world takes to change between two events (chapter = the least after a chapter event). turn = how long it takes to become an outcome. morph_frame = one painted picture per this many seconds of a change. passage = how long each step of the passage takes to paint in.",
+    "world: keep / turn_keep / chapter_keep = how much of the picture on screen survives a change (arriving at an event / its outcome / after a chapter): lower = it becomes a more different place. morph_steps = the most pictures one change is painted in. breathe = seconds between the steps of the PASSAGE (the life moving on inside an event), breathe_keep = how much of the picture each step keeps. rev: leave it (push.sh uses it to know these settings were re-based).",
     "context: what the life adds to every written scene. light: [from this age, words] = the light of your age, a life as one day (a scene that already names its light, matched by light_words, keeps its own). means_until: the age until which the family's means show. outcome: words added after a good / bad / neutral Happens. breaths: the small changes the world breathes through inside an event. Empty a list or a string to switch that part off.",
-    "phase_refs: optional style reference paintings, one per phase (BASELINE, CRUST, ADULTHOOD, LATER LIFE), e.g. \"refs/crust.jpg\" in web/refs/. Empty = none."
+    "phase_refs: optional style reference paintings, one per phase (BASELINE, CRUST, ADULTHOOD, LATER LIFE), e.g. \"refs/crust.jpg\" in web/refs/. Empty = none.",
+    "passage (on an event): the years until the next event, as 3 to 6 scenes the world moves through while the event plays (the director writes its own from the life so far; these are used when it doesn't). Plain paintable things, a place seen by someone standing in it, no writing. The life's context is added to each."
   ],
   "pacing": {
     "fade": 1.2,
@@ -17,7 +18,8 @@
     "arrive_year": 0.45,
     "world_fade": 2.5,
     "turn": 4.5,
-    "morph_frame": 1.2,
+    "passage": 3.5,
+    "morph_frame": 0.6,
     "settle": 3.0,
     "card_rise": 0.25,
     "lock": 1.5,
@@ -35,13 +37,13 @@
     "takeover": 6.0
   },
   "world": {
-    "rev": 2,
+    "rev": 3,
     "keep": 0.25,
     "turn_keep": 0.45,
     "chapter_keep": 0.1,
-    "morph_steps": 8,
+    "morph_steps": 12,
     "breathe": 5.0,
-    "breathe_keep": 0.55,
+    "breathe_keep": 0.4,
     "director": 1,
     "director_lines": 0,
     "director_wait": 2.0
@@ -472,6 +474,13 @@
       "type": "happens",
       "age": 8,
       "scene": "a school classroom, rows of wooden desks, a blackboard",
+      "passage": [
+        "a narrow lane at dawn, children with school bags walking, a bicycle leaning on a wall",
+        "a dusty school playground at noon, a cricket bat on the ground, shade under a big tree",
+        "a kitchen table in the evening, homework books under a single lamp, a cup of tea",
+        "a crowded tuition room, rows of benches, a ceiling fan turning",
+        "a school courtyard strung with marigolds for annual day, rows of folding chairs"
+      ],
       "outcomes": {
         "good": {
           "text": "A teacher notices you and pins your drawing on the wall. She keeps it for years.",
@@ -495,6 +504,12 @@
       "age": 16,
       "setup": "Choose a stream at sixteen, as if you knew who you'd be at forty.",
       "scene": "a school noticeboard covered in pinned lists, a crowded corridor",
+      "passage": [
+        "a coaching classroom packed with students, a whiteboard full of formulas, late evening",
+        "a bedroom desk at midnight, piles of guide books, a table lamp, a clock",
+        "a bus stop in the rain, students with heavy bags waiting",
+        "a rooftop at sunset, a notebook left open, kites in the sky"
+      ],
       "cards": [
         {
           "name": "Arts",
@@ -542,6 +557,12 @@
       "age": 18,
       "chapter": true,
       "scene": "an exam hall, rows of desks, a big clock on the wall",
+      "passage": [
+        "a college gate in the morning, groups of students, scooters parked in rows",
+        "a hostel room with two beds, clothes drying on a chair, a window onto trees",
+        "a college canteen at noon, steel tables, glasses of tea",
+        "a railway platform at night, a train arriving, a trunk and a bedroll"
+      ],
       "outcomes": {
         "good": {
           "text": "The paper leaks. The exam is held again, and the retest is easier.",
@@ -565,6 +586,12 @@
       "age": 20,
       "setup": "Who do you dream of becoming?",
       "scene": "a rooftop at dusk, city lights below",
+      "passage": [
+        "a city street at dusk, food stalls lighting up, crowds going home",
+        "a shared rented room, a mattress on the floor, a window onto other windows",
+        "a library reading hall, long tables, green lamps",
+        "an interview waiting room, a row of plastic chairs, a water cooler"
+      ],
       "cards": [
         {
           "name": "A doctor, as planned",
@@ -611,6 +638,11 @@
       "type": "happens",
       "age": 22,
       "scene": "a city street, a big news screen, people looking up",
+      "passage": [
+        "a quiet city at night, empty roads, streetlights",
+        "a balcony with potted plants, a laptop on a small table, a city skyline",
+        "a long queue outside an office, folders in hands, morning heat"
+      ],
       "outcomes": {
         "good": {
           "text": "A technology nobody saw coming arrives. It happens to need exactly what you know.",
@@ -633,6 +665,13 @@
       "type": "fluke",
       "age": 23,
       "scene": "a cramped room, a laptop open to job listings",
+      "passage": [
+        "an office floor of cubicles, rows of monitors, fluorescent light",
+        "a crowded morning train, commuters holding the straps",
+        "a small rented flat after work, a takeaway box, a television glowing",
+        "a long restaurant table after a team dinner, plates and glasses",
+        "an office terrace at night, a coffee cup on the ledge, city lights"
+      ],
       "flukes": [
         {
           "text": "A stranger messages you online after misreading your profile. They like what they misread.",
@@ -660,6 +699,12 @@
       "allot": false,
       "setup": "One day. Somewhere in the city is the love of your life. You meet only if you end up in the same place.",
       "scene": "a city morning, crowds, many streets",
+      "passage": [
+        "two cups of tea on a balcony railing, early morning, a city waking up",
+        "a busy weekend market, fruit stalls, strings of lights",
+        "a beach at dusk, two pairs of footprints in the wet sand",
+        "a small apartment being painted, ladders, open paint tins, sunlight"
+      ],
       "miss": {
         "text": "You didn't find love that day.",
         "scene": "an empty bench in the evening, city lights"
@@ -705,6 +750,12 @@
       "age": 32,
       "setup": "A chance to change the direction of your life. It expires on Friday.",
       "scene": "an office desk with a ringing phone, a wall calendar",
+      "passage": [
+        "a highway at night, streams of car headlights",
+        "an airport gate at dawn, rows of empty seats, a plane outside",
+        "a meeting room with a whiteboard, coffee cups, a projector beam",
+        "a kitchen late at night, a laptop open among the dishes"
+      ],
       "cards": [
         {
           "name": "Change nothing",
@@ -745,6 +796,10 @@
       "type": "happens",
       "age": 35,
       "scene": "an office floor, the same routine every day",
+      "passage": [
+        "an office lobby in the morning, glass doors, people with lanyards",
+        "a weekend drive past green fields, a roadside tea stall"
+      ],
       "outcomes": {
         "good": {
           "text": "A senior colleague retires early. Their work, and their office, become yours.",
@@ -768,6 +823,12 @@
       "age": 36,
       "setup": "Who do you want to spend your life with?",
       "scene": "a wedding hall full of relatives and garlands",
+      "passage": [
+        "a new home with half-unpacked boxes, curtains being hung",
+        "a family lunch at a crowded table, many dishes, relatives talking",
+        "a quiet bedroom at night, two phones charging on the bedside table",
+        "a supermarket aisle on a Sunday, a trolley half full"
+      ],
       "cards": [
         {
           "name": "Whoever the family finds",
@@ -815,6 +876,13 @@
       "age": 40,
       "chapter": true,
       "scene": "a family home in the evening, a dinner table",
+      "passage": [
+        "a school gate in the afternoon, parents waiting with umbrellas",
+        "a corner of a home office, files, reading glasses on a stack of papers",
+        "a festival night, a balcony lined with oil lamps, fireworks in the distance",
+        "a car stuck in traffic, rain on the windscreen, brake lights ahead",
+        "a photo studio, a painted backdrop, an empty stool under the lights"
+      ],
       "outcomes": {
         "good": {
           "text": "The relatives move to another city.",
@@ -838,6 +906,12 @@
       "age": 48,
       "setup": "Something true about your life has been hidden all along. Now it comes out. Choose which.",
       "scene": "an old box of papers opened on a table, dust in the light",
+      "passage": [
+        "a clinic waiting room, a television on the wall, rows of chairs",
+        "a morning walk in a park, an old banyan tree, joggers in the distance",
+        "a bank hall, a long counter, a slow ceiling fan",
+        "a terrace garden in the evening, potted plants, a coiled hose"
+      ],
       "cards": [
         {
           "name": "A financial scam",
@@ -892,6 +966,12 @@
       "plant": true,
       "text": "On a rainy evening, you lend your umbrella to a stranger at a bus stop. You never see it again.",
       "scene": "a rainy bus stop at night, a stranger walking off under an umbrella",
+      "passage": [
+        "an evening bus ride, wet windows, city lights blurring",
+        "a quiet office at dusk, half the desks empty",
+        "a hospital visiting room, a fruit basket on a bedside table",
+        "a temple courtyard in the early morning, bells, flowers on the steps"
+      ],
       "bridge": "Eight more years. The office orders a cake."
     },
     {
@@ -901,6 +981,12 @@
       "age": 60,
       "setup": "The office gives you a cake and a shawl. What will you mostly do now?",
       "scene": "an office party, a cake and a folded shawl",
+      "passage": [
+        "a park bench in the morning, pigeons, a newspaper folded on the seat",
+        "a kitchen with steel utensils, a pressure cooker, afternoon light",
+        "a living room floor covered in toys, a family lunch in the next room",
+        "a pharmacy counter, small paper bags, a ceiling fan"
+      ],
       "cards": [
         {
           "name": "Mind the grandchildren",
@@ -948,6 +1034,13 @@
       "age": 64,
       "reveals": "umbrella",
       "scene": "a rainy street, a black umbrella",
+      "passage": [
+        "a window seat on a train, fields passing, an old suitcase",
+        "a quiet balcony, a cane chair, a radio, late afternoon",
+        "a doctor's waiting room, a stack of magazines, a slow clock",
+        "a neighbourhood lane at dusk, children playing far away, lamps coming on",
+        "a photo album open on a table, a magnifying glass beside it"
+      ],
       "outcomes": {
         "good": {
           "text": "The stranger became a minister. He remembers the umbrella. Your pension file moves to the top of the pile.",
@@ -971,6 +1064,11 @@
       "age": 79,
       "setup": "You get to choose how you go. Mostly.",
       "scene": "a quiet room, evening light, an empty chair by a window",
+      "passage": [
+        "an empty cane chair on a balcony at night, a single lamp",
+        "a quiet room at night, curtains moving, a glass of water",
+        "a window at dawn, the city waking far away"
+      ],
       "cards": [
         {
           "name": "Of something with a long name",
