@@ -90,7 +90,9 @@ Then on the Mac, through the tunnel: http://localhost:8766/game (the game), http
 
 ## The control panel (http://localhost:8766/panel)
 Open it next to the game (another window, or a laptop on the same tunnel). Everything saves on the server and reaches the
-running game within a second; nothing needs a restart. The bar on top: SERVER (painter), ANIMATOR, DIRECTOR, GAME (green =
+running game within a second; nothing needs a restart. Top right: NOTES shows what every control does (hidden by default,
+so the panel stays quiet), LIGHT / DARK (dark for the room; both remembered in that browser). The big card on the left is
+the game now: its age in dot-matrix numbers, its colour the state (warm = a life running, blue = paused, grey = screen off). The bar on top: SERVER (painter), ANIMATOR, DIRECTOR, GAME (green =
 fine, amber = loading or waiting, red = off or failing; hover the animator for why).
 - THE SHOW, on the left, acts on the game now (through POST /game/command and /game/live; the game polls
   GET /game/commands and reports back to /game/report every second, GET /game/state is what the panel reads):
