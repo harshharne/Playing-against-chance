@@ -1529,6 +1529,8 @@ GAME_LIVE_DEFAULTS = {
     "type_scale": 1.0,      # the fog style's letters: x this
     "tempo": 1.0,           # every timing in PACING: x this (1.2 = 20% slower, 0.8 = faster)
     "animator": {"multiplier": 1.0, "smooth": 0.3, "face_smooth": 0.3, "turn_limit": 22},   # the portrait's movement
+    "voice": True,          # the Bookkeeper speaks (from the next life; off = the text carries the words)
+    "subtitles": "",        # "" = as bookkeeper.json says (show_text) · "on" = the words on screen as well · "off" = voice only
 }
 game_cmds = collections.deque(maxlen=64)
 game_seq = 0
@@ -1561,6 +1563,10 @@ def clean_live(body):
                 out[k] = round(max(lo, min(hi, float(body[k]))), 3)
             except (TypeError, ValueError):
                 pass
+    if isinstance(body.get("voice"), bool):
+        out["voice"] = body["voice"]
+    if body.get("subtitles") in ("", "on", "off"):
+        out["subtitles"] = body["subtitles"]
     if isinstance(body.get("animator"), dict):
         a = {}
         for k, lo, hi in (("multiplier", 0.3, 2.0), ("smooth", 0.0, 0.95), ("face_smooth", 0.0, 0.95), ("turn_limit", 5, 45)):
@@ -1922,6 +1928,30 @@ async def direct(request: Request):
     moments = [m for m in body.get("moments", []) if isinstance(m, dict) and m.get("key")][:12]
     out = await asyncio.to_thread(director.write, body.get("life") or {}, body.get("event") or {}, moments)
     return {"moments": out, "ms": director.stats["last_ms"], "error": director.stats["last_error"]}
+
+
+# ---------- the Bookkeeper (the voice in the room: OpenAI Realtime, bookkeeper.md + bookkeeper.json) ----------
+import bookkeeper
+
+
+@app.get("/voice/token")
+async def voice_token():
+    """A short-lived key for one life's voice session (the browser connects to OpenAI with it; the real key stays
+    here), with the personality and settings read fresh. {"error": ...} when there's no voice: the game uses text."""
+    try:
+        return JSONResponse(await asyncio.to_thread(bookkeeper.mint), headers={"Cache-Control": "no-store"})
+    except bookkeeper.VoiceError as e:
+        return JSONResponse({"error": str(e)}, headers={"Cache-Control": "no-store"})   # (200: no voice is a normal state, not a failure)
+
+
+@app.post("/voice/log")
+async def voice_log(request: Request):
+    """{life, version, who: bookkeeper | player | game, text} -> one line in logs/voice-<date>.jsonl."""
+    try:
+        await asyncio.to_thread(bookkeeper.log, await request.json())
+    except (ValueError, OSError, AttributeError) as e:
+        return JSONResponse({"ok": False, "error": str(e)[:200]}, status_code=400)
+    return {"ok": True}
 
 
 # ---------- the life (trajectory.json) ----------

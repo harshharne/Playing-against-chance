@@ -196,8 +196,7 @@ A painted portrait, moved live by your face: LivePortrait warps the painting the
 - Legibility: every line is fitted to the screen (a long option or title shrinks before it would run off), the options
   sit on one fog bank, more than five options go on two rows, and TYPE SIZE on the panel scales it all.
 - A switch during a choice waits until the choice is over.
-- For the Bookkeeper: every line the game would show fires a `pac-say` browser event {k, t, s, cls, shown}, in both
-  styles, so the voice can speak what the fog leaves out.
+- Every line the game would show also fires a `pac-say` browser event {k, t, s, cls, shown}, in both styles.
 
 ## The avatar: you, as a portrait at every age (AVATAR = portrait on /panel, the default)
 - Your photo is taken when the life begins (the BEGIN throw: you're at the screen). Each event's age is painted from it
@@ -238,3 +237,31 @@ word limits) -> the written scene. It never decides anything; chance does.
 - For the Bookkeeper (Voice Lab): the game fires a `pac-moment` browser event with {key, line, world, written} each
   time a directed moment is used.
 
+## The Bookkeeper: the voice in the room (bookkeeper.md, bookkeeper.json, web/bookkeeper.js)
+An omnipresent voice that carries the life: no narrative box while it's there. OpenAI Realtime, speech to speech. The
+browser talks to OpenAI directly (WebRTC); the server only mints a short-lived key per life (GET /voice/token), so the
+real key never leaves the cloud machine.
+- Key: openai.key in stream-proto/ on the Mac (one line; git ignores it; push.sh sends it), or OPENAI_API_KEY.
+  Restart the server once after adding bookkeeper.py (push.sh says so). No key: the game runs with text, as before.
+- The personality: bookkeeper.md (from the personality map). The settings: bookkeeper.json (model, voice, accent,
+  predict_player, show_text, mic, ...). Both are read fresh when a life begins: edit, push, start a new life.
+- WHEN it speaks is the game's: three moments per event, each a [GAME] message with the facts it must carry.
+  ARRIVE (the bridge retold + what's coming, while the world changes) · CARDS (its opinion while they rise) ·
+  OUTCOME / HAPPENED (what happened, plainly, then its take). A fluke is one flat line. After Death it closes the
+  books, then the ledger shows. Silent during the lock, the throw and the landing.
+- The player can talk to it any time except the throw, and pick a card by saying its name (the choose_card tool;
+  a card named while the cards are still rising is taken once they're up). Clicks, keys and the die work as before.
+- The game waits for each line to finish (at most max_wait_s) before the next beat, so the pacing timings are
+  minimums, as before.
+- A new voice session per life: it remembers nothing of the last player.
+- Every line said and heard goes to logs/voice-<date>.jsonl on the server, with the prompt's version.
+- It is heard, never seen: nothing on screen stands for the voice (no orb, no waveform, no motif). In the glass style
+  the narrative box steps back while it speaks; the fog style already shows only the event and the options.
+- In both styles: the fog's options can be picked by voice as well (a name said while they rise is taken once they're up).
+- Panel: the VOICE chip (said / heard, or why it's off: hover), VOICE on / off (off stops it at once and the words come
+  back on screen; on starts with the next life), WORDS: as set (bookkeeper.json show_text) / on screen / voice only,
+  and its last line under the event. PAUSE also stops it mid-line.
+- The debug line (D) shows the voice: ready / connecting / off (why), lines said and heard.
+- Sound: Chrome may block it until the first click or key. For the installation, start Chrome with
+  --autoplay-policy=no-user-gesture-required. The mic uses Chrome's echo cancellation; with speakers in a room,
+  set "mic": "far_field".

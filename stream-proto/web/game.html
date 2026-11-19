@@ -140,6 +140,7 @@ import { createWorldMap } from "./worldmap.js";
 import { createHouse } from "./house.js";
 import { createBaby } from "./baby.js";
 import { createFog } from "./ui-fog.js";
+import { createBookkeeper } from "./bookkeeper.js";
 
 const $ = (id) => document.getElementById(id);
 const sayEl = $("say"), bigEl = $("big"), deckEl = $("deck"), flipEl = $("flip"), debugEl = $("debug");
@@ -174,6 +175,9 @@ function applyUI(next) {
   fog.active(ui === "fog");
   live.setPortraitPlace(ui === "fog" ? { x: 0.73, scale: 0.86 } : null);   // in the fog the event's name has the middle
 }
+// the Bookkeeper: the voice in the room (bookkeeper.md / bookkeeper.json on the server). It speaks at three moments of
+// an event (arriving, the cards, what happened); the text boxes step back while it's there (unless show_text).
+const V = createBookkeeper({ onPick: (name) => deckPick ? deckPick(name) : { ok: false, reason: "the cards aren't up" } });
 let scene = null;                                              // the drawn scene on screen now
 let held = false;
 function holdAll(on) { held = !!on; live.hold(on); for (const x of [birth, worldmap, house, baby]) x.hold(on); }   // while the die rolls, everything holds still
@@ -227,11 +231,12 @@ async function unsay() {
   await sleep(sec("fade"));
 }
 const plainText = (h) => { const d = document.createElement("div"); d.innerHTML = String(h || ""); return d.textContent.replace(/\s+/g, " ").trim(); };
-async function say({ k = "", t = "", s = "", cls = "", begin = false }) {
+async function say({ k = "", t = "", s = "", cls = "", begin = false, force = false }) {
   // every line, shown or not, goes to the Bookkeeper (Voice Lab): in the fog most words are only spoken
   dispatchEvent(new CustomEvent("pac-say", { detail: { k: plainText(k), t: plainText(t), s: plainText(s), cls, shown: !FOG() || !/bridge/.test(cls) } }));
   if (FOG()) return fog.say({ k, t, s, cls, begin, onBegin: () => beginAction && beginAction() });
   await unsay();
+  if (!V.showText && !begin && !force && cls !== "end") return;   // the voice carries the words now
   sayEl.className = "say " + cls;
   sayEl.innerHTML = (k ? `<span class="k">${k}</span>` : "") + (t ? `<span class="t">${t}</span>` : "") + (s ? `<span class="s">${s}</span>` : "")
     + (begin ? `<button type="button" class="go" id="begin">BEGIN</button>` : "");           // the only button there is
@@ -243,6 +248,42 @@ async function say({ k = "", t = "", s = "", cls = "", begin = false }) {
 applyUI(ui);                                                   // the style this browser used last
 const kick = (ev) => `AGE ${Math.floor(S.ageF)} · ${esc(ev.title)}`;    // over an outcome
 const kickAge = () => `AGE ${Math.floor(S.ageF)}`;                           // over the event's own name
+
+// ---------- what the Bookkeeper is told: the facts of each moment ([GAME] messages; bookkeeper.md says what to do with them) ----------
+// The game owns every fact. MUST CARRY = what its line has to include, unchanged; the rest it says in its own words.
+const PHASE_WORDS = ["the baseline (birth)", "the crust (childhood to 22)", "adulthood (23 to 48)", "later life (52 on)"];
+const G = (moment, lines) => [`[GAME] ${moment}`, `phase: ${PHASE_WORDS[Math.min(S.phase, PHASE_WORDS.length - 1)]}`, ...lines.filter(Boolean)].join("\n");
+const ageWords = (a) => a < 1 ? "a newborn" : `${Math.floor(a)} years old`;
+function arriveCue(ev, prev) {
+  const years = Math.max(0, Math.round((+ev.age || 0) - S.ageF));
+  const back = ev.reveals && S.planted[ev.reveals];
+  return G("arrive", [
+    prev ? "" : "the life begins: open the account",
+    prev && prev.chapter ? "a new phase of life begins here" : "",
+    prev && prev.bridge ? `bridge (retell it in your own words, don't quote it): ${prev.bridge}` : "",
+    years ? `years passing now: ${years}` : "",
+    `MUST CARRY: they are ${ageWords(+ev.age || 0)}`,
+    `next: ${ev.title} (${ev.type === "chosen" ? "a choice, then a throw of the die" : ev.type === "happens" ? "chance decides, the player watches" : "a small thing"})`,
+    ev.type === "chosen" && ev.setup ? `setup: ${ev.setup}` : "",
+    ev.type === "happens" ? (back ? "something small from long ago is coming back. Don't say what." : "something is about to happen. You don't know what.") : "",
+  ]);
+}
+const cardsCue = (ev) => G("cards", [`event: ${ev.title}`, `${ev.setup || ""}`, "the cards:", ...ev.cards.map(c => `- ${c.name}: ${c.reveals}`)]);
+function outcomeCue(ev, c, got, how, n, tries) {
+  const genes = got && got.genes ? `traits emerging on the baby: ${got.genes.map(g => g.label).join(", ")} (and their own skin, from the camera)` : "";
+  if (how === "none") return G("outcome", [`event: ${ev.title}`, `they went for: ${c.name}`, `the throw: ${n}, a miss`, `MUST CARRY: ${ev.miss.text}`]);
+  return G("outcome", [`event: ${ev.title}`,
+    how === "hit" ? `they chose ${got.name} and the throw (${n}) got it` :
+    how === "override" ? `they went for ${c.name}, missed all ${tries} throws, and chance's override gave them ${got.name}` :
+                         `they went for ${c.name}, the throw (${n}) missed, and chance allotted ${got.name} instead`,
+    `MUST CARRY: ${got.name}`, got.reveals ? `the card says: ${got.reveals}` : "", genes]);
+}
+function happenedCue(ev, o, mood, back) {
+  return G("happened", [`event: ${ev.title}`,
+    back ? `QUOTE (word for word, first): At ${back.age}: ${back.text}` : "",
+    `MUST CARRY: ${o.text}`, `it was a ${mood} turn`]);
+}
+const lifeLines = () => S.ledger.map(([a, t, w, note]) => `- age ${Math.floor(a)}, ${t}: ${w}${note ? ` (${note})` : ""}`);
 
 // ---------- the age, the avatar, the world ----------
 let S;                                                         // this life
@@ -540,22 +581,49 @@ function waitThrow(kind = "throw") {
 let screenRoll = null, beginAction = null;
 
 // ---------- the deck ----------
-let deckKeys = null;
+let deckKeys = null, deckPick = null;                          // deckPick(name): the player chose by voice
+function matchCard(cards, said) {                               // the name as the player said it -> that card (or -1)
+  const norm = (x) => String(x || "").toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\b(the|a|an)\b/g, " ").replace(/\s+/g, " ").trim();
+  const want = norm(said), names = cards.map(c => norm(c.name));
+  let i = names.indexOf(want);
+  if (i < 0) { const m = names.map((nm, k) => [k, want && (nm.includes(want) || want.includes(nm))]).filter(x => x[1]); if (m.length === 1) i = m[0][0]; }
+  return i;
+}
 async function deck(cards, onHover = null) {                   // cards rise one by one; resolves with the one you pick
   picking = true;
-  if (FOG()) return { i: await fog.deck(cards, onHover, (k) => { deckKeys = k; }), els: null };
+  if (FOG()) {                                                  // the fog's options; a name said while they rise is taken once they're up
+    let spoken = -1;
+    deckPick = (said) => {
+      const i = matchCard(cards, said);
+      if (i < 0) return { ok: false, reason: `no single card matches "${said}"`, cards: cards.map(c => c.name) };
+      if (deckKeys) deckKeys(String(i + 1)); else spoken = i;
+      return { ok: true, picked: cards[i].name };
+    };
+    const i = await fog.deck(cards, onHover, (k) => { deckKeys = k; if (k) setTurn("pick"); if (k && spoken >= 0) { const s = spoken; spoken = -1; setTimeout(() => k(String(s + 1)), 450); } });
+    deckPick = null;
+    return { i, els: null };
+  }
   deckEl.hidden = false; deckEl.className = "deck";
   document.body.classList.add("cards");                         // the narrative box lifts above the row
   deckEl.innerHTML = cards.map((c) => `<button type="button" class="card pre" aria-label="${esc(c.name)}: ${esc(c.reveals)}">
       <span class="nm">${esc(c.name)}</span><span class="rv">${esc(c.reveals)}</span><span class="tg"></span><span class="hint"></span></button>`).join("");
   const els = [...deckEl.querySelectorAll(".card")];
+  let spoken = -1, chosenBy = null;                               // a card named by voice while they're still rising: taken once they're up
+  deckPick = (said) => {                                          // the name as the player said it -> that card
+    const i = matchCard(cards, said);
+    if (i < 0) return { ok: false, reason: `no single card matches "${said}"`, cards: cards.map(c => c.name) };
+    if (chosenBy) chosenBy(i); else spoken = i;
+    return { ok: true, picked: cards[i].name };
+  };
   return new Promise(async resolve => {
     for (const el of els) { el.classList.remove("pre"); await sleep(sec("card_rise")); }
     await sleep(500);
     deckEl.classList.add("open"); setTurn("pick");
     let focus = -1;
     const setFocus = (i) => { focus = (i + els.length) % els.length; els.forEach((e, k) => e.classList.toggle("focus", k === focus)); deckEl.classList.add("hovering"); onHover && onHover(focus); };
-    const pick = (i) => { if (!deckEl.classList.contains("open")) return; deckEl.classList.remove("open", "hovering"); deckKeys = null; onHover && onHover(-1); resolve({ i, els }); };
+    const pick = (i) => { if (!deckEl.classList.contains("open")) return; deckEl.classList.remove("open", "hovering"); deckKeys = null; deckPick = null; onHover && onHover(-1); resolve({ i, els }); };
+    chosenBy = (i) => { setFocus(i); setTimeout(() => pick(i), 450); };   // by voice: it lifts, then locks
+    if (spoken >= 0) chosenBy(spoken);
     els.forEach((el, i) => {
       el.addEventListener("click", () => pick(i));
       el.addEventListener("mouseenter", () => { els.forEach(e => e.classList.remove("focus")); focus = i; deckEl.classList.add("hovering"); onHover && onHover(i); });
@@ -584,7 +652,7 @@ function cardHint(els, i, html) { if (FOG()) fog.hint(plainText(html)); else els
 async function cardAway(els, i) { if (FOG()) await fog.hide(); else { els[i].classList.add("gone"); await sleep(500); } }
 async function cardBack(els, i) { if (FOG()) await fog.show(); else { els[i].classList.remove("gone"); await sleep(600); } }
 function deckGone() {
-  deckEl.hidden = true; deckEl.innerHTML = ""; document.body.classList.remove("cards");
+  deckPick = null; deckEl.hidden = true; deckEl.innerHTML = ""; document.body.classList.remove("cards");
   fog.deckGone();
   picking = false;
   if (uiNext) applyUI(uiNext);
@@ -635,7 +703,9 @@ async function chosen(ev) {
   if (ev.drawn === "baby") await babyArrives();
   await say({ k: kickAge(), t: esc(ev.title), s: esc(ev.setup) });
   await sleep(sec("settle"));
+  V.listen("pick"); V.cue(cardsCue(ev));                       // the voice has an opinion while the cards rise
   const { i, els } = await deck(ev.cards, ev.drawn === "map" ? (k) => worldmap.hover(k >= 0 ? ev.cards[k].name : null) : null);
+  V.listen("closed"); V.hush();                                 // the room goes quiet for the throw
   const c = ev.cards[i], tg = target(c.target);
   await Promise.all([unsay(), lock(els, i, tg.label, c)]);
   if (FOG() && !diceOn) cardHint(els, i, "press R to roll");
@@ -654,7 +724,7 @@ async function chosen(ev) {
     await cardBack(els, i);
   }
   deckGone();
-  let got = c, how = "hit";
+  let got = c, how = "hit", spoken = null;
   if (!hit) {
     if (ev.allot === false) how = "none";
     else {
@@ -667,6 +737,8 @@ async function chosen(ev) {
     }
   }
   if (ev.drawn === "map" && how !== "none") await worldmap.reveal(got.name, how !== "hit");   // the region fills in on the map
+  spoken = V.cue(outcomeCue(ev, c, got, how, n, tries));        // what happened, plainly, then its take
+  V.listen("open");
   if (how === "none") {
     const w = turnTo(`${ev.id}:miss`, ev.miss.scene);
     S.ledger.push([S.ageF, ev.title, `${ev.miss.text.replace(/\.$/, "")}`, `went to: ${c.name}`]); prewriteNext();
@@ -682,8 +754,8 @@ async function chosen(ev) {
     await say({ k: kick(ev), t: esc(got.name), s: esc(got.reveals) + dline() + (note ? `<br><span style="color:#777;font-size:12px">${note}</span>` : "") });
   }
   avatarAt(S.ageF);                                           // a new outfit / gender: the avatar morphs to it
-  if (ev.drawn === "baby") { await sleep(sec("settle")); await emerge(ev, got); return; }
-  await linger("linger", how !== "none" && got.age);
+  if (ev.drawn === "baby") { await sleep(sec("settle")); await Promise.all([emerge(ev, got), spoken]); return; }
+  await Promise.all([linger("linger", how !== "none" && got.age), spoken]);
 }
 
 // ---------- Body: the baby, painted once, its traits emerging one by one ----------
@@ -753,29 +825,32 @@ async function happens(ev) {
     await sleep(sec("happen_hold"));
   }
   const key = ["good", "bad", "neutral"][(await draw(1, 3)) - 1], o = ev.outcomes[key];
+  const spoken = V.cue(happenedCue(ev, o, key, ev.reveals && S.planted[ev.reveals]));
   const w = turnTo(`${ev.id}:out:${key}`, o.scene, key);            // good / bad / neutral: it shows in the air (context.outcome)
   S.ledger.push([S.ageF, ev.title, o.text, ""]); prewriteNext();
   await Promise.race([w, sleep(250)]);
   await say({ k: kick(ev), t: "", s: `<span style="font-size:18px;color:#111">${esc(o.text)}</span>` + dline() });
-  await linger("happen_linger");
+  await Promise.all([linger("happen_linger"), spoken]);
 }
 
 async function fluke(ev) {                                     // deliberately understated
   if (ev.plant) {
     S.planted[ev.id] = { age: Math.floor(S.ageF), text: ev.text };
     S.ledger.push([S.ageF, ev.title, ev.text, ""]); prewriteNext();
+    const spoken = V.cue(G("fluke", [`MUST CARRY: ${ev.text}`]));
     await say({ s: esc(ev.text), cls: "small" });
-    await sleep(sec("fluke_hold"));
+    await Promise.all([sleep(sec("fluke_hold")), spoken]);
     await unsay();
     return;
   }
   const fi = (await draw(1, ev.flukes.length)) - 1, f = ev.flukes[fi];   // which small thing finds you work
   await say({ s: esc(f.text), cls: "small" });
-  await sleep(sec("fluke_hold"));
+  if (V.showText) await sleep(sec("fluke_hold"));               // (with the voice, the small thing and the job are one line)
   turnTo(`${ev.id}:fluke:${fi}`, f.scene);
   S.ledger.push([S.ageF, ev.title, f.job, f.text]); prewriteNext();
+  const spoken = V.cue(G("happened", [`event: ${ev.title}`, `the small thing: ${f.text}`, `MUST CARRY: ${f.job}`, "how it found them is a fluke: say it flatly, as if it means nothing"]));
   await say({ k: kick(ev), t: esc(f.job) });
-  await linger("fluke_linger");
+  await Promise.all([linger("fluke_linger"), spoken]);
 }
 
 // ---------- the run ----------
@@ -808,17 +883,20 @@ async function arrive(ev, prev) {
   else if ((ev.drawn || null) !== (prev && prev.drawn || null)) toScene(ev.drawn === "baby" ? null : ev.drawn);   // drawn scene -> the next one, or the painted world
   if (!handover) syncAvatar(ev).then(() => portraitTo(ev, dur * 0.8));   // the years show on you, as the world changes
   bridging = true;                                              // (the world is about to change: no breath now)
+  const spoken = V.cue(arriveCue(ev, prev));                   // the voice: the years, retold, and what's coming
+  V.listen("open");
   if (prev && prev.bridge) await say({ s: esc(prev.bridge), cls: "bridge" });
   const w = ev.scene ? worldFor(`${ev.id}:arrive`, ev.scene, { keep: +(chapter ? WK.chapter_keep : WK.keep), dur: dur * 0.92, age: ev.age, passage: ev.passage }) : null;
   prewrite(ev);                                                 // its branches, if they weren't asked for yet
   bridging = false;
-  await Promise.all([ageTo(ev.age, dur * 0.85), sleep(dur), w, handover]);
+  await Promise.all([ageTo(ev.age, dur * 0.85), sleep(dur), w, handover, spoken]);
   await unsay();
 }
 
 async function life() {
   if (!T) await loadLife();
   S = freshLife(); setPhase(0); D.clear(); evIdx = -1; lastLine = "";
+  V.stop();                                                     // each life gets a fresh voice, with no memory of the last
   deckGone(); bigEl.classList.remove("on");
   live.setPerson(null); live.setReal(false); live.setPersonAlpha(1); live.setControl({ age: 0, ramp: 1 });
   live.portrait(null); pCache.clear(); photoBlob = null; pShown = { age: -99, wear: "" };
@@ -829,16 +907,18 @@ async function life() {
   if (T.events[0].drawn === "egg") { birth.reset(); toScene("egg"); }
   await say({ k: "PLAYING AGAINST CHANCE", t: `One life. ${T.events.length} moments.`, s: diceOn ? "Throw the die to begin." : "", begin: true });
   await waitThrow("begin");
+  const voice = voiceOn ? V.start(`${new Date().toISOString().slice(0, 19)}-${S.seed}`)   // you're at the screen now: the voice comes in
+                        : (V.stat.note = "off on the panel", false);
   pMode = live.avatarWanted() === "portrait" ? "portrait" : "painted";   // (set on /panel; the animator only has to be up by age 8)
   if (pMode === "portrait") getPhoto();                         // you're at the screen now: your photo, for your portraits
   setTurn("watch"); holdAll(false);
   await unsay();
   avatarAt(0);
-  await sleep(sec("arrive") * 0.6);
+  await Promise.all([sleep(sec("arrive") * 0.6), Promise.race([voice, sleep(8000)])]);
   let prev = null;
   for (const ev of T.events) {
     evIdx++;
-    if (!prev) { prewrite(ev); prewriteNext(); }
+    if (!prev) { prewrite(ev); prewriteNext(); await V.cue(arriveCue(ev, null)); }
     if (prev) await arrive(ev, prev);
     prepPortrait(T.events[evIdx + 1]);                          // your next age, painted while this one plays
     if (ev.type === "chosen") await chosen(ev);
@@ -848,12 +928,15 @@ async function life() {
     prev = ev;
   }
   if (prev && prev.bridge) { await say({ s: esc(prev.bridge), cls: "bridge" }); await sleep(sec("arrive")); await unsay(); }
+  V.listen("closed");
   await sleep(sec("final_silence"));                           // a final silence before anything else
+  await V.cue(G("close", ["the life, as the game recorded it:", ...lifeLines()]));   // it closes the books
+  V.listen("open");
   await ending();
   await waitThrow("begin");
   setTurn("watch"); await unsay();
   T = null;                                                     // the next life re-reads trajectory.json (edits show up)
-  life();
+  life().catch(e => say({ k: "COULDN'T START", s: esc(e.message || e), force: true }));
 }
 
 async function ending() {                                       // the life, read back
@@ -863,14 +946,14 @@ async function ending() {                                       // the life, rea
 }
 
 // ---------- the panel runs the game (through the server): commands, live settings, and what's happening ----------
-let ctlSeq = -1, liveSeen = "";
+let ctlSeq = -1, liveSeen = "", voiceOn = true;
 async function fromPanel() {
   try {
     const j = await (await fetch(`/game/commands?after=${Math.max(0, ctlSeq)}`, { cache: "no-store" })).json();
     const first = ctlSeq < 0; ctlSeq = j.seq;
     if (!first) for (const c of j.cmds || []) {                  // (a page that just opened doesn't replay old commands)
       if (c.cmd === "new_life") location.reload();
-      else if (c.cmd === "pause") paused = true;
+      else if (c.cmd === "pause") { paused = true; V.hush(); }   // (the voice stops mid-line; the next moment speaks again)
       else if (c.cmd === "resume") paused = false;
       else if (c.cmd === "roll") { if (beginAction) beginAction(); else if (screenRoll && turn === "throw") screenRoll(); }
       else if (c.cmd === "redraw") fetch("/redraw", { method: "POST" });
@@ -882,6 +965,9 @@ async function fromPanel() {
       fog.setScale(+L.type_scale || 1);
       if ((L.ui === "glass" || L.ui === "fog") && L.ui !== ui) applyUI(L.ui);
       if (L.animator) live.setAnimatorOpts(L.animator);
+      V.setSubtitles(L.subtitles || "");
+      voiceOn = L.voice !== false;
+      if (!voiceOn && V.stat.state !== "off") { V.stop(); V.stat.note = "off on the panel"; }   // off: at once (on: from the next life)
     }
   } catch (e) {}
 }
@@ -892,7 +978,9 @@ setInterval(() => {                                              // what the gam
     event: ev ? ev.title : (evIdx < 0 ? "not started" : "the end"), n: evIdx + 1, of: T ? T.events.length : 0, age: Math.floor(S.ageF),
     ui, ui_next: uiNext || "", avatar: S.avatar ? pMode : "none yet", portrait: st.portraitNote || "", portrait_ms: st.portraitMs || 0, screen_fps: st.drawFps || 0,
     world: worldOn || "", directed: st.directed || 0, director_error: st.directorError || "", paused, turn, tempo,
-    place: S.place || "", gender: S.gender || "", wear: S.wear || "" }) }).catch(() => {});
+    place: S.place || "", gender: S.gender || "", wear: S.wear || "",
+    voice: V.stat.state, voice_note: V.stat.note || "", voice_said: V.stat.said, voice_heard: V.stat.heard, voice_last: (V.stat.last || "").slice(0, 240),
+    voice_model: V.model, subtitles: V.showText }) }).catch(() => {});
 }, 1000);
 
 // ---------- keys: cards = ← → Enter or 1–9 · R / Space = roll on screen · Space / Enter = BEGIN · F = fullscreen · D = debug · C = next camera ----------
@@ -930,13 +1018,14 @@ function status() {                                             // the hidden de
   if (!debugEl.hidden) {
     const st = live.stat;
     if (!debugEl.dataset.flash) debugEl.textContent = !st.online ? "server offline" : [`${st.fps} fps`, source && `chance ${source}`, `camera: ${st.camera || "?"}`, st.camNote, `die${diceSrc ? ` (${diceSrc})` : ""}: ${dieText}`, `turn: ${turn}`, `screen ${st.drawFps || 0} fps`, st.worldError ? `WORLD ERROR: ${st.worldError}` : (st.worldId ? `world ${st.worldId}${st.bgMs ? ` (${st.bgMs} ms)` : ""}` : ""), st.worldTokens > 77 ? `PROMPT TOO LONG (${st.worldTokens} tokens, 77 are read)` : "",
-    pMode === "portrait" ? `portrait${pShown.age >= 0 ? " at " + pShown.age : ""}${st.portraitMs ? ` ${st.portraitMs} ms` : ""}${st.portraitNote ? " · " + st.portraitNote : ""}` : (st.portraitNote || ""), +WK.director ? (st.directorError ? `director: ${st.directorError}` : `directed ${st.directed || 0}`) : "director off", st.note, st.seg].filter(Boolean).join(" · ");
+    pMode === "portrait" ? `portrait${pShown.age >= 0 ? " at " + pShown.age : ""}${st.portraitMs ? ` ${st.portraitMs} ms` : ""}${st.portraitNote ? " · " + st.portraitNote : ""}` : (st.portraitNote || ""), +WK.director ? (st.directorError ? `director: ${st.directorError}` : `directed ${st.directed || 0}`) : "director off",
+    `voice: ${V.stat.state}${V.stat.note ? " (" + V.stat.note + ")" : ""}${V.on ? ` · said ${V.stat.said} · heard ${V.stat.heard}` : ""}`, st.note, st.seg].filter(Boolean).join(" · ");
   }
   setTimeout(status, 250);
 }
 status();
-live.camera.catch(e => say({ k: "NO CAMERA", s: esc(e.message || e.name) }));
-life().catch(e => say({ k: "COULDN'T START", s: esc(e.message || e) }));
+live.camera.catch(e => say({ k: "NO CAMERA", s: esc(e.message || e.name), force: true }));
+life().catch(e => say({ k: "COULDN'T START", s: esc(e.message || e), force: true }));
 </script>
 </body>
 </html>

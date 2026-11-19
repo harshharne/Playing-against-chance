@@ -123,6 +123,7 @@ label.txt { display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; 
     <span class="chip" id="c_server"><i></i>server <b>–</b></span>
     <span class="chip" id="c_anim"><i></i>animator <b>–</b></span>
     <span class="chip" id="c_dir"><i></i>director <b>–</b></span>
+    <span class="chip" id="c_voice"><i></i>voice <b>–</b></span>
     <span class="chip" id="c_game"><i></i>game <b>–</b></span>
   </div>
   <a class="open" href="/game" target="_blank" rel="noopener">Open the game ↗</a>
@@ -137,6 +138,7 @@ label.txt { display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; 
       <div class="ev" id="n_ev">Open the game</div>
       <div class="meta" id="n_meta"></div>
       <div class="world" id="n_world" hidden></div>
+      <div class="world" id="n_voice" hidden></div>
       <div class="warn" id="n_warn" hidden></div>
     </div>
 
@@ -158,6 +160,11 @@ label.txt { display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; 
     <div class="seg"><h2>Director</h2>
       <div class="opts" id="s_dir"><button type="button" data-v="1">On</button><button type="button" data-v="0">Off</button></div>
       <div class="help">On: Claude writes each moment's world and the years after it from this life. Off: the written scenes.</div>
+    </div>
+    <div class="seg"><h2>Voice</h2>
+      <div class="opts" id="s_voice"><button type="button" data-v="on">On</button><button type="button" data-v="off">Off</button></div>
+      <div class="opts" id="s_subs"><button type="button" data-v="">Words: as set</button><button type="button" data-v="on">On screen</button><button type="button" data-v="off">Voice only</button></div>
+      <div class="help">The Bookkeeper, heard, never seen. Off stops it at once (the words come back on screen); on starts with the next life. Words: also show what it carries (glass style), or not.</div>
     </div>
     <label class="ctl"><span>Tempo</span><span class="v" id="tempoV">1.00×</span><input id="tempo" type="range" min="0.5" max="1.8" step="0.05" aria-describedby="tempoH"><small id="tempoH">Every timing at once. Above 1 = slower, below 1 = faster. The cards and the die still wait for the player.</small></label>
     <label class="ctl"><span>Type size (fog)</span><span class="v" id="tsV">1.00×</span><input id="type_scale" type="range" min="0.7" max="1.4" step="0.05"><small>The fog style's letters, all together.</small></label>
@@ -555,6 +562,8 @@ const command = (cmd) => fetch("/game/command", { method: "POST", headers: { "Co
 seg("s_ui", (v) => liveSend({ ui: v }));
 seg("s_avatar", (v) => send("avatar", v, 0));
 seg("s_dir", (v) => { if (pace) paceSave("w:director", +v); });
+seg("s_voice", (v) => liveSend({ voice: v === "on" }));
+seg("s_subs", (v) => liveSend({ subtitles: v }));
 let liveTimer = 0, livePending = {};
 function liveLater(part) {                                      // gathers quick changes into one save (none is lost)
   for (const [k, v] of Object.entries(part)) livePending[k] = k === "animator" ? { ...(livePending.animator || {}), ...v } : v;
@@ -597,6 +606,12 @@ async function gamePoll() {
     }
     const wantUi = (fresh && s.ui_next) || L.ui || (fresh ? s.ui : "");
     segShow("s_ui", wantUi);
+    segShow("s_voice", L.voice === false ? "off" : "on"); segShow("s_subs", L.subtitles || "");
+    const vs = fresh ? s.voice : "", waiting = fresh && L.voice !== false && vs !== "ready" && s.voice_note === "off on the panel";
+    if (waiting) { chip("c_voice", "", "on from the next life"); $("c_voice").title = ""; } else {
+    chip("c_voice", L.voice === false ? "" : vs === "ready" ? "ok" : vs === "connecting" ? "warn" : fresh && s.voice_note ? "bad" : "",
+         L.voice === false ? "off" : vs === "ready" ? `${s.voice_said} said · ${s.voice_heard} heard` : vs === "connecting" ? "connecting…" : fresh && s.voice_note ? "off" : "–");
+    $("c_voice").title = (fresh && (s.voice_note || s.voice_model)) || ""; }
     $("uiH").textContent = fresh && s.ui_next ? `${s.ui_next === "fog" ? "Fog" : "Glass"} comes in when this choice is over.` : "";
     $("now").classList.toggle("stale", !fresh);
     chip("c_game", fresh ? (s.paused ? "warn" : "ok") : "bad", fresh ? (s.paused ? "paused" : `age ${s.age}`) : "not connected");
@@ -605,10 +620,11 @@ async function gamePoll() {
       $("n_ev").textContent = s.event || "–";
       $("n_meta").innerHTML = [["style", s.ui], ["avatar", s.avatar], ["screen", s.screen_fps + " fps"], s.portrait_ms ? ["portrait", s.portrait_ms + " ms"] : null, s.place ? ["born in", s.place] : null]
         .filter(Boolean).map(([a, b]) => `<span>${a} <b>${String(b).replace(/</g, "&lt;")}</b></span>`).join("");
+      $("n_voice").hidden = !(s.voice === "ready" && s.voice_last); $("n_voice").textContent = s.voice_last ? "Said: " + s.voice_last : "";
       $("n_world").hidden = !s.world; $("n_world").textContent = s.world ? "Painting: " + s.world : "";
-      const warn = s.portrait || s.director_error || (s.screen_fps && s.screen_fps < 30 ? `the game's screen runs at ${s.screen_fps} fps: the computer showing it is struggling` : "");
+      const warn = s.portrait || s.director_error || (s.voice !== "ready" && s.voice_note && s.voice_note !== "off on the panel" ? "voice: " + s.voice_note : "") || (s.screen_fps && s.screen_fps < 30 ? `the game's screen runs at ${s.screen_fps} fps: the computer showing it is struggling` : "");
       $("n_warn").hidden = !warn; $("n_warn").textContent = warn;
-    } else { $("n_age").textContent = "no game connected"; $("n_ev").textContent = "Open the game"; $("n_meta").innerHTML = ""; $("n_world").hidden = true; $("n_warn").hidden = true; }
+    } else { $("n_age").textContent = "no game connected"; $("n_ev").textContent = "Open the game"; $("n_meta").innerHTML = ""; $("n_world").hidden = true; $("n_voice").hidden = true; $("n_warn").hidden = true; }
     isPaused = !!(fresh && s.paused);
     $("b_pause").firstChild.textContent = isPaused ? "Resume" : "Pause";
     $("b_pause").querySelector("small").textContent = isPaused ? "the life carries on" : "holds the life where it is";
