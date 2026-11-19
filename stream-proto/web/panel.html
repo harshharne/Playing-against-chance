@@ -57,6 +57,9 @@ h3 { margin: 0 0 2px; font: 500 19px/1.2 "PAC Display", serif; letter-spacing: 0
 .seg .opts { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; border: 1px solid var(--line); border-radius: 8px; padding: 3px; gap: 3px; }
 .seg button { border: 0; background: transparent; border-radius: 6px; padding: 8px 6px; cursor: pointer; font-size: 12.5px; font-weight: 600; letter-spacing: 0.04em; color: var(--dim); }
 .seg button[aria-pressed="true"] { background: var(--on); color: #111; }
+.seg .opts.wrap { grid-auto-flow: row; grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); }
+.seg > .lbl { font-size: 12.5px; font-weight: 600; letter-spacing: 0.03em; }
+.card .grid2 .seg { align-content: start; }
 .seg .help, .ctl small, .note { font-size: 12px; color: var(--dim); line-height: 1.45; }
 .keys { font-size: 12px; color: var(--dim); border-top: 1px solid var(--line); padding-top: 14px; line-height: 1.8; }
 kbd { display: inline-block; min-width: 20px; padding: 1px 6px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; font: 600 11px/1.4 ui-monospace, monospace; color: var(--ink); text-align: center; }
@@ -180,6 +183,7 @@ label.txt { display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; 
       <button role="tab" data-t="style">Style</button>
       <button role="tab" data-t="avatar">Avatar</button>
       <button role="tab" data-t="director">Director</button>
+      <button role="tab" data-t="voice">Voice</button>
       <button role="tab" data-t="system">System</button>
     </nav>
 
@@ -287,6 +291,42 @@ label.txt { display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; 
         <div class="card"><h3>Settings</h3><div class="pace" id="pace_dir" style="display:grid;gap:14px"></div></div>
         <div class="card"><h3>Calls</h3><dl class="read"><dt>STATE</dt><dd id="d_state">–</dd><dt>LAST</dt><dd id="d_last">–</dd><dt>MODEL</dt><dd id="d_model">–</dd></dl></div>
         <div class="card wide"><h3 id="d_event">Its last answer</h3><div class="dirlist" id="d_list"><p class="note">Nothing written yet.</p></div></div>
+      </div>
+    </section>
+
+    <!-- VOICE -->
+    <section class="tab" id="t_voice" role="tabpanel">
+      <p class="lead">How the Bookkeeper speaks. <b>How much</b> and <b>How it sounds</b> change at once, even mid-life. <b>Who it is</b> comes in with the next life: a voice can't change once it has spoken. Saved on the server. Turn the voice itself on or off on the left.</p>
+      <div class="cards">
+        <div class="card"><h3>How much it speaks</h3>
+          <div class="seg"><span class="lbl">Speaks at</span>
+            <div class="opts wrap" id="v_moments"><button type="button" data-v="arrive">Arrivals</button><button type="button" data-v="cards">Cards</button><button type="button" data-v="outcome">What happened</button><button type="button" data-v="fluke">Flukes</button><button type="button" data-v="close">The close</button></div>
+            <div class="help">Arrivals: the years retold and what's coming. Cards: its opinion while they rise. What happened: the outcome, then its take. A moment switched off is silent, but it still knows what happened. With the voice on, those words aren't on screen either unless Words is set to On screen.</div>
+          </div>
+          <label class="ctl"><span>Line length</span><span class="v" id="v_lengthV"></span><input id="v_length" data-bk="length" type="range" min="0.4" max="1.8" step="0.05"><small>Its word limits × this. 0.6 = terse, 1.4 = it takes its time. Shorter lines also let the game move on sooner.</small></label>
+          <div class="seg"><span class="lbl">The player</span>
+            <div class="opts" id="v_talk"><button type="button" data-v="on">It answers them</button><button type="button" data-v="off">It doesn't</button></div>
+            <div class="help">When someone speaks to it (not during a throw). Choosing a card by voice works either way.</div>
+          </div>
+        </div>
+        <div class="card"><h3>How it sounds</h3>
+          <label class="ctl"><span>Speed</span><span class="v" id="v_speedV"></span><input id="v_speed" data-bk="speed" type="range" min="0.7" max="1.3" step="0.05"><small>How fast it talks. 1 = its natural pace. It changes from its next line.</small></label>
+          <label class="ctl"><span>Volume</span><span class="v" id="v_volumeV"></span><input id="v_volume" data-bk="volume" type="range" min="0" max="1" step="0.05"><small>In the game's browser, on top of the speakers' own volume.</small></label>
+          <label class="ctl"><span>Breath before it speaks</span><span class="v" id="v_breathV"></span><input id="v_breath" data-bk="breath" type="range" min="0" max="3" step="0.1"><small>Seconds of silence after each moment arrives, before it says anything. The room gets a beat to look first.</small></label>
+        </div>
+        <div class="card wide"><h3>Who it is · from the next life</h3>
+          <div class="grid2">
+            <label class="txt">Voice<select id="v_voice"><option value="">As set (bookkeeper.json)</option><option>cedar</option><option>marin</option><option>ash</option><option>ballad</option><option>coral</option><option>echo</option><option>sage</option><option>shimmer</option><option>verse</option><option>alloy</option></select></label>
+            <div class="seg"><span class="lbl">Accent</span><div class="opts" id="v_accent"><button type="button" data-v="">As set</button><button type="button" data-v="neutral">Neutral</button><button type="button" data-v="indian">Light Indian</button></div></div>
+            <div class="seg"><span class="lbl">Model</span><div class="opts" id="v_model"><button type="button" data-v="">As set</button><button type="button" data-v="best">Best character</button><button type="button" data-v="fast">Faster</button></div>
+              <div class="help">Faster: lines arrive sooner and cost about a third, with a thinner character.</div></div>
+            <div class="seg"><span class="lbl">Calls the player's pick</span><div class="opts" id="v_predict"><button type="button" data-v="">As set</button><button type="button" data-v="off">No</button><button type="button" data-v="on">Yes</button></div>
+              <div class="help">Yes: when the cards rise, it also says which one they'll take, and keeps score of how predictable they are.</div></div>
+            <div class="seg"><span class="lbl">Microphone</span><div class="opts" id="v_mic"><button type="button" data-v="">As set</button><button type="button" data-v="near">Laptop</button><button type="button" data-v="far">Room</button></div></div>
+            <div class="seg"><span class="lbl">Waits for the player</span><div class="opts" id="v_listen"><button type="button" data-v="">As set</button><button type="button" data-v="low">Patient</button><button type="button" data-v="medium">Normal</button><button type="button" data-v="high">Quick</button></div>
+              <div class="help">How long it lets someone pause before it decides they've finished speaking.</div></div>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -585,6 +625,31 @@ document.querySelectorAll("input[data-a]").forEach(inp => inp.addEventListener("
   $(inp.id + "V").textContent = inp.dataset.a === "turn_limit" ? Math.round(inp.value) + "°" : (+inp.value).toFixed(2);
   liveLater({ animator: { [inp.dataset.a]: +inp.value } });
 }));
+// the Voice tab: everything goes to the game's live settings under "bk"
+let bkNow = {};
+const bkFmt = { speed: (v) => (+v).toFixed(2) + "×", volume: (v) => Math.round(v * 100) + "%", length: (v) => (+v).toFixed(2) + "×", breath: (v) => (+v).toFixed(1) + " s" };
+const bkSend = (part) => { bkNow = { ...bkNow, ...part }; liveLater({ bk: { ...bkNow } }); };
+document.querySelectorAll("input[data-bk]").forEach(inp => inp.addEventListener("input", () => {
+  $(inp.id + "V").textContent = bkFmt[inp.dataset.bk](inp.value);
+  bkSend({ [inp.dataset.bk]: +inp.value });
+}));
+$("v_moments").querySelectorAll("button").forEach(b => b.addEventListener("click", () => {   // each one on or off by itself
+  const on = b.getAttribute("aria-pressed") !== "true";
+  b.setAttribute("aria-pressed", String(on));
+  bkSend({ moments: { ...(bkNow.moments || {}), [b.dataset.v]: on } });
+}));
+seg("v_talk", (v) => bkSend({ talk_back: v === "on" }));
+for (const k of ["accent", "model", "predict", "mic", "listen"]) seg("v_" + k, (v) => bkSend({ [k]: v }));
+$("v_voice").addEventListener("change", () => bkSend({ voice: $("v_voice").value }));
+function bkShow(b) {                                            // the saved voice settings, into the controls
+  bkNow = { ...b };
+  for (const k of Object.keys(bkFmt)) if (b[k] != null) { $("v_" + k).value = b[k]; $("v_" + k + "V").textContent = bkFmt[k](b[k]); }
+  $("v_moments").querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", String(!b.moments || b.moments[x.dataset.v] !== false)));
+  segShow("v_talk", b.talk_back === false ? "off" : "on");
+  for (const k of ["accent", "model", "predict", "mic", "listen"]) segShow("v_" + k, b[k] || "");
+  $("v_voice").value = b.voice || "";
+}
+
 let armed = 0;
 $("b_new").addEventListener("click", () => {                   // twice, so a stray click never ends a life
   if (Date.now() - armed < 3000) { command("new_life"); armed = 0; $("b_new").classList.remove("armed"); $("b_new").firstChild.textContent = "New life"; return; }
@@ -606,6 +671,7 @@ async function gamePoll() {
       $("tempo").value = L.tempo || 1; $("tempoV").textContent = (+$("tempo").value).toFixed(2) + "×";
       $("type_scale").value = L.type_scale || 1; $("tsV").textContent = (+$("type_scale").value).toFixed(2) + "×";
       for (const [k, v] of Object.entries(L.animator || {})) { const el = $("a_" + k); if (el) { el.value = v; $("a_" + k + "V").textContent = k === "turn_limit" ? Math.round(v) + "°" : (+v).toFixed(2); } }
+      bkShow(L.bk || {});
       paceTotal();
     }
     const wantUi = (fresh && s.ui_next) || L.ui || (fresh ? s.ui : "");

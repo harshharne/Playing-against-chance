@@ -57,6 +57,8 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageDraw, ImageFilter, ImageOps, ImageStat
 
+import bookkeeper   # the voice in the room (its panel settings live in the game's live settings)
+
 # ---------- settings you may want to tweak ----------
 PORT = 8766
 WIDTH, HEIGHT = 640, 384          # avatar size (set per painter below); both must be multiples of 64
@@ -1531,6 +1533,7 @@ GAME_LIVE_DEFAULTS = {
     "animator": {"multiplier": 1.0, "smooth": 0.3, "face_smooth": 0.3, "turn_limit": 22},   # the portrait's movement
     "voice": True,          # the Bookkeeper speaks (from the next life; off = the text carries the words)
     "subtitles": "",        # "" = as bookkeeper.json says (show_text) · "on" = the words on screen as well · "off" = voice only
+    "bk": dict(bookkeeper.PANEL_DEFAULTS),   # the Bookkeeper's voice, from the panel's Voice tab (bookkeeper.py says what each does)
 }
 game_cmds = collections.deque(maxlen=64)
 game_seq = 0
@@ -1567,6 +1570,8 @@ def clean_live(body):
         out["voice"] = body["voice"]
     if body.get("subtitles") in ("", "on", "off"):
         out["subtitles"] = body["subtitles"]
+    if isinstance(body.get("bk"), dict):
+        out["bk"] = bookkeeper.clean_panel({**game_live.get("bk", {}), **body["bk"]})
     if isinstance(body.get("animator"), dict):
         a = {}
         for k, lo, hi in (("multiplier", 0.3, 2.0), ("smooth", 0.0, 0.95), ("face_smooth", 0.0, 0.95), ("turn_limit", 5, 45)):
@@ -1930,8 +1935,7 @@ async def direct(request: Request):
     return {"moments": out, "ms": director.stats["last_ms"], "error": director.stats["last_error"]}
 
 
-# ---------- the Bookkeeper (the voice in the room: OpenAI Realtime, bookkeeper.md + bookkeeper.json) ----------
-import bookkeeper
+# ---------- the Bookkeeper (the voice in the room: OpenAI Realtime, bookkeeper.md + bookkeeper.json; imported at the top) ----------
 
 
 @app.get("/voice/token")
@@ -1939,7 +1943,7 @@ async def voice_token():
     """A short-lived key for one life's voice session (the browser connects to OpenAI with it; the real key stays
     here), with the personality and settings read fresh. {"error": ...} when there's no voice: the game uses text."""
     try:
-        return JSONResponse(await asyncio.to_thread(bookkeeper.mint), headers={"Cache-Control": "no-store"})
+        return JSONResponse(await asyncio.to_thread(bookkeeper.mint, game_live.get("bk")), headers={"Cache-Control": "no-store"})
     except bookkeeper.VoiceError as e:
         return JSONResponse({"error": str(e)}, headers={"Cache-Control": "no-store"})   # (200: no voice is a normal state, not a failure)
 

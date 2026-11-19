@@ -10,6 +10,7 @@
 //    V.stop()                       // end the session
 //    V.on, V.showText, V.stat       // connected? keep the text boxes too? state for the debug line
 //    V.setSubtitles("" | "on" | "off")   // the panel: the words on screen too, or not ("" = bookkeeper.json)
+//    V.setLive({speed, volume, length, breath, moments, talk_back})   // the panel's Voice tab, applied at once
 //
 //  The game decides WHEN it speaks: the session never answers by itself (create_response off), the game asks for
 //  every answer. The player is heard all the time; it answers them only when the game lets it (listen).
@@ -18,6 +19,11 @@
 export function createBookkeeper({ onPick = () => ({ ok: false, reason: "the cards aren't up" }) } = {}) {
   const stat = { state: "off", note: "", said: 0, heard: 0, last: "" };
   let pc = null, dc = null, mic = null, cfg = null, life = "", session = 0, subs = "";   // subs: the panel's SUBTITLES ("" / "on" / "off")
+  // the panel's Voice tab, live: how fast, how loud, how long its lines, a breath before each, which moments it speaks at
+  const P = { speed: 1, volume: 1, length: 1, breath: 0.4, moments: {}, talk_back: true };
+  let speedSent = 1;                                           // the speed the session has now (it changes between lines only)
+  const BUDGET = { arrive: 45, cards: 30, outcome: 35, happened: 35, fluke: 18, close: 70 };   // words, as bookkeeper.md has them
+  const GROUP = { arrive: "arrive", cards: "cards", outcome: "outcome", happened: "outcome", fluke: "fluke", close: "close" };
   const audio = Object.assign(document.createElement("audio"), { autoplay: true });
   audio.setAttribute("aria-hidden", "true");
   document.body.appendChild(audio);
@@ -70,7 +76,7 @@ export function createBookkeeper({ onPick = () => ({ ok: false, reason: "the car
       await pc.setRemoteDescription({ type: "answer", sdp: await r.text() });
       await opened;
       if (mine !== session) return false;
-      stat.state = "ready"; stat.said = stat.heard = 0;
+      stat.state = "ready"; stat.said = stat.heard = 0; speedSent = cfg.speed || 1;
       return true;
     } catch (e) {
       if (mine === session) { stop(); stat.state = "off"; stat.note = String(e.message || e).slice(0, 180); }
@@ -137,7 +143,7 @@ export function createBookkeeper({ onPick = () => ({ ok: false, reason: "the car
   function heard(text) {
     if (!/[a-z]{2}/i.test(text)) return;                        // a cough, a chair: nothing to answer
     stat.heard++; log("player", text);
-    if (!cfg || !cfg.player_can_talk || listening === "closed") return;
+    if (!cfg || !cfg.player_can_talk || !P.talk_back || listening === "closed") return;
     if (generating || speaking) { playerWaiting = true; return; }   // it finishes its line first
     answerPlayer();
   }
@@ -162,6 +168,10 @@ export function createBookkeeper({ onPick = () => ({ ok: false, reason: "the car
 
   // ---------- asking it to speak ----------
   function respond(toolChoice, maxMs) {
+    if (Math.abs(P.speed - speedSent) > 0.001) {               // a new speed: between lines is the only time it can change
+      send({ type: "session.update", session: { type: "realtime", audio: { output: { speed: P.speed } } } });
+      speedSent = P.speed;
+    }
     return new Promise(resolve => {
       const w = { resolve, done: false, audio: false };
       w.timer = setTimeout(() => finish(w), maxMs ?? ((cfg && cfg.max_wait_s) || 18) * 1000);
@@ -180,10 +190,27 @@ export function createBookkeeper({ onPick = () => ({ ok: false, reason: "the car
   }
   async function cue(text) {
     if (!on()) return;
+    const moment = (text.match(/^\[GAME\] (\w+)/) || [])[1] || "", group = GROUP[moment];
+    if (group && P.moments[group] === false) {                 // switched off on the panel: it learns what happened, silently
+      send({ type: "conversation.item.create", item: { type: "message", role: "user",
+        content: [{ type: "input_text", text: text.replace(/^\[GAME\] /, "[GAME] record: ") }] } });
+      log("game", "(silent) " + text);
+      return;
+    }
+    if (BUDGET[moment] && Math.abs(P.length - 1) > 0.01) text += `\nlength: at most ${Math.max(6, Math.round(BUDGET[moment] * P.length))} words`;
     if (generating || speaking) await hush();                  // the game's moment comes first
     log("game", text);
     send({ type: "conversation.item.create", item: { type: "message", role: "user", content: [{ type: "input_text", text }] } });
+    if (P.breath > 0) await new Promise(r => setTimeout(r, P.breath * 1000));   // a beat before it speaks
+    if (!on()) return;
     await respond("none");
+  }
+  function setLive(b) {
+    if (!b || typeof b !== "object") return;
+    for (const k of ["speed", "volume", "length", "breath"]) if (Number.isFinite(+b[k])) P[k] = +b[k];
+    if (b.moments && typeof b.moments === "object") P.moments = { ...b.moments };
+    if (typeof b.talk_back === "boolean") P.talk_back = b.talk_back;
+    audio.volume = Math.max(0, Math.min(1, P.volume));
   }
 
   return {
@@ -192,6 +219,7 @@ export function createBookkeeper({ onPick = () => ({ ok: false, reason: "the car
     get on() { return on(); },
     get showText() { return !on() || subs === "on" || (subs !== "off" && !!(cfg && cfg.show_text)); },
     setSubtitles: (v) => { subs = v === "on" || v === "off" ? v : ""; },
+    setLive,
     get model() { return cfg ? `${cfg.model}, ${cfg.voice}` : ""; },
   };
 }

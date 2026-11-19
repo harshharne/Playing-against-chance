@@ -266,6 +266,10 @@ real key never leaves the cloud machine.
 - Panel: the VOICE chip (said / heard, or why it's off: hover), VOICE on / off (off stops it at once and the words come
   back on screen; on starts with the next life), WORDS: as set (bookkeeper.json show_text) / on screen / voice only,
   and its last line under the event. PAUSE also stops it mid-line.
+- The panel's VOICE tab (saved with the game's live settings): which moments it speaks at (a moment switched off
+  is silent, but it still learns what happened), line length (its word limits x this), whether it answers the player,
+  speed, volume, a breath before each line: all at once. Voice, accent, model, calling the player's pick, mic and
+  how long it waits for the player: from the next life, over bookkeeper.json ("As set" = the file).
 - The debug line (D) shows the voice: ready / connecting / off (why), lines said and heard.
 - Sound: Chrome may block it until the first click or key. For the installation, start Chrome with
   --autoplay-policy=no-user-gesture-required. The mic uses Chrome's echo cancellation; with speakers in a room,

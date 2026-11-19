@@ -65,6 +65,63 @@ CHOOSE_CARD = {
 }
 
 
+# ---------- the panel's Voice tab (kept in the game's live settings, "bk") ----------
+# Live: the game applies these at once. From the next life: they go into the session when a life begins, over
+# bookkeeper.json ("" = as bookkeeper.json says).
+VOICES = ("cedar", "marin", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse", "alloy")
+MOMENTS = ("arrive", "cards", "outcome", "fluke", "close")
+INDIAN = ("Speak English with a light Indian accent. Keep it steady from the first word to the last, don't exaggerate "
+          "it, and keep it easy to understand.")
+PANEL_DEFAULTS = {
+    # live
+    "speed": 1.0,           # how fast it talks (OpenAI's range is 0.25-1.5; the panel keeps to 0.7-1.3)
+    "volume": 1.0,          # 0-1, in the browser
+    "length": 1.0,          # its lines' word limits x this (0.5 = terse, 1.5 = it takes its time)
+    "breath": 0.4,          # seconds of silence before each line (a beat after the world changes, before it speaks)
+    "moments": {m: True for m in MOMENTS},   # which moments it speaks at (off: it still learns what happened, silently)
+    "talk_back": True,      # it answers the player when they speak
+    # from the next life
+    "voice": "", "accent": "", "model": "", "predict": "", "mic": "", "listen": "",
+}
+
+
+def clean_panel(b):
+    """The panel's voice settings, made safe; anything unknown falls back to its default."""
+    out = json.loads(json.dumps(PANEL_DEFAULTS))
+    for k, lo, hi in (("speed", 0.6, 1.4), ("volume", 0.0, 1.0), ("length", 0.4, 1.8), ("breath", 0.0, 3.0)):
+        try:
+            out[k] = round(max(lo, min(hi, float(b.get(k, out[k])))), 2)
+        except (TypeError, ValueError):
+            pass
+    m = b.get("moments") if isinstance(b.get("moments"), dict) else {}
+    out["moments"] = {k: bool(m.get(k, True)) for k in MOMENTS}
+    out["talk_back"] = bool(b.get("talk_back", True))
+    for k, allowed in (("voice", ("",) + VOICES), ("accent", ("", "neutral", "indian")), ("model", ("", "best", "fast")),
+                       ("predict", ("", "on", "off")), ("mic", ("", "near", "far")), ("listen", ("", "low", "medium", "high"))):
+        out[k] = b.get(k) if b.get(k) in allowed else ""
+    return out
+
+
+def with_panel(s, p):
+    """bookkeeper.json's settings, with the panel's next-life choices over them."""
+    p = clean_panel(p or {})
+    s = dict(s)
+    if p["voice"]:
+        s["voice"] = p["voice"]
+    if p["accent"]:
+        s["accent"] = INDIAN if p["accent"] == "indian" else ""
+    if p["model"]:
+        s["model"] = "gpt-realtime-2.1" if p["model"] == "best" else "gpt-realtime-2.1-mini"
+    if p["predict"]:
+        s["predict_player"] = p["predict"] == "on"
+    if p["mic"]:
+        s["mic"] = f"{p['mic']}_field"
+    if p["listen"]:
+        s["listen_eagerness"] = p["listen"]
+    s["speed"] = p["speed"]
+    return s
+
+
 def session(s, instructions):
     out = {
         "type": "realtime",
@@ -81,7 +138,7 @@ def session(s, instructions):
                 "turn_detection": {"type": "semantic_vad", "eagerness": s.get("listen_eagerness") or "low",
                                    "create_response": False, "interrupt_response": False},
             },
-            "output": {"voice": s.get("voice") or "cedar"},
+            "output": {"voice": s.get("voice") or "cedar", "speed": float(s.get("speed") or 1.0)},
         },
     }
     effort = str(s.get("reasoning") or "off")
@@ -90,13 +147,14 @@ def session(s, instructions):
     return out
 
 
-def mint():
-    """-> {token, model, voice, show_text, max_wait_s, player_can_talk, version}. Raises VoiceError."""
+def mint(panel=None):
+    """-> {token, model, voice, show_text, max_wait_s, player_can_talk, version}. Raises VoiceError.
+    panel: the Voice tab's settings (the game's live "bk"), over bookkeeper.json."""
     key = read_key()
     if not key:
         raise VoiceError("no OpenAI key (openai.key or OPENAI_API_KEY)")
     try:
-        s = read_settings()
+        s = with_panel(read_settings(), panel)
         instructions = read_instructions(s)
     except (OSError, ValueError) as e:
         raise VoiceError(f"bookkeeper.json / bookkeeper.md: {e}")
@@ -120,6 +178,7 @@ def mint():
     version = hashlib.sha1(instructions.encode()).hexdigest()[:8]    # which version of the personality spoke
     print(f"[voice] a life begins: {s.get('model')}, {s.get('voice')}, prompt {version}", flush=True)
     return {"token": data.get("value"), "model": s.get("model"), "voice": s.get("voice"), "version": version,
+            "speed": float(s.get("speed") or 1.0),
             "show_text": bool(s.get("show_text")), "max_wait_s": float(s.get("max_wait_s") or 18),
             "player_can_talk": bool(s.get("player_can_talk", True))}
 

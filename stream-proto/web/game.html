@@ -983,6 +983,7 @@ async function fromPanel() {
       if ((L.ui === "glass" || L.ui === "fog") && L.ui !== ui) applyUI(L.ui);
       if (L.animator) live.setAnimatorOpts(L.animator);
       V.setSubtitles(L.subtitles || "");
+      V.setLive(L.bk);                                          // speed, volume, line length, breath, which moments: at once
       voiceOn = L.voice !== false;
       if (!voiceOn && V.stat.state !== "off") { V.stop(); V.stat.note = "off on the panel"; }   // off: at once (on: from the next life)
     }
