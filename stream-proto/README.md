@@ -7,6 +7,8 @@ cd ~/stream-proto && source .venv/bin/activate && python download_models.py
 If the download stops halfway, run it again: it carries on.
 
 ## Pages
+- http://localhost:8766/start — the run sheet: links to every page, the server and die-reader lights, and the ON / OFF steps
+  with copy buttons (prints as an A5 booklet; double-click web/start.html when the server is off).
 - http://localhost:8766/panel — the control panel: runs the show live, and every setting (see below).
 - http://localhost:8766/game — the game: one life, 19 events, birth to death (see "The life"). Edge to edge, no bars: only the narrative box (bottom) and the cards. F = real fullscreen (the camera window hides there). Cards: hover / click, or ← → and Enter, or 1–9. No die: R or Space rolls on screen. D = a hidden debug line (die state, fps).
 - http://localhost:8766/dice.html — set up the physical die (see below).

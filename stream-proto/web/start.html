@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Run Sheet · Playing Against Chance</title>
+<script>try { document.documentElement.dataset.theme = localStorage.getItem("pac-panel-theme") || "light"; } catch (e) {}</script>
+<style>
+/* The run sheet: every page of the piece, and how to turn it all on and off, in order.
+   Works served (http://localhost:8766/start) and opened as a file (double-click web/start.html), because the
+   ON steps are needed before the server exists. Prints as an A5 booklet (Cmd+P). Same look as the panel. */
+@font-face { font-family: "Inter Tight"; src: url("fonts/inter-tight-latin-wght-normal.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
+@font-face { font-family: "Doto"; src: url("fonts/doto-latin-full-normal.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
+:root {
+  --bg: #e6e6e3; --card: #f8f8f6; --raise: #ffffff; --track: #e9e9e6; --ink: #161616; --soft: #4a4a47; --dim: #8b8b86;
+  --code: #efefec; --lime: #dcf24b; --ok: #34c06a; --warn: #f2a12c; --bad: #ec5a3d;
+  --shadow: 0 1px 2px rgba(0,0,0,0.04), 0 10px 30px rgba(0,0,0,0.05); color-scheme: light;
+}
+:root[data-theme="dark"] {
+  --bg: #0c0c0b; --card: #171716; --raise: #222220; --track: #262624; --ink: #f2f1ec; --soft: #c4c3bd; --dim: #807f79;
+  --code: #0f0f0e; --shadow: 0 1px 2px rgba(0,0,0,0.4); color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--ink); font: 400 15px/1.5 "Inter Tight", ui-sans-serif, system-ui, -apple-system, sans-serif; -webkit-font-smoothing: antialiased; }
+button, input { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+a { color: inherit; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 22px 24px 60px; display: flex; flex-direction: column; gap: 16px; }
+
+/* top */
+.bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.brand { font-size: 22px; font-weight: 500; letter-spacing: -0.02em; margin-right: 6px; }
+.brand span { color: var(--dim); font-weight: 400; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; flex: 1; }
+.chip { display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 13px 0 11px; border-radius: 999px; background: var(--card); box-shadow: var(--shadow); font-size: 12.5px; color: var(--dim); white-space: nowrap; }
+.chip i { width: 7px; height: 7px; border-radius: 50%; background: var(--dim); opacity: 0.4; }
+.chip.ok i { background: var(--ok); opacity: 1; } .chip.bad i { background: var(--bad); opacity: 1; } .chip.warn i { background: var(--warn); opacity: 1; }
+.chip b { color: var(--ink); font-weight: 500; }
+.pill { display: inline-flex; background: var(--track); border-radius: 999px; padding: 4px; gap: 2px; }
+.pill button { border: 0; background: none; border-radius: 999px; height: 30px; padding: 0 14px; cursor: pointer; font-size: 12.5px; color: var(--dim); }
+.pill button[aria-pressed="true"] { background: var(--raise); color: var(--ink); box-shadow: var(--shadow); }
+.ghost { border: 0; background: var(--track); border-radius: 999px; height: 38px; padding: 0 16px; cursor: pointer; font-size: 13px; color: var(--soft); }
+
+/* pages */
+.hero { display: grid; grid-template-columns: 1.4fr 1fr; gap: 14px; }
+@media (max-width: 860px) { .hero { grid-template-columns: 1fr; } }
+.big { position: relative; overflow: hidden; isolation: isolate; border-radius: 28px; padding: 24px; min-height: 230px; display: flex; flex-direction: column; justify-content: space-between; text-decoration: none; color: #161616; box-shadow: var(--shadow); transition: transform 0.2s ease; }
+.big:hover { transform: translateY(-2px); }
+.big::before { content: ""; position: absolute; inset: -30%; z-index: -1; filter: blur(26px); }
+.big.game::before { background: radial-gradient(40% 45% at 62% 58%, #ff6a1a 0%, rgba(255,106,26,0) 100%), radial-gradient(45% 50% at 35% 40%, #ffb347 0%, rgba(255,179,71,0) 100%), radial-gradient(60% 60% at 80% 20%, #ffd9b0 0%, rgba(255,217,176,0) 100%), #f6e6d6; }
+.big.panel::before { background: radial-gradient(45% 50% at 60% 60%, #8fb1ff 0%, rgba(143,177,255,0) 100%), radial-gradient(45% 45% at 30% 35%, #d7c7ff 0%, rgba(215,199,255,0) 100%), #e7e8f2; }
+.big .lbl { font-size: 13px; color: rgba(22,22,22,0.6); display: flex; justify-content: space-between; }
+.big .name { font-size: 40px; font-weight: 500; letter-spacing: -0.03em; line-height: 1; }
+.big .what { font-size: 14px; color: rgba(22,22,22,0.7); max-width: 40ch; margin-top: 8px; }
+.big .url { font-size: 12.5px; color: rgba(22,22,22,0.55); }
+.minis { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.mini { border-radius: 22px; background: var(--card); box-shadow: var(--shadow); padding: 18px; text-decoration: none; display: flex; flex-direction: column; gap: 4px; transition: background 0.2s ease; }
+.mini:hover { background: var(--raise); }
+.mini b { font-weight: 500; font-size: 15px; display: flex; justify-content: space-between; }
+.mini span { font-size: 13px; color: var(--dim); }
+
+/* setup inputs */
+.card { border-radius: 26px; background: var(--card); box-shadow: var(--shadow); padding: 22px; }
+.fields { display: flex; gap: 14px; flex-wrap: wrap; align-items: end; }
+.fields label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--soft); flex: 1; min-width: 220px; }
+.fields label.short { flex: 0 0 160px; min-width: 0; }
+.fields input { background: var(--track); border: 0; border-radius: 14px; padding: 10px 14px; font: 13.5px/1.3 ui-monospace, "SF Mono", Menlo, monospace; }
+.fields p { margin: 0; font-size: 12.5px; color: var(--dim); flex-basis: 100%; }
+
+/* the booklet */
+.book { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
+@media (max-width: 960px) { .book { grid-template-columns: 1fr; } }
+.side { border-radius: 28px; background: var(--card); box-shadow: var(--shadow); padding: 24px; }
+.side h2 { margin: 0 0 4px; display: flex; align-items: baseline; gap: 12px; font-size: 26px; font-weight: 500; letter-spacing: -0.02em; }
+.side h2 .dots { font: 900 46px/0.8 "Doto", ui-monospace, monospace; }
+.side > p { margin: 0 0 18px; color: var(--dim); font-size: 13.5px; }
+ol.steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; counter-reset: s; }
+ol.steps > li { counter-increment: s; position: relative; border-radius: 20px; background: var(--raise); padding: 16px 16px 16px 58px; display: flex; flex-direction: column; gap: 8px; break-inside: avoid; }
+:root[data-theme="dark"] ol.steps > li { background: var(--track); }
+ol.steps > li::before { content: counter(s); position: absolute; left: 16px; top: 13px; font: 900 26px/1 "Doto", ui-monospace, monospace; color: var(--dim); }
+.head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.head b { font-weight: 500; font-size: 15.5px; }
+.where { font-size: 11.5px; font-weight: 500; height: 22px; display: inline-flex; align-items: center; padding: 0 9px; border-radius: 999px; background: var(--track); color: var(--soft); }
+:root[data-theme="dark"] .where { background: var(--raise); }
+.where.mac { background: #161616; color: #f2f1ec; } :root[data-theme="dark"] .where.mac { background: #f2f1ec; color: #161616; }
+.where.vm { background: var(--lime); color: #161616; }
+.cmd { position: relative; display: flex; align-items: flex-start; gap: 8px; background: var(--code); border-radius: 12px; padding: 10px 10px 10px 14px; }
+.cmd code { flex: 1; min-width: 0; font: 12.5px/1.55 ui-monospace, "SF Mono", Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.copy { flex: none; border: 0; background: var(--raise); border-radius: 999px; height: 26px; padding: 0 11px; cursor: pointer; font-size: 11.5px; color: var(--soft); box-shadow: var(--shadow); }
+.copy.done { background: var(--lime); color: #161616; }
+.note { font-size: 13px; color: var(--soft); }
+.note kbd, .keys kbd { display: inline-grid; place-items: center; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 7px; background: var(--card); box-shadow: var(--shadow); font: 500 11.5px/1 "Inter Tight", sans-serif; color: var(--ink); }
+.wait { font-size: 12.5px; color: var(--dim); }
+.wait::before { content: "→ "; }
+.must { border-radius: 14px; padding: 10px 14px; background: #161616; color: var(--lime); font-size: 13px; }
+:root[data-theme="dark"] .must { background: var(--lime); color: #161616; }
+
+/* extras */
+.extras { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
+@media (max-width: 960px) { .extras { grid-template-columns: 1fr; } }
+.extras h3 { margin: 0 0 12px; font-size: 18px; font-weight: 500; }
+details { border-radius: 16px; background: var(--raise); padding: 0 16px; margin-bottom: 8px; }
+:root[data-theme="dark"] details { background: var(--track); }
+summary { cursor: pointer; padding: 13px 0; font-size: 14px; list-style: none; display: flex; justify-content: space-between; gap: 10px; }
+summary::-webkit-details-marker { display: none; }
+summary::after { content: "+"; color: var(--dim); } details[open] summary::after { content: "–"; }
+details > div { padding: 0 0 14px; display: flex; flex-direction: column; gap: 8px; }
+.keys { display: grid; grid-template-columns: max-content 1fr; gap: 10px 16px; font-size: 13.5px; align-items: center; margin: 0; }
+.keys dd { margin: 0; color: var(--soft); }
+.foot { font-size: 12.5px; color: var(--dim); padding: 0 6px; }
+
+/* print: an A5 booklet, ON then OFF, no buttons */
+@media print {
+  @page { size: A5; margin: 11mm; }
+  :root, :root[data-theme="dark"] { --bg: #fff; --card: #fff; --raise: #f4f4f2; --track: #ececea; --ink: #111; --soft: #333; --dim: #666; --code: #f4f4f2; --shadow: none; color-scheme: light; }
+  html, body { background: #fff; font-size: 9.5pt; }
+  ol.steps { gap: 6px; } ol.steps > li { padding: 10px 10px 10px 44px; gap: 5px; border-radius: 12px; } ol.steps > li::before { left: 12px; top: 9px; font-size: 20px; }
+  .cmd { padding: 6px 10px; border-radius: 8px; } .cmd code { font-size: 8.5pt; }
+  .side h2 { font-size: 18pt; } .side h2 .dots { font-size: 30pt; } .side > p { margin-bottom: 10px; }
+  .brand { font-size: 14pt; margin-bottom: 8px; }
+  .bar .chips, .tools, .hero, .minis, .copy, .setup, .noprint { display: none !important; }
+  .wrap { padding: 0; max-width: none; }
+  .book { display: block; } .side { padding: 0; margin-bottom: 0; } .side + .side { break-before: page; }
+  .extras { display: block; break-before: page; } .extras > div { margin-bottom: 14px; }
+  details { background: none; padding: 0; break-inside: avoid; } summary::after, details[open] summary::after { content: ""; } summary { padding: 8px 0 4px; font-weight: 500; }
+  .where.mac { background: #111; color: #fff; } .where.vm { background: #dcf24b; color: #111; }
+  .must { background: #fff; color: #111; border: 1.5px solid #111; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="bar">
+    <div class="brand">Playing Against Chance <span>· run sheet</span></div>
+    <div class="chips" aria-live="polite">
+      <span class="chip" id="c_server"><i></i>Server <b>checking…</b></span>
+      <span class="chip" id="c_die"><i></i>Die reader <b>checking…</b></span>
+      <span class="chip" id="c_game" hidden><i></i>Game <b>–</b></span>
+    </div>
+    <div class="tools" style="display:flex;gap:8px">
+      <button class="ghost" type="button" onclick="window.print()">Print booklet</button>
+      <div class="pill" role="group" aria-label="Theme"><button type="button" data-theme-pick="light">Light</button><button type="button" data-theme-pick="dark">Dark</button></div>
+    </div>
+  </header>
+
+  <!-- the pages -->
+  <section class="hero" aria-label="The two main pages">
+    <a class="big game" data-page="/game" target="_blank" rel="noopener">
+      <div class="lbl"><span>For the room · fullscreen with F</span><span>↗</span></div>
+      <div><div class="name">The game</div><div class="what">The installation itself. Black until the die is thrown, then one life.</div></div>
+      <div class="url" data-url="/game"></div>
+    </a>
+    <a class="big panel" data-page="/panel" target="_blank" rel="noopener">
+      <div class="lbl"><span>For you · on the laptop</span><span>↗</span></div>
+      <div><div class="name">Control panel</div><div class="what">Runs the show live: pause, roll, new life, voice, pace, every setting.</div></div>
+      <div class="url" data-url="/panel"></div>
+    </a>
+  </section>
+  <section class="minis" aria-label="Other pages">
+    <a class="mini" data-page="/dice.html" target="_blank" rel="noopener"><b>Die setup <span>↗</span></b><span>The browser die reader and its camera. Only if dice_reader.py isn't running.</span></a>
+    <a class="mini" data-page="/animate.html" target="_blank" rel="noopener"><b>Animator test <span>↗</span></b><span>LivePortrait alone: a photo moved by your face. For checking the animator.</span></a>
+    <a class="mini" data-page="/" target="_blank" rel="noopener"><b>Live generation <span>↗</span></b><span>The early sandbox: you and the background, prompted by hand.</span></a>
+    <a class="mini" href="https://github.com/harshharne/playing-against-chance" target="_blank" rel="noopener"><b>The code <span>↗</span></b><span>The repository on GitHub. Pull it in GitHub Desktop before step 2.</span></a>
+  </section>
+
+  <!-- the two blanks the commands need -->
+  <section class="card setup">
+    <div class="fields">
+      <label>Your repo folder on the Mac<input id="repo" spellcheck="false" autocomplete="off" value="~/Documents/GitHub/Playing-against-chance"></label>
+      <label class="short">Die camera number<input id="cam" inputmode="numeric" autocomplete="off" value="1"></label>
+      <p>The commands below fill these in. Not sure of the folder? In GitHub Desktop: Repository → Show in Finder, then drag the folder into Terminal after <code>cd&nbsp;</code>. The camera number comes from <code>python3 dice_reader.py --list-cameras</code>. Both are remembered in this browser.</p>
+    </div>
+  </section>
+
+  <!-- the booklet -->
+  <section class="book">
+    <div class="side">
+      <h2><span class="dots">ON</span> Turning it on</h2>
+      <p>About five minutes. Four Terminal windows on the Mac, called A, B, C and D here. Go in order; each step says what to wait for.</p>
+      <ol class="steps">
+        <li><div class="head"><span class="where mac">Mac · A</span><b>Start the GPU machine</b></div>
+          <div class="cmd"><code>gcloud compute instances start chance-rtx --zone=asia-south1-c</code></div>
+          <div class="wait">"done". Then wait one minute: it can't take connections yet ("Connection refused").</div></li>
+        <li><div class="head"><span class="where mac">Mac · A</span><b>Send the latest code</b></div>
+          <div class="note">First pull in GitHub Desktop. If it complains about trajectory.json, discard that file's changes.</div>
+          <div class="cmd"><code data-t="cd {repo}/stream-proto &amp;&amp; ./push.sh"></code></div>
+          <div class="wait">it ends with "Sent." and says whether the server needs a restart.</div></li>
+        <li><div class="head"><span class="where vm">VM · B</span><b>Start the server</b></div>
+          <div class="cmd"><code>gcloud compute ssh chance-rtx --zone=asia-south1-c</code></div>
+          <div class="note">You're now inside the machine (Ubuntu's welcome text). Then:</div>
+          <div class="cmd"><code>cd ~/stream-proto &amp;&amp; source .venv/bin/activate &amp;&amp; PAINTER=sdxl python stream_server.py</code></div>
+          <div class="wait">"[animate] ready", about a minute. Leave this window open: it's the log.</div></li>
+        <li><div class="head"><span class="where mac">Mac · C</span><b>Open the tunnel</b></div>
+          <div class="cmd"><code>gcloud compute ssh chance-rtx --zone=asia-south1-c -- -N -L 8766:localhost:8766</code></div>
+          <div class="wait">it prints nothing and looks stuck; that's right. Leave it open. Server above turns green.</div></li>
+        <li><div class="head"><span class="where mac">Mac · D</span><b>Start the die reader</b></div>
+          <div class="cmd"><code data-t="cd {repo}/stream-proto &amp;&amp; python3 dice_reader.py --camera {cam}"></code></div>
+          <div class="note">In its window, the first time or if the tray moved: <kbd>c</kbd> click 6–10 points on the tray's inside edge, Enter · <kbd>l</kbd> lock · take the die out, <kbd>e</kbd> empty tray. Throw once to check.</div>
+          <div class="wait">Die reader above turns green.</div></li>
+        <li><div class="head"><span class="where">Chrome</span><b>Open the piece</b></div>
+          <div class="note">Open the control panel, then the game (the cards at the top). In both: <kbd>⌘</kbd><kbd>⇧</kbd><kbd>R</kbd>. On the game: <kbd>F</kbd> fullscreen, then click once so it may play sound.</div>
+          <div class="wait">the game is black. Throw the die: the life begins.</div></li>
+      </ol>
+    </div>
+
+    <div class="side">
+      <h2><span class="dots">OFF</span> Turning it off</h2>
+      <p>Two minutes. The last step is the one that matters: a running GPU machine spends credit every hour, even doing nothing.</p>
+      <ol class="steps">
+        <li><div class="head"><span class="where">Chrome</span><b>Close the game and the panel</b></div>
+          <div class="note">Or leave the game black: it waits for a throw.</div></li>
+        <li><div class="head"><span class="where mac">Mac · D</span><b>Stop the die reader</b></div>
+          <div class="note">Press <kbd>q</kbd> in its camera window.</div></li>
+        <li><div class="head"><span class="where vm">VM · B</span><b>Stop the server</b></div>
+          <div class="note">Press <kbd>Ctrl</kbd><kbd>C</kbd> in its window, then:</div>
+          <div class="cmd"><code>exit</code></div></li>
+        <li><div class="head"><span class="where mac">Mac · C</span><b>Close the tunnel</b></div>
+          <div class="note">Press <kbd>Ctrl</kbd><kbd>C</kbd> in its window.</div></li>
+        <li><div class="head"><span class="where mac">Mac · A</span><b>Stop the GPU machine</b></div>
+          <div class="must">Always. A running machine costs about US$0.74 an hour; a stopped one only cents a month.</div>
+          <div class="cmd"><code>gcloud compute instances stop chance-rtx --zone=asia-south1-c</code></div>
+          <div class="note">To be sure it's off:</div>
+          <div class="cmd"><code>gcloud compute instances list</code></div>
+          <div class="wait">chance-rtx shows STATUS TERMINATED.</div></li>
+      </ol>
+    </div>
+  </section>
+
+  <section class="extras">
+    <div class="side">
+      <h3>When something's wrong</h3>
+      <details><summary>"Connection refused" after starting the machine</summary><div><div class="note">It's still waking up. Wait a minute and run the same command again.</div></div></details>
+      <details><summary>The tunnel says "Address already in use"</summary><div><div class="note">An old tunnel is still open. Close it, then run step 4 again:</div><div class="cmd"><code>lsof -ti:8766 | xargs kill</code></div></div></details>
+      <details><summary>The page looks like an old version</summary><div><div class="note">Reload without the cache: <kbd>⌘</kbd><kbd>⇧</kbd><kbd>R</kbd>.</div></div></details>
+      <details><summary>"command not found: python"</summary><div><div class="note">On the Mac it's <code>python3</code>. On the VM, <code>python</code> works once <code>source .venv/bin/activate</code> has run.</div></div></details>
+      <details><summary>No voice</summary><div><div class="note">Click once on the game page (Chrome blocks sound until then). Hover the Voice pill on the panel: it says why. No openai.key: add it (first time, below) and run push.sh again.</div></div></details>
+      <details><summary>The die isn't read, or misread</summary><div><div class="note">Start the die reader before opening the game (or reload the game after). In its window: <kbd>d</kbd> shows what it sees. Sliders: sensitivity up if glare counts as the die, dot_dark up if dots are missed, area_inset down to skip the tray's rim. Without a die: <kbd>R</kbd> in the game, or ROLL on the panel.</div></div></details>
+      <details><summary>"No space left on device" (on the VM)</summary><div><div class="note">Clears caches only, nothing the game needs:</div><div class="cmd"><code>pip cache purge; sudo apt-get clean; sudo journalctl --vacuum-size=200M; df -h /</code></div></div></details>
+      <details><summary>The machine won't start (no capacity)</summary><div><div class="note">Google has no free GPU in that zone right now. Try again in a few minutes.</div></div></details>
+    </div>
+    <div class="side">
+      <h3>In the game</h3>
+      <dl class="keys">
+        <dt><kbd>R</kbd> <kbd>Enter</kbd></dt><dd>a throw by keyboard (also wakes the black screen)</dd>
+        <dt><kbd>1</kbd>–<kbd>9</kbd></dt><dd>pick an option (or say its name)</dd>
+        <dt><kbd>F</kbd></dt><dd>fullscreen</dd>
+        <dt><kbd>U</kbd></dt><dd>switch the style: fog / glass</dd>
+        <dt><kbd>C</kbd></dt><dd>next camera for the avatar</dd>
+        <dt><kbd>D</kbd></dt><dd>the debug line</dd>
+      </dl>
+      <h3 style="margin-top:22px">First time on a Mac</h3>
+      <details><summary>Install the die reader's tools</summary><div><div class="cmd"><code>python3 -m pip install opencv-python numpy</code></div><div class="note">If it refuses ("externally-managed-environment"), add <code>--user</code>.</div></div></details>
+      <details><summary>The keys (Claude for the director, OpenAI for the voice)</summary><div>
+        <div class="note">One file each, inside stream-proto. Paste your key between the quotes; never into a chat. Git ignores .key files; push.sh carries them to the machine.</div>
+        <div class="cmd"><code data-t="cd {repo}/stream-proto &amp;&amp; printf '%s' 'YOUR-CLAUDE-KEY' > anthropic.key"></code></div>
+        <div class="cmd"><code data-t="cd {repo}/stream-proto &amp;&amp; printf '%s' 'YOUR-OPENAI-KEY' > openai.key"></code></div></div></details>
+      <details><summary>Allow the camera for Terminal</summary><div><div class="note">System Settings → Privacy &amp; Security → Camera → Terminal on. Then start the die reader again.</div></div></details>
+    </div>
+  </section>
+  <p class="foot">This page lives in the repo at stream-proto/web/start.html. With the server up: http://localhost:8766/start. Without it, double-click the file.</p>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const store = { get: (k, d) => { try { return localStorage.getItem(k) ?? d; } catch (e) { return d; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} } };
+// served by the game's server -> same place; opened as a file -> through the tunnel
+const SERVED = location.protocol.startsWith("http") && location.port === "8766";
+const BASE = SERVED ? "" : "http://localhost:8766";
+
+// links
+document.querySelectorAll("[data-page]").forEach(a => { a.href = BASE + a.dataset.page; });
+document.querySelectorAll("[data-url]").forEach(e => { e.textContent = "localhost:8766" + e.dataset.url; });
+
+// theme (shared with the panel)
+function setTheme(t) { document.documentElement.dataset.theme = t; document.querySelectorAll("[data-theme-pick]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.themePick === t))); store.set("pac-panel-theme", t); }
+document.querySelectorAll("[data-theme-pick]").forEach(b => b.addEventListener("click", () => setTheme(b.dataset.themePick)));
+setTheme(store.get("pac-panel-theme", "light"));
+
+// the commands fill in the repo folder and the camera number
+const quote = (p) => /[\s'"()&;]/.test(p) && !/^["']/.test(p) ? `"${p.replace(/^~(?=\/|$)/, "$HOME")}"` : p;
+function fillCmds() {
+  const repo = ($("repo").value.trim() || "~/Playing-against-chance").replace(/\/+$/, ""), cam = $("cam").value.trim() || "1";
+  store.set("pac-start-repo", $("repo").value); store.set("pac-start-cam", $("cam").value);
+  document.querySelectorAll("code[data-t]").forEach(c => { c.textContent = c.dataset.t.replace(/\{repo\}/g, quote(repo)).replace(/\{cam\}/g, cam); });
+}
+$("repo").value = store.get("pac-start-repo", $("repo").value); $("cam").value = store.get("pac-start-cam", $("cam").value);
+$("repo").addEventListener("input", fillCmds); $("cam").addEventListener("input", fillCmds);
+fillCmds();
+
+// a copy button on every command
+document.querySelectorAll(".cmd").forEach(box => {
+  const b = document.createElement("button"); b.type = "button"; b.className = "copy"; b.textContent = "Copy";
+  b.setAttribute("aria-label", "Copy this command");
+  b.addEventListener("click", async () => {
+    const text = box.querySelector("code").textContent;
+    try { await navigator.clipboard.writeText(text); }
+    catch (e) { const t = document.createElement("textarea"); t.value = text; document.body.append(t); t.select(); document.execCommand("copy"); t.remove(); }
+    b.textContent = "Copied"; b.classList.add("done"); setTimeout(() => { b.textContent = "Copy"; b.classList.remove("done"); }, 1400);
+  });
+  box.append(b);
+});
+
+// printing: every "when something's wrong" answer open, then back as it was
+let wasOpen = null;                                             // (some browsers say "before print" twice: remember only the first)
+window.addEventListener("beforeprint", () => { if (!wasOpen) wasOpen = [...document.querySelectorAll("details")].map(d => d.open); document.querySelectorAll("details").forEach(d => d.open = true); });
+window.addEventListener("afterprint", () => { if (wasOpen) document.querySelectorAll("details").forEach((d, i) => d.open = !!wasOpen[i]); wasOpen = null; });
+
+// the lights: is the server reachable (tunnel + server), is the die reader running, what's the game doing
+function chip(id, cls, text) { const c = $(id); c.className = "chip " + cls; c.querySelector("b").textContent = text; }
+async function pingServer() {
+  const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 2500);
+  try {
+    if (SERVED) {
+      const g = await (await fetch("/game/state", { cache: "no-store", signal: ctl.signal })).json();
+      chip("c_server", "ok", "up");
+      const s = g.state || {}, fresh = g.seconds_ago != null && g.seconds_ago < 4;
+      $("c_game").hidden = false;
+      chip("c_game", fresh ? (s.paused ? "warn" : "ok") : "", !fresh ? "not open" : s.screen === "off" ? "waiting for a throw" : s.paused ? "paused" : `age ${s.age}`);
+    } else {
+      await fetch(BASE + "/config?t=" + Date.now(), { mode: "no-cors", cache: "no-store", signal: ctl.signal });
+      chip("c_server", "ok", "up");
+    }
+  } catch (e) { chip("c_server", "bad", "off — steps 1–4"); if (SERVED) $("c_game").hidden = true; }
+  clearTimeout(t);
+}
+pingServer(); setInterval(pingServer, 3000);
+
+let es = null, lastRoll = "";
+function listenDie() {                                          // the die reader speaks on 8767 (dice_reader.py)
+  try { es = new EventSource("http://localhost:8767/events"); } catch (e) { chip("c_die", "bad", "off — step 5"); return; }
+  es.addEventListener("open", () => chip("c_die", "ok", lastRoll || "ready"));
+  es.addEventListener("state", (e) => { try { const st = JSON.parse(e.data).state; if (!lastRoll) chip("c_die", "ok", st || "ready"); } catch (x) {} });
+  es.addEventListener("roll", (e) => { try { lastRoll = "read a " + JSON.parse(e.data).value; chip("c_die", "ok", lastRoll); } catch (x) {} });
+  es.addEventListener("error", () => { chip("c_die", "bad", "off — step 5"); es.close(); setTimeout(listenDie, 4000); });
+}
+listenDie();
+</script>
+</body>
+</html>

@@ -1377,6 +1377,11 @@ async def panel():
     return FileResponse(os.path.join(HERE, "web", "panel.html"))
 
 
+@app.get("/start")
+async def start():                                             # the run sheet: every page, and how to turn it all on and off
+    return FileResponse(os.path.join(HERE, "web", "start.html"))
+
+
 # ---------- chance ----------
 _rand_backoff = 0.0
 
