@@ -168,10 +168,19 @@ tune_version = 0              # goes up on any change, so the pages send a fresh
 app = FastAPI()
 
 
+# ---------- the machine: health, and switching itself off when nobody is there ----------
+BOOT_TIME = time.time()
+IDLE_OFF_MIN = float(os.environ.get("IDLE_OFF_MIN", "30"))   # power the machine off after this long with no page open (0 = never)
+last_page_seen = time.time()                                  # any request from a page (the game polls every 0.6 s); /health doesn't count
+
+
 @app.middleware("http")
 async def fresh_pages(request, call_next):
     """The pages and their scripts are always checked with the server, so after ./push.sh a reload shows the new
     version (without this, Chrome can keep using yesterday's copy for hours)."""
+    global last_page_seen
+    if request.url.path != "/health":
+        last_page_seen = time.time()
     resp = await call_next(request)
     if request.method == "GET" and "cache-control" not in resp.headers:
         resp.headers["Cache-Control"] = "no-cache"
@@ -1330,8 +1339,73 @@ def run_portrait(prompt, seed, base, strength):
 
 
 # ---------- web ----------
+def idle_minutes_left():
+    if IDLE_OFF_MIN <= 0:
+        return None
+    return round(IDLE_OFF_MIN - (time.time() - last_page_seen) / 60, 1)
+
+
+async def idle_watch():
+    """A forgotten machine spends credit every hour. If no page (game, panel, run sheet) has asked anything for
+    IDLE_OFF_MIN minutes (the laptop closed, the show over), it powers itself off. An open game page, even black and
+    waiting for a throw, keeps it on. show.sh can tell this apart from Google taking the spot machine back."""
+    warned = False
+    while True:
+        await asyncio.sleep(20)
+        left = idle_minutes_left()
+        if left is None:
+            continue
+        if left <= 5 and not warned:
+            warned = True
+            print(f"[idle] no page open for {IDLE_OFF_MIN - left:.0f} min: switching the machine off in {max(0, left):.0f} min unless one opens", flush=True)
+        if left > 5:
+            warned = False
+        if left <= 0:
+            print(f"[idle] no page open for {IDLE_OFF_MIN:.0f} min: switching the machine off (IDLE_OFF_MIN=0 turns this off)", flush=True)
+            if MOCK:
+                print("[idle] (mock: not really)", flush=True)
+                globals()["last_page_seen"] = time.time()
+                continue
+            with contextlib.suppress(Exception):
+                import subprocess
+                subprocess.run(["sudo", "-n", "systemctl", "poweroff"], timeout=20)
+            return
+
+
+def key_file(name):
+    return os.path.isfile(os.path.join(HERE, name)) and os.path.getsize(os.path.join(HERE, name)) > 8
+
+
+@app.get("/health")
+async def health():
+    """What show.sh and the run sheet check: is it ready, and is anything about to go wrong."""
+    du = shutil.disk_usage(HERE)
+    mem = gen.gpu_mb() if gen else None
+    version = ""
+    with contextlib.suppress(OSError):
+        with open(os.path.join(HERE, ".version")) as fh:
+            version = fh.read().strip()
+    return JSONResponse({
+        "ready": gen is not None,
+        "painter": (PAINTER if gen is not None else "loading") + (" (mock)" if MOCK else ""),
+        "painter_note": painter_note,
+        "animator": "ready" if animator is not None else ("off" if not ANIMATE else (animator_note or "loading")),
+        "director": "ready" if director.ready else "no Anthropic key",
+        "voice": "ready" if (key_file("openai.key") or os.environ.get("OPENAI_API_KEY")) else "no OpenAI key",
+        "dice_random": "random.org" if key_file("random_org.key") else "the computer's own randomness",
+        "disk_free_gb": round(du.free / 1e9, 1), "disk_used_pct": round(100 * du.used / du.total),
+        "gpu_mb": mem[0] if mem else None, "gpu_total_mb": mem[1] if mem else None,
+        "uptime_min": round((time.time() - BOOT_TIME) / 60, 1),
+        "idle_off_in_min": idle_minutes_left(), "version": version,
+    }, headers={"Cache-Control": "no-store"})
+
+
 @app.on_event("startup")
 async def load():
+    asyncio.get_running_loop().create_task(idle_watch())
+    du = shutil.disk_usage(HERE)
+    if du.free < 3e9:
+        print(f"[disk] only {du.free / 1e9:.1f} GB free: the server may stop when it fills (./show.sh setup grows the disk)", flush=True)
     global gen
     if not MOCK:
         await asyncio.to_thread(download_loras)
@@ -1964,9 +2038,31 @@ async def voice_log(request: Request):
 
 
 # ---------- the life (trajectory.json) ----------
+# The words and the default timings come from trajectory.json (in git, sent by push.sh). What /panel tunes is kept
+# apart, in tuned.json on this machine (never in git, never overwritten by push.sh), and laid over it here. When the
+# code re-bases the settings (world.rev changes), the old tunings are left behind once and tuning starts again.
+TUNED_FILE = os.path.join(HERE, "tuned.json")
+
+
+def read_tuned():
+    try:
+        with open(TUNED_FILE, encoding="utf-8") as fh:
+            t = json.load(fh)
+        return t if isinstance(t, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
 def read_trajectory():
     with open(TRAJECTORY_FILE, encoding="utf-8") as fh:
-        return json.load(fh)
+        doc = json.load(fh)
+    t = read_tuned()
+    if t and t.get("rev") == (doc.get("world") or {}).get("rev"):
+        for k in ("pacing", "world"):
+            for name, v in (t.get(k) or {}).items():
+                if name in doc.get(k, {}) and name != "rev":
+                    doc[k][name] = v
+    return doc
 
 
 @app.get("/trajectory")
@@ -1980,10 +2076,11 @@ async def trajectory():
 
 @app.post("/trajectory/pacing")
 async def save_pacing(request: Request):
-    """From /panel: {pacing: {name: seconds}, world: {keep, chapter_keep}} -> written into trajectory.json."""
+    """From /panel: {pacing: {name: seconds}, world: {keep, chapter_keep}} -> kept in tuned.json (over trajectory.json)."""
     global pace_version
     body = await request.json()
     doc = read_trajectory()
+    before = json.dumps([doc.get("pacing"), doc.get("world")])
     for k, v in (body.get("pacing") or {}).items():
         if k in doc.get("pacing", {}):
             try:
@@ -1999,10 +2096,20 @@ async def save_pacing(request: Request):
                 doc["world"][k] = int(round(v)) if k in ("morph_steps", "director", "director_lines") else round(v, 2)
             except (TypeError, ValueError):
                 pass
-    tmp = TRAJECTORY_FILE + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as fh:
-        json.dump(doc, fh, indent=2, ensure_ascii=False)
-    os.replace(tmp, TRAJECTORY_FILE)
+    if json.dumps([doc.get("pacing"), doc.get("world")]) != before:
+        rev = (doc.get("world") or {}).get("rev")
+        t = read_tuned()
+        if t.get("rev") != rev:
+            t = {"rev": rev}
+        for k in ("pacing", "world"):
+            t.setdefault(k, {})
+            for name in (body.get(k) or {}):
+                if name in doc.get(k, {}) and name != "rev":
+                    t[k][name] = doc[k][name]
+        tmp = TUNED_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(t, fh, indent=2, ensure_ascii=False)
+        os.replace(tmp, TUNED_FILE)
     pace_version += 1
     return {"pacing": doc["pacing"], "world": doc["world"], "pace": pace_version}
 

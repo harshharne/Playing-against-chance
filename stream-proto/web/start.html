@@ -96,6 +96,7 @@ ol.steps > li::before { content: counter(s); position: absolute; left: 16px; top
 :root[data-theme="dark"] .must { background: var(--lime); color: #161616; }
 
 /* extras */
+.byhand { padding: 6px 24px; } .byhand details { background: none; padding: 0; margin: 0; } .byhand h2 { font-size: 22px; }
 .extras { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
 @media (max-width: 960px) { .extras { grid-template-columns: 1fr; } }
 .extras h3 { margin: 0 0 12px; font-size: 18px; font-weight: 500; }
@@ -122,6 +123,7 @@ details > div { padding: 0 0 14px; display: flex; flex-direction: column; gap: 8
   .wrap { padding: 0; max-width: none; }
   .book { display: block; } .side { padding: 0; margin-bottom: 0; } .side + .side { break-before: page; }
   .extras { display: block; break-before: page; } .extras > div { margin-bottom: 14px; }
+  .byhand { break-before: page; padding: 0; } .byhand .book > div + div { break-before: page; }
   details { background: none; padding: 0; break-inside: avoid; } summary::after, details[open] summary::after { content: ""; } summary { padding: 8px 0 4px; font-weight: 500; }
   .where.mac { background: #111; color: #fff; } .where.vm { background: #dcf24b; color: #111; }
   .must { background: #fff; color: #111; border: 1.5px solid #111; }
@@ -177,6 +179,44 @@ details > div { padding: 0 0 14px; display: flex; flex-direction: column; gap: 8
   <section class="book">
     <div class="side">
       <h2><span class="dots">ON</span> Turning it on</h2>
+      <p>One window. It starts the machine, gets in, keeps the tunnel up, waits until the server is ready, starts the die reader, keeps the Mac awake and opens the panel and the game.</p>
+      <ol class="steps">
+        <li><div class="head"><span class="where mac">Mac</span><b>Start the show</b></div>
+          <div class="note">First pull in GitHub Desktop (it sends newer code by itself).</div>
+          <div class="cmd"><code data-t="cd {repo}/stream-proto &amp;&amp; ./show.sh on"></code></div>
+          <div class="wait">"watching". Leave this window open all show. Its keys: <kbd>o</kbd> open the pages again · <kbd>d</kbd> restart the die reader · <kbd>r</kbd> restart the server · <kbd>q</kbd> stop.</div></li>
+        <li><div class="head"><span class="where">Die window</span><b>The tray, if it moved</b></div>
+          <div class="note"><kbd>c</kbd> click 6–10 points on the tray's inside edge, Enter · <kbd>l</kbd> lock · take the die out, <kbd>e</kbd> empty tray. Throw once to check: Die reader above shows the number.</div></li>
+        <li><div class="head"><span class="where">Chrome</span><b>The game</b></div>
+          <div class="note">On the game: <kbd>F</kbd> fullscreen, then click once so it may play sound.</div>
+          <div class="wait">the game is black. Throw the die: the life begins.</div></li>
+      </ol>
+      <div class="must" style="margin-top:12px">It looks after itself: a dropped tunnel reconnects, a crashed server restarts, and if Google takes the spot machine back it starts it again (the screen holds for about 3 minutes, then carries on).</div>
+    </div>
+
+    <div class="side">
+      <h2><span class="dots">OFF</span> Turning it off</h2>
+      <p>One command, in any Mac window. It saves the server's log, stops everything and checks the machine is really off.</p>
+      <ol class="steps">
+        <li><div class="head"><span class="where mac">Mac</span><b>Stop the show</b></div>
+          <div class="cmd"><code data-t="cd {repo}/stream-proto &amp;&amp; ./show.sh off"></code></div>
+          <div class="wait">"the machine is OFF". Then close the game and the panel.</div></li>
+      </ol>
+      <div class="note" style="margin:14px 4px 0">Forgot? With no page open for 30 minutes the machine switches itself off.</div>
+      <h2 style="margin-top:26px;font-size:20px">Other commands</h2>
+      <ol class="steps" style="margin-top:12px">
+        <li><div class="head"><span class="where mac">Mac</span><b>What's on, what's ready</b></div><div class="cmd"><code data-t="cd {repo}/stream-proto &amp;&amp; ./show.sh status"></code></div></li>
+        <li><div class="head"><span class="where mac">Mac</span><b>The server's log, onto the Desktop</b></div><div class="cmd"><code data-t="cd {repo}/stream-proto &amp;&amp; ./show.sh log save"></code></div><div class="note">Send this file when something went wrong.</div></li>
+        <li><div class="head"><span class="where mac">Mac</span><b>Once, the first time</b></div><div class="cmd"><code data-t="cd {repo}/stream-proto &amp;&amp; chmod +x show.sh push.sh &amp;&amp; ./show.sh setup"></code></div><div class="note">Grows the disk to 100 GB, makes the server a service, prepares the route for networks that block SSH, asks for the die camera's number.</div></li>
+      </ol>
+    </div>
+  </section>
+
+  <section class="side byhand">
+    <details><summary>By hand, step by step (only if show.sh can't run)</summary><div>
+    <div class="book" style="margin-top:6px">
+    <div>
+      <h2><span class="dots">ON</span> Turning it on</h2>
       <p>About five minutes. Four Terminal windows on the Mac, called A, B, C and D here. Go in order; each step says what to wait for.</p>
       <ol class="steps">
         <li><div class="head"><span class="where mac">Mac · A</span><b>Start the GPU machine</b></div>
@@ -204,7 +244,7 @@ details > div { padding: 0 0 14px; display: flex; flex-direction: column; gap: 8
       </ol>
     </div>
 
-    <div class="side">
+    <div>
       <h2><span class="dots">OFF</span> Turning it off</h2>
       <p>Two minutes. The last step is the one that matters: a running GPU machine spends credit every hour, even doing nothing.</p>
       <ol class="steps">
@@ -225,6 +265,7 @@ details > div { padding: 0 0 14px; display: flex; flex-direction: column; gap: 8
           <div class="wait">chance-rtx shows STATUS TERMINATED.</div></li>
       </ol>
     </div>
+    </div></div></details>
   </section>
 
   <section class="extras">

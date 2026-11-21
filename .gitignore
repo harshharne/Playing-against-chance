@@ -24,3 +24,8 @@ stream-proto/game_live.json
 
 # the Bookkeeper's transcripts (on the server)
 stream-proto/logs/
+
+# kept on the machine / this Mac only
+stream-proto/tuned.json
+stream-proto/.version
+stream-proto/server.env

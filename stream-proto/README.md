@@ -7,6 +7,8 @@ cd ~/stream-proto && source .venv/bin/activate && python download_models.py
 If the download stops halfway, run it again: it carries on.
 
 ## Pages
+- ./show.sh on / off — the whole show from the Mac in one window (see CLOUD.md): starts and watches the machine,
+  keeps the tunnel up, restarts what falls over. ./show.sh setup once first.
 - http://localhost:8766/start — the run sheet: links to every page, the server and die-reader lights, and the ON / OFF steps
   with copy buttons (prints as an A5 booklet; double-click web/start.html when the server is off).
 - http://localhost:8766/panel — the control panel: runs the show live, and every setting (see below).
