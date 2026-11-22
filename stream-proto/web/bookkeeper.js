@@ -105,15 +105,18 @@ export function createBookkeeper({ onPick = () => ({ ok: false, reason: "the car
       }
       case "output_audio_buffer.started":
         speaking = true;
+        dispatchEvent(new CustomEvent("pac-voice", { detail: { speaking: true } }));   // (the game's sound ducks under it)
         { const w = byId.get(ev.response_id); if (w) w.audio = true; }
         break;
       case "output_audio_buffer.stopped":
         speaking = false;
+        dispatchEvent(new CustomEvent("pac-voice", { detail: { speaking: false } }));   // (the game's sound ducks under it)
         finish(byId.get(ev.response_id)); byId.delete(ev.response_id);
         afterSpeaking();
         break;
       case "output_audio_buffer.cleared":
         speaking = false;
+        dispatchEvent(new CustomEvent("pac-voice", { detail: { speaking: false } }));   // (the game's sound ducks under it)
         for (const w of byId.values()) finish(w);
         byId.clear();
         break;

@@ -1610,6 +1610,7 @@ GAME_LIVE_DEFAULTS = {
     "type_scale": 1.0,      # the fog style's letters: x this
     "tempo": 1.0,           # every timing in PACING: x this (1.2 = 20% slower, 0.8 = faster)
     "animator": {"multiplier": 1.0, "smooth": 0.3, "face_smooth": 0.3, "turn_limit": 22},   # the portrait's movement
+    "sound": {"on": True, "master": 0, "bed": -8, "place": -8, "cues": -4, "duck": 10},   # the game's sound (dB; duck = how far under the voice)
     "voice": True,          # the Bookkeeper speaks (from the next life; off = the text carries the words)
     "subtitles": "",        # "" = as bookkeeper.json says (show_text) · "on" = the words on screen as well · "off" = voice only
     "bk": dict(bookkeeper.PANEL_DEFAULTS),   # the Bookkeeper's voice, from the panel's Voice tab (bookkeeper.py says what each does)
@@ -1651,6 +1652,17 @@ def clean_live(body):
         out["subtitles"] = body["subtitles"]
     if isinstance(body.get("bk"), dict):
         out["bk"] = bookkeeper.clean_panel({**game_live.get("bk", {}), **body["bk"]})
+    if isinstance(body.get("sound"), dict):
+        snd = dict(game_live.get("sound", GAME_LIVE_DEFAULTS["sound"]))
+        if isinstance(body["sound"].get("on"), bool):
+            snd["on"] = body["sound"]["on"]
+        for k, lo, hi in (("master", -40, 6), ("bed", -60, 0), ("place", -60, 0), ("cues", -60, 0), ("duck", 0, 30)):
+            if k in body["sound"]:
+                try:
+                    snd[k] = round(max(lo, min(hi, float(body["sound"][k]))), 1)
+                except (TypeError, ValueError):
+                    pass
+        out["sound"] = snd
     if isinstance(body.get("animator"), dict):
         a = {}
         for k, lo, hi in (("multiplier", 0.3, 2.0), ("smooth", 0.0, 0.95), ("face_smooth", 0.0, 0.95), ("turn_limit", 5, 45)):

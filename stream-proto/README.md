@@ -248,6 +248,20 @@ word limits) -> the written scene. It never decides anything; chance does.
 - For the Bookkeeper (Voice Lab): the game fires a `pac-moment` browser event with {key, line, world, written} each
   time a directed moment is used.
 
+## Sound (web/sound.js, Tone.js)
+Everything is made in the browser with Tone.js (MIT, kept in web/vendor/, so it works offline): no sound files needed.
+Three layers under the voice:
+- BED: the life's slow chord. Its register and mode move with the age (bright lydian in childhood, ionian in youth,
+  dorian, aeolian, a sparse phrygian in old age); a hit opens it, a miss or a bad turn bends it (a low drone comes in).
+- PLACE: each scene's sound, picked from its words (or the director's sound tags): room, fan, murmur, crowd, children,
+  street (with horns), rain, wind, birds (with a koel), night (crickets), train, water, clock, kitchen, bells, typing,
+  hospital. Up to three at once, cross-fading with the picture. A recording can replace any of them: web/sounds/.
+- CUES: options rising (a note each), the choice locking, the screen's throw, the die landing (each number its own
+  note, then a fifth for a hit or a rub for a miss), the years ticking past, a new event.
+Rules: the voice wins (bed and place drop under it: UNDER THE VOICE on the panel); the black screen and the end of a
+life are silent; PAUSE silences it. Browsers allow sound only after a click: click the game once (the voice needs it too).
+Panel: SOUND on/off (left) and the SOUND tab (levels, what's playing). Hear every sound alone: /sound-lab.html.
+
 ## The Bookkeeper: the voice in the room (bookkeeper.md, bookkeeper.json, web/bookkeeper.js)
 An omnipresent voice that carries the life: no narrative box while it's there. OpenAI Realtime, speech to speech. The
 browser talks to OpenAI directly (WebRTC); the server only mints a short-lived key per life (GET /voice/token), so the

@@ -224,6 +224,10 @@ label.txt { display: flex; flex-direction: column; gap: 8px; font-size: 13px; co
       <div class="opts" id="s_subs"><button type="button" data-v="">Words: as set</button><button type="button" data-v="on">On screen</button><button type="button" data-v="off">Voice only</button></div>
       <div class="help">The Bookkeeper, heard, never seen. Off stops it at once (the words come back on screen); on starts with the next life. Words: also show what it carries (glass style), or not.</div>
     </div>
+    <div class="seg"><h2>Sound</h2>
+      <div class="opts" id="s_sound"><button type="button" data-v="on">On</button><button type="button" data-v="off">Off</button></div>
+      <div class="help">The sound under the voice: the life's chord, the sound of each place, the game's cues. Levels: the Sound tab.</div>
+    </div>
     <label class="ctl"><span>Tempo</span><span class="v" id="tempoV">1.00×</span><input id="tempo" type="range" min="0.5" max="1.8" step="0.05" aria-describedby="tempoH"><small id="tempoH">Every timing at once. Above 1 = slower, below 1 = faster. The cards and the die still wait for the player.</small></label>
     <label class="ctl"><span>Type size (fog)</span><span class="v" id="tsV">1.00×</span><input id="type_scale" type="range" min="0.7" max="1.4" step="0.05"><small>The fog style's letters, all together.</small></label>
 
@@ -240,6 +244,7 @@ label.txt { display: flex; flex-direction: column; gap: 8px; font-size: 13px; co
       <button role="tab" data-t="avatar">Avatar</button>
       <button role="tab" data-t="director">Director</button>
       <button role="tab" data-t="voice">Voice</button>
+      <button role="tab" data-t="sound">Sound</button>
       <button role="tab" data-t="system">System</button>
     </nav>
 
@@ -387,6 +392,23 @@ label.txt { display: flex; flex-direction: column; gap: 8px; font-size: 13px; co
     </section>
 
     <!-- SYSTEM -->
+    <!-- SOUND -->
+    <section class="tab" id="t_sound" role="tabpanel">
+      <p class="lead">All generated in the browser (Tone.js), nothing from the internet. Three layers under the voice: the <b>bed</b> (the life's chord: it moves with the years and with chance), the <b>place</b> (each scene's sound, from its words or the director's tags) and the <b>cues</b> (options rising, the die landing, hit or miss). A recording can replace any place sound: web/sounds/manifest.json. Black screen and the end of a life: silence.</p>
+      <div class="cards">
+        <div class="card"><h3>Levels</h3>
+          <label class="ctl"><span>Everything</span><span class="v" id="snd_masterV"></span><input id="snd_master" data-s="master" type="range" min="-30" max="6" step="1"><small>All of it, in dB (0 = as set).</small></label>
+          <label class="ctl"><span>Bed</span><span class="v" id="snd_bedV"></span><input id="snd_bed" data-s="bed" type="range" min="-50" max="-4" step="1"><small>The slow chord of the life.</small></label>
+          <label class="ctl"><span>Place</span><span class="v" id="snd_placeV"></span><input id="snd_place" data-s="place" type="range" min="-50" max="-2" step="1"><small>Rain, a fan, a classroom, a street, birds, a train ...</small></label>
+          <label class="ctl"><span>Cues</span><span class="v" id="snd_cuesV"></span><input id="snd_cues" data-s="cues" type="range" min="-50" max="-2" step="1"><small>Options rising, the choice locking, the die landing, hit or miss, the years ticking.</small></label>
+          <label class="ctl"><span>Under the voice</span><span class="v" id="snd_duckV"></span><input id="snd_duck" data-s="duck" type="range" min="0" max="24" step="1"><small>How far the bed and the place drop while the Bookkeeper speaks (dB).</small></label>
+        </div>
+        <div class="card"><h3>Playing now</h3><dl class="read"><dt>Sound</dt><dd id="snd_now">–</dd></dl>
+          <p class="note">To hear every sound on its own: <a href="/sound-lab.html" target="_blank" rel="noopener">the sound lab</a>.</p>
+        </div>
+      </div>
+    </section>
+
     <section class="tab" id="t_system" role="tabpanel">
       <div class="cards">
         <div class="card"><h3>Readout</h3>
@@ -675,10 +697,15 @@ seg("s_ui", (v) => liveSend({ ui: v }));
 seg("s_avatar", (v) => send("avatar", v, 0));
 seg("s_dir", (v) => { if (pace) paceSave("w:director", +v); });
 seg("s_voice", (v) => liveSend({ voice: v === "on" }));
+seg("s_sound", (v) => liveSend({ sound: { on: v === "on" } }));
 seg("s_subs", (v) => liveSend({ subtitles: v }));
 let liveTimer = 0, livePending = {};
+document.querySelectorAll("input[data-s]").forEach(inp => inp.addEventListener("input", () => {
+  $(inp.id + "V").textContent = (+inp.value).toFixed(0) + " dB";
+  liveLater({ sound: { [inp.dataset.s]: +inp.value } });
+}));
 function liveLater(part) {                                      // gathers quick changes into one save (none is lost)
-  for (const [k, v] of Object.entries(part)) livePending[k] = k === "animator" ? { ...(livePending.animator || {}), ...v } : v;
+  for (const [k, v] of Object.entries(part)) livePending[k] = v && typeof v === "object" ? { ...(livePending[k] || {}), ...v } : v;
   clearTimeout(liveTimer);
   liveTimer = setTimeout(() => { const body = livePending; livePending = {}; liveSend(body); }, 150);
 }
@@ -740,11 +767,14 @@ async function gamePoll() {
       $("type_scale").value = L.type_scale || 1; $("tsV").textContent = (+$("type_scale").value).toFixed(2) + "×";
       for (const [k, v] of Object.entries(L.animator || {})) { const el = $("a_" + k); if (el) { el.value = v; $("a_" + k + "V").textContent = k === "turn_limit" ? Math.round(v) + "°" : (+v).toFixed(2); } }
       bkShow(L.bk || {});
+      for (const [k, v] of Object.entries(L.sound || {})) { const el = $("snd_" + k); if (el) { el.value = v; $("snd_" + k + "V").textContent = (+v).toFixed(0) + " dB"; } }
       paceTotal();
     }
     const wantUi = (fresh && s.ui_next) || L.ui || (fresh ? s.ui : "");
     segShow("s_ui", wantUi);
-    segShow("s_voice", L.voice === false ? "off" : "on"); segShow("s_subs", L.subtitles || "");
+    segShow("s_voice", L.voice === false ? "off" : "on");
+    segShow("s_sound", L.sound && L.sound.on === false ? "off" : "on");
+    $("snd_now").textContent = fresh ? (s.sound || "–") : "–"; segShow("s_subs", L.subtitles || "");
     const vs = fresh ? s.voice : "", waiting = fresh && L.voice !== false && vs !== "ready" && s.voice_note === "off on the panel";
     if (waiting) { chip("c_voice", "", "on from the next life"); $("c_voice").title = ""; } else {
     chip("c_voice", L.voice === false ? "" : vs === "ready" ? "ok" : vs === "connecting" ? "warn" : fresh && s.voice_note ? "bad" : "",

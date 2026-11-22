@@ -46,6 +46,10 @@ def read_bible():
         return json.load(f)
 
 
+# what the game can sound like (web/sound.js KITS): the director picks 1-3 for each moment's place
+SOUNDS = ["room", "fan", "murmur", "crowd", "children", "street", "rain", "wind", "birds", "night",
+          "train", "water", "clock", "kitchen", "bells", "typing", "hospital"]
+
 TOOL = {
     "name": "write_moments",
     "description": "Write what each requested moment of the life needs. One entry per requested key, in the same order.",
@@ -62,8 +66,10 @@ TOOL = {
                         "breathe": {"type": "array", "items": {"type": "string"}, "description": "the passage: 4 to 6 scenes of the life moving on after this moment, in order"},
                         "clothes": {"type": "string", "description": "what the player wears now, or empty to leave it"},
                         "line": {"type": "string", "description": "one line for the narrative box"},
+                        "sound": {"type": "array", "items": {"type": "string", "enum": SOUNDS},
+                                  "description": "1 to 3 sounds of this place, loudest first, from the list"},
                     },
-                    "required": ["key", "world", "breathe", "clothes", "line"],
+                    "required": ["key", "world", "breathe", "clothes", "line", "sound"],
                     "additionalProperties": False,
                 },
             }
@@ -131,7 +137,8 @@ class Director:
             return None
         br = [clip_words(b, MAX_WORLD_WORDS) for b in (m.get("breathe") or []) if isinstance(b, str) and b.strip()]
         br = [b for b in br if not any(re.search(r"\b" + re.escape(x) + r"\b", b.lower()) for x in bad)][:6] or [world]
-        return {"world": world, "breathe": br, "clothes": clip_words(m.get("clothes", ""), 14),
+        snd = [x for x in (m.get("sound") or []) if x in SOUNDS][:3]
+        return {"world": world, "breathe": br, "clothes": clip_words(m.get("clothes", ""), 14), "sound": snd,
                 "line": clip_words(m.get("line", ""), int(bible.get("line_words", 28))), "written": written}
 
     def prompt(self, life, event, moments, bible):
@@ -205,7 +212,7 @@ class Director:
             else:
                 self.stats["rejected"] += 1
         self.stats["last_error"] = ""
-        self.stats["last"] = {"event": event.get("title", ""), "moments": {k: {"world": v["world"], "passage": v["breathe"], "clothes": v["clothes"], "line": v["line"]}
+        self.stats["last"] = {"event": event.get("title", ""), "moments": {k: {"world": v["world"], "passage": v["breathe"], "clothes": v["clothes"], "line": v["line"], "sound": v.get("sound", [])}
                                                                          for k, v in list(out.items())[:4]}}
         print(f"[director] {event.get('title', '')}: {len(out)}/{len(moments)} moments in {ms / 1000:.1f} s ({model})", flush=True)
         for k, v in out.items():

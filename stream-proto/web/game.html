@@ -121,6 +121,7 @@ button:focus-visible { outline: 3px solid #888; outline-offset: 2px; }
   <div class="debug" id="debug" hidden></div>
 </div>
 
+<script src="vendor/Tone.js"></script>
 <script type="module">
 // ============================================================================
 //  Playing Against Chance — Life Trajectory v1. One life, 19 events, from trajectory.json.
@@ -146,6 +147,7 @@ import { createHouse } from "./house.js";
 import { createBaby } from "./baby.js";
 import { createFog } from "./ui-fog.js";
 import { createBookkeeper } from "./bookkeeper.js";
+import { createSound } from "./sound.js";
 
 const $ = (id) => document.getElementById(id);
 const sayEl = $("say"), bigEl = $("big"), deckEl = $("deck"), flipEl = $("flip"), debugEl = $("debug");
@@ -182,6 +184,9 @@ function applyUI(next) {
 }
 // the Bookkeeper: the voice in the room (bookkeeper.md / bookkeeper.json on the server). It speaks at three moments of
 // an event (arriving, the cards, what happened); the text boxes step back while it's there (unless show_text).
+// the sound under the voice (sound.js: the bed, the place, the cues). It ducks while the Bookkeeper speaks.
+const sound = createSound();
+addEventListener("pac-voice", (e) => sound.duck(!!(e.detail && e.detail.speaking)));
 const V = createBookkeeper({ onPick: (name) => deckPick ? deckPick(name) : { ok: false, reason: "the cards aren't up" } });
 let scene = null;                                              // the drawn scene on screen now
 let held = false;
@@ -393,7 +398,9 @@ async function ageTo(to, ms) {                                 // the age runs o
   if (to <= from) { avatarAt(S.ageF); return; }
   for (;;) {
     const k = Math.min(1, (performance.now() - t0) / Math.max(1, ms)), e = k * k * (3 - 2 * k);
+    const was = Math.floor(S.ageF);
     S.ageF = from + (to - from) * e; showAge(); avatarAt(S.ageF);
+    if (Math.floor(S.ageF) > was && to - from >= 2) sound.cue("year");   // the years tick past (not for one year alone)
     if (k >= 1) return;
     await sleep(60);
   }
@@ -424,8 +431,9 @@ function compose(scene, { directed = false, mood = "", age = null } = {}) {
 // the new scene itself and becomes this moment's own world. Then the life moves on through its PASSAGE (below).
 //   keep: how much of the old picture survives · dur: ms for the whole change · fresh: a new life
 let worldDone = Promise.resolve(), worldScene = null, worldGen = 0, worldBreaths = null, breathN = 0, worldNoise = 0, worldAt = 0, worldOn = "";
-function world(scene, { keep = 0, fresh = false, breaths = null, dur = 0, directed = false, mood = "", age = null, turn = false } = {}) {
+function world(scene, { keep = 0, fresh = false, breaths = null, dur = 0, directed = false, mood = "", age = null, turn = false, sounds = null } = {}) {
   const prompt = compose(scene, { directed, mood, age });
+  sound.scene(scene, dur || sec("world_fade"), sounds);
   const from = fresh ? "" : (worldScene || ""), ms = dur || sec("world_fade");
   const each = Math.max(300, sec("morph_frame") || 1200);
   const n = fresh || !from || from === prompt || sceneCovers() ? 1 : Math.max(1, Math.min(Math.round(+WK.morph_steps || 1), Math.round(ms / each)));
@@ -492,7 +500,8 @@ function worldFor(key, scene, { keep = 0, dur = 0, outcome = false, mood = "", a
     if (d && outcome && d.clothes) S.wear = d.clothes;
     if (d) { live.stat.directed = (live.stat.directed || 0) + 1; dispatchEvent(new CustomEvent("pac-moment", { detail: { key, line: d.line, world: d.world, written: scene } })); }
     lastLine = d && +WK.director_lines ? d.line : "";
-    await world(d ? d.world : scene, { keep, dur, directed: !!d, breaths: d && d.breathe && d.breathe.length > 1 ? d.breathe : passage, mood, age, turn: outcome });
+    await world(d ? d.world : scene, { keep, dur, directed: !!d, breaths: d && d.breathe && d.breathe.length > 1 ? d.breathe : passage, mood, age, turn: outcome,
+                                       sounds: d && d.sound && d.sound.length ? d.sound : null });
   })();
   worldDone = p;
   return p;
@@ -528,6 +537,7 @@ const dline = () => lastLine ? `<br><span style="color:#555;font-style:italic">$
       p = extra.length ? `${tail}, ${extra[n0 % extra.length]}` : tail;
       o = { keep: 0.6, frames: 1, dur: Math.max(1200, sec("world_fade")), base: "last", seed: S.seed, event: worldNoise * 16 + list.length, breath: n0 + 1, anchor: false, polite: true };
     }
+    if (step) sound.scene(p, o.dur);                            // the next place of the passage sounds like itself too
     if (await live.world(p, o) && step) worldOn = p;
   }
 })();
@@ -579,7 +589,7 @@ function waitThrow(kind = "throw") {
   return new Promise(resolve => {
     const done = (n, die) => { rollWaiter = null; screenRoll = null; beginAction = null; resolve({ n, die }); };
     rollWaiter = done;
-    screenRoll = async () => { screenRoll = null; holdAll(true); await sleep(500); done(await draw(1, 6), false); };
+    screenRoll = async () => { screenRoll = null; holdAll(true); sound.cue("rattle"); await sleep(500); done(await draw(1, 6), false); };
     if (kind === "begin") beginAction = () => done(0, false);
   });
 }
@@ -596,6 +606,7 @@ function matchCard(cards, said) {                               // the name as t
 }
 async function deck(cards, onHover = null) {                   // cards rise one by one; resolves with the one you pick
   picking = true;
+  sound.cue("rise", cards.length, sec("card_rise"));
   if (FOG()) {                                                  // the fog's options; a name said while they rise is taken once they're up
     let spoken = -1;
     deckPick = (said) => {
@@ -643,6 +654,7 @@ async function deck(cards, onHover = null) {                   // cards rise one
   });
 }
 async function lock(els, i, label, card) {                     // your card glides to the centre; the others sink away
+  sound.cue("lock");
   if (FOG()) return fog.lock(i, label, card.name);
   const d = deckEl.getBoundingClientRect(), r = els[i].getBoundingClientRect();
   els[i].style.setProperty("--dx", Math.round(d.left + d.width / 2 - (r.left + r.width / 2)) + "px");
@@ -673,6 +685,7 @@ function target(text) {
 
 // the number, big and alone; then hit or miss
 async function land(n, hit) {
+  sound.cue("land", n, hit);                                    // each number its own note; then hit or miss
   if (FOG()) return fog.land(n, hit);
   $("bigN").textContent = n; $("bigW").textContent = hit ? "hit" : "miss"; $("bigW").classList.remove("on");
   bigEl.classList.add("on");
@@ -729,6 +742,7 @@ async function chosen(ev) {
     await cardBack(els, i);
   }
   deckGone();
+  sound.mood(hit ? "hit" : ev.allot === false ? "bad" : "miss");
   let got = c, how = "hit", spoken = null;
   if (!hit) {
     if (ev.allot === false) how = "none";
@@ -830,6 +844,7 @@ async function happens(ev) {
     await sleep(sec("happen_hold"));
   }
   const key = ["good", "bad", "neutral"][(await draw(1, 3)) - 1], o = ev.outcomes[key];
+  sound.mood(key);
   const spoken = V.cue(happenedCue(ev, o, key, ev.reveals && S.planted[ev.reveals]));
   const w = turnTo(`${ev.id}:out:${key}`, o.scene, key);            // good / bad / neutral: it shows in the air (context.outcome)
   S.ledger.push([S.ageF, ev.title, o.text, ""]); prewriteNext();
@@ -883,6 +898,7 @@ async function arrive(ev, prev) {
   const chapter = !!(prev && prev.chapter);
   if (chapter) { S.phase = Math.min(PHASES.length - 1, S.phase + 1); setPhase(S.phase); }
   const dur = arriveMs(ev, prev);
+  sound.age(ev.age); sound.cue("arrive", dur);                  // the bed moves with the years
   let handover = null;
   if (prev && prev.drawn === "baby") handover = takeover(sec("takeover"), ev);  // the baby becomes the live kid
   else if ((ev.drawn || null) !== (prev && prev.drawn || null)) toScene(ev.drawn === "baby" ? null : ev.drawn);   // drawn scene -> the next one, or the painted world
@@ -903,6 +919,7 @@ const offEl = $("off");
 let screenUp = false;
 async function screenTo(up, ms) {
   screenUp = up;
+  if (up) sound.wake(ms); else sound.sleep(ms);                 // black is silent
   offEl.style.setProperty("--offT", Math.max(0, ms) / 1000 + "s");
   offEl.classList.toggle("up", up);
   await sleep(ms);
@@ -945,6 +962,7 @@ async function life(begun = false) {                            // begun: the th
   }
   if (prev && prev.bridge) { await say({ s: esc(prev.bridge), cls: "bridge" }); await sleep(sec("arrive")); await unsay(); }
   V.listen("closed");
+  sound.end(Math.max(3000, sec("final_silence")));             // the sound lets go into the final silence
   await sleep(sec("final_silence"));                           // a final silence before anything else
   await V.cue(G("close", ["the life, as the game recorded it:", ...lifeLines()]));   // it closes the books
   V.listen("open");
@@ -970,8 +988,8 @@ async function fromPanel() {
     const first = ctlSeq < 0; ctlSeq = j.seq;
     if (!first) for (const c of j.cmds || []) {                  // (a page that just opened doesn't replay old commands)
       if (c.cmd === "new_life") location.reload();
-      else if (c.cmd === "pause") { paused = true; V.hush(); }   // (the voice stops mid-line; the next moment speaks again)
-      else if (c.cmd === "resume") paused = false;
+      else if (c.cmd === "pause") { paused = true; V.hush(); sound.pause(true); }   // (the voice stops mid-line; the next moment speaks again)
+      else if (c.cmd === "resume") { paused = false; sound.pause(false); }
       else if (c.cmd === "roll") { if (beginAction) beginAction(); else if (screenRoll && turn === "throw") screenRoll(); }
       else if (c.cmd === "redraw") fetch("/redraw", { method: "POST" });
     }
@@ -983,6 +1001,7 @@ async function fromPanel() {
       if ((L.ui === "glass" || L.ui === "fog") && L.ui !== ui) applyUI(L.ui);
       if (L.animator) live.setAnimatorOpts(L.animator);
       V.setSubtitles(L.subtitles || "");
+      if (L.sound) sound.setMix(L.sound);
       V.setLive(L.bk);                                          // speed, volume, line length, breath, which moments: at once
       voiceOn = L.voice !== false;
       if (!voiceOn && V.stat.state !== "off") { V.stop(); V.stat.note = "off on the panel"; }   // off: at once (on: from the next life)
@@ -998,7 +1017,8 @@ setInterval(() => {                                              // what the gam
     world: worldOn || "", directed: st.directed || 0, director_error: st.directorError || "", paused, turn, tempo,
     place: S.place || "", gender: S.gender || "", wear: S.wear || "", screen: screenUp ? "on" : "off",
     voice: V.stat.state, voice_note: V.stat.note || "", voice_said: V.stat.said, voice_heard: V.stat.heard, voice_last: (V.stat.last || "").slice(0, 240),
-    voice_model: V.model, subtitles: V.showText }) }).catch(() => {});
+    voice_model: V.model, subtitles: V.showText,
+    sound: sound.stat.ready ? (sound.stat.on ? [sound.stat.kits.join(" + ") || "quiet", sound.stat.bed].filter(Boolean).join(" · ") : "off") : (sound.stat.note || "waiting for a click") }) }).catch(() => {});
 }, 1000);
 
 // ---------- keys: cards = ← → Enter or 1–9 · R / Space = roll on screen · Space / Enter = BEGIN · F = fullscreen · D = debug · C = next camera ----------
