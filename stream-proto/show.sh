@@ -157,7 +157,16 @@ wait_ready() {                        # until /health says ready (or give up aft
   for i in $(seq 1 72); do
     h=$(health)
     if [ "$(field "$h" ready)" = "True" ]; then return 0; fi
-    if [ "$i" = 1 ] || [ $((i % 6)) = 0 ]; then say "waiting for the server: $(summary "$h")"; fi
+    if [ "$i" = 1 ] || [ $((i % 6)) = 0 ]; then
+      if [ -n "$h" ]; then say "waiting for the server: $(summary "$h")"
+      else                              # it doesn't answer at all while loading its models: ask the machine instead
+        case "$(gssh --command 'systemctl is-active chance 2>/dev/null; systemctl is-enabled chance 2>/dev/null' 2>/dev/null | tr '\n' ' ')" in
+          active*) say "waiting for the server: loading its models (1-3 min after the machine starts)" ;;
+          activating*|*enabled*) say "waiting for the server: (re)starting" ;;
+          *) say "waiting for the server: it isn't running as a service yet. Run ./show.sh setup once (or ./show.sh log for why)" ;;
+        esac
+      fi
+    fi
     sleep 5
   done
   warn "the server isn't answering. ./show.sh log shows why. (Never ran ./show.sh setup? Then it isn't a service yet.)"
