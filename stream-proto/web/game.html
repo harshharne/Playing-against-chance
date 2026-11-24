@@ -218,6 +218,7 @@ async function toScene(name) {                                 // crossfade from
 const WK0 = { keep: 0.25, turn_keep: 0.45, chapter_keep: 0.1, breathe: 5, breathe_keep: 0.4, morph_steps: 12, director: 1, director_lines: 0, director_wait: 2 };
 let T = null, P = {}, WK = { ...WK0 };
 let tempo = 1;                                                  // TEMPO on /panel: every timing x this
+let heritageMix = 0.5;                                          // HERITAGE on /panel: whose face (0 yours .. 1 the birthplace's)
 const sec = (k) => Math.max(0, +P[k] || 0) * 1000 * tempo;
 function setPacing(doc) {
   P = doc.pacing || {}; WK = { ...WK0, ...(doc.world || {}) };
@@ -313,7 +314,7 @@ const lifeLines = () => S.ledger.map(([a, t, w, note]) => `- age ${Math.floor(a)
 // ---------- the age, the avatar, the world ----------
 let S;                                                         // this life
 function freshLife() {                                         // seed: this life's own noise, shared by all its worlds (the server's LAYOUT HOLD)
-  return { ageF: 0, gender: null, place: "", means: "", wear: "", ledger: [], planted: {}, phase: 0, avatar: false, life: [], baby: "",
+  return { ageF: 0, gender: null, place: "", heritage: "", means: "", wear: "", ledger: [], planted: {}, phase: 0, avatar: false, life: [], baby: "",
            seed: 1 + Math.floor(Math.random() * 1e9) };
 }
 const AGES = [                                                 // the avatar between these: blended, so it ages continuously
@@ -327,6 +328,7 @@ function who(desc, age) {
   const g = S.gender, w = { child: g === "boy" ? "boy" : g === "girl" ? "girl" : "child", kid: g === "boy" ? "boy" : g === "girl" ? "girl" : "kid",
                            adult: g === "boy" ? "man" : g === "girl" ? "woman" : "person" };
   let d = desc.replace(/\{(\w+)\}/g, (_, k) => w[k]);
+  if (heritage()) d = d.replace(/\b(boy|girl|child|kid|man|woman|person|baby)\b/, `$1 ${heritage()}`);   // whose face, first
   if (g === "nb" && age >= 2) d += ", androgynous";
   if (S.wear && age >= 2) d += `, in ${S.wear}`;
   if (S.life.length) d += ", " + S.life.join(", ");             // what the Body throw gave: eyes, a birthmark, your skin
@@ -347,11 +349,17 @@ function avatarAt(age) {
 // clothes, what the Body throw gave you), and as the years pass you dissolve into it, both faces moving with you.
 // The same life's portraits share a seed, so they look like one person's. AVATAR = painted: the older frame-by-frame avatar.
 let pMode = "painted", photoBlob = null, photoTry = null, pCache = new Map(), pShown = { age: -99, wear: "" };
+// WHOSE FACE: a mix of the player's photo (the portraits are painted from it) and the birthplace's people (Where's
+// heritage). The words go first in every face prompt, so they are never the part that gets cut off.
+function heritage() {
+  if (!S.heritage || heritageMix < 0.2) return "";               // yours: the photo alone
+  return heritageMix < 0.75 ? `of mixed ${S.heritage} heritage` : `of ${S.heritage} heritage`;
+}
 function pWho(age) {
-  const g = S.gender, n = Math.round(age);
+  const g = S.gender, n = Math.round(age), h = heritage() ? " " + heritage() : "";
   const kid = g === "boy" ? "boy" : g === "girl" ? "girl" : "child", adult = g === "boy" ? "man" : g === "girl" ? "woman" : "person";
-  return n <= 6 ? `a ${n}-year-old little ${kid}` : n < 13 ? `a ${n}-year-old ${kid}` : n < 20 ? `a ${n}-year-old teenage ${kid}`
-       : n < 60 ? `a ${n}-year-old ${adult}` : `a ${n}-year-old elderly ${adult}, grey hair, wrinkles`;
+  return n <= 6 ? `a ${n}-year-old little ${kid}${h}` : n < 13 ? `a ${n}-year-old ${kid}${h}` : n < 20 ? `a ${n}-year-old teenage ${kid}${h}`
+       : n < 60 ? `a ${n}-year-old ${adult}${h}` : `a ${n}-year-old elderly ${adult}${h}, grey hair, wrinkles`;
 }
 // BODY on /panel: a body that moves needs the portrait painted waist up, standing straight with the arms hanging
 // free at the sides (an arm painted across the body or holding something can't move, see bodywarp.js)
@@ -368,12 +376,14 @@ function getPhoto() {                                           // a still of yo
   return photoTry;
 }
 function paintAt(age, wear = S.wear) {                          // -> a jpeg blob of you at this age (cached), or null
-  const frame = pFrame(), key = `${Math.round(age)}|${wear}|${S.gender}|${S.life.join(",")}|${frame}`;
+  const frame = pFrame(), key = `${Math.round(age)}|${wear}|${S.gender}|${S.life.join(",")}|${frame}|${heritage()}`;
   if (pCache.has(key)) return pCache.get(key);
   const p = (async () => {
     try {
       const ph = await getPhoto(); if (!ph) return null;
-      const strength = age < 13 ? 0.75 : 0.6;                    // a child needs more repainting to stop looking like an adult
+      // a child needs more repainting to stop looking like an adult; HERITAGE moves it: toward yours keeps more of the
+      // photo, toward the birthplace's repaints more
+      const strength = Math.max(0.4, Math.min(0.85, (age < 13 ? 0.75 : 0.6) + (heritageMix - 0.5) * 0.2));
       const r = await fetch(`/portrait/from?prompt=${encodeURIComponent(pPrompt(age, wear, frame))}&strength=${strength}&seed=${S.seed}&frame=${frame}`,
                             { method: "POST", body: ph, cache: "no-store" });
       if (!r.ok) { pCache.delete(key); return null; }
@@ -491,7 +501,7 @@ const sceneCovers = () => !!scene;                            // the egg, the ma
 // written scene, exactly as before. It never decides anything; chance does.
 const D = new Map();                                           // moment key -> its answer, null (none), or a pending promise
 let evIdx = -1;
-const lifeNow = () => ({ age: S.ageF, gender: S.gender, place: S.place, wear: S.wear, traits: S.life, means: S.means, light: lightAt(S.ageF),
+const lifeNow = () => ({ age: S.ageF, gender: S.gender, place: S.place, heritage: S.heritage, wear: S.wear, traits: S.life, means: S.means, light: lightAt(S.ageF),
   ledger: S.ledger.map(([a, t, w, n]) => [a, t, w, n || ""]), planted: Object.values(S.planted) });
 function momentsOf(ev) {
   const m = [{ key: `${ev.id}:arrive`, what: "arriving at this event, before anything is decided", scene: ev.scene || "" }];
@@ -743,6 +753,7 @@ async function turnOver(card, note) {                          // the allotted c
 function apply(c) {
   if (c.gender) S.gender = c.gender;
   if (c.place) S.place = c.place;
+  if (c.heritage) S.heritage = c.heritage;                       // the birthplace's people: mixed into the face (heritage())
   if (c.wear) S.wear = c.wear;
   if (c.means) S.means = c.means;                                // what the family had: it shows in the worlds of your youth
 }
@@ -819,19 +830,17 @@ async function portrait(prompt, base, strength = 0.38) {
     return r.ok ? await createImageBitmap(await r.blob()) : null;
   } catch (e) { return null; }
 }
-function skinWords(rgb) {                                       // your own skin, from the camera; never chosen, never ranked
-  if (!rgb) return "skin like the player's own";
-  const L = 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2];
-  return L > 205 ? "very fair skin" : L > 175 ? "fair skin" : L > 145 ? "light brown skin" : L > 115 ? "brown skin" : L > 85 ? "dark brown skin" : "deep brown skin";
-}
+// your skin: never chosen, never ranked. Not read from the camera's brightness any more (the venue's light made pale
+// skin of everyone): the portraits carry your skin from your photo; the words only mix in the birthplace's
+function skinWords() { return heritage() ? `the skin tone of ${heritage().replace(/^of /, "")}` : "natural skin tone"; }
 async function babyArrives() {                                  // the painted home is underneath; the baby fades in over it
   const g = S.gender, who = g === "boy" ? "baby boy" : g === "girl" ? "baby girl" : "baby";
-  S.baby = `a newborn ${who} lying in a cot, wrapped in a soft blanket, eyes open looking up, tiny hands near the face, close-up portrait, soft window light`;
+  S.baby = `a newborn ${who}${heritage() ? " " + heritage() : ""} lying in a cot, wrapped in a soft blanket, eyes open looking up, tiny hands near the face, close-up portrait, soft window light`;
   const bmp = await portrait(S.baby, false);
   if (bmp) await baby.show(bmp, sec("world_fade"));
 }
 async function emerge(ev, got) {
-  const genes = [{ label: "Your skin", words: skinWords(live.skinTone()), life: true }, ...(got.genes || [])];
+  const genes = [{ label: "Your skin", words: skinWords(), life: false }, ...(got.genes || [])];   // (the heritage is in every face prompt already)
   let words = S.baby;
   for (const gn of genes) {
     words += ", " + gn.words;
@@ -1036,6 +1045,7 @@ async function fromPanel() {
     if (key !== liveSeen) {
       liveSeen = key;
       tempo = Math.max(0.4, Math.min(2, +L.tempo || 1));
+      heritageMix = L.heritage == null ? 0.5 : Math.max(0, Math.min(1, +L.heritage));
       fog.setScale(+L.type_scale || 1);
       if ((L.ui === "glass" || L.ui === "fog") && L.ui !== ui) applyUI(L.ui);
       if (L.animator) live.setAnimatorOpts(L.animator);

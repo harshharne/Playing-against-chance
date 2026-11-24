@@ -1651,6 +1651,8 @@ GAME_LIVE_DEFAULTS = {
     "sound": {"on": True, "master": 0, "bed": -8, "place": -8, "cues": -4, "duck": 10},   # the game's sound (dB; duck = how far under the voice)
     "voice": True,          # the Bookkeeper speaks (from the next life; off = the text carries the words)
     "subtitles": "",        # "" = as bookkeeper.json says (show_text) · "on" = the words on screen as well · "off" = voice only
+    "heritage": 0.5,        # the face: 0 = yours (your photo, no birthplace words) .. 0.5 = a mix (your photo, "of mixed
+                            # East Asian heritage") .. 1 = the birthplace's (its heritage, less of your photo)
     "world_rules": "ever",  # the background: "ever" = ever-changing (every picture its own, chance sets the rhythm) ·
                             # "continuous" = the earlier way (one picture morphing into the next through the passage)
     "bk": dict(bookkeeper.PANEL_DEFAULTS),   # the Bookkeeper's voice, from the panel's Voice tab (bookkeeper.py says what each does)
@@ -1680,7 +1682,7 @@ def clean_live(body):
     out = {}
     if body.get("ui") in ("", "glass", "fog"):
         out["ui"] = body["ui"]
-    for k, lo, hi in (("type_scale", 0.6, 1.6), ("tempo", 0.4, 2.0)):
+    for k, lo, hi in (("type_scale", 0.6, 1.6), ("tempo", 0.4, 2.0), ("heritage", 0.0, 1.0)):
         if k in body:
             try:
                 out[k] = round(max(lo, min(hi, float(body[k]))), 3)

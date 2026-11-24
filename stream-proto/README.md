@@ -238,6 +238,11 @@ picture morphing into the next. web/worldclock.js runs it; chance rolls everythi
 - Your photo is taken when the life begins (the BEGIN throw: you're at the screen). Each event's age is painted from it
   ahead of time (POST /portrait/from: this life's seed, so all ages look like one person; your clothes from Whom and
   the outcomes; what the Body throw gave you). Children are repainted more (0.75) than adults (0.6).
+- WHOSE FACE (HERITAGE on /panel): a mix of your photo and the birthplace's people. Each Where card has a heritage
+  ("East Asian"); it goes first in every face prompt, the baby's included: "a 23-year-old man of mixed East Asian
+  heritage". 0 = yours (the photo alone, repainted less), 0.5 = the mix (default), 1 = the birthplace's (repainted more).
+  Your skin isn't read from the camera's brightness any more (the venue's light made everyone pale): it comes from the
+  photo, with the birthplace's mixed in. Changes show from the next portrait.
 - The animator (LivePortrait) moves the portrait with your face. It is cut out of its plain background (MediaPipe, in
   the browser) and stands at the bottom of the world, in the middle, growing with your age.
 - BODY on /panel (web/bodywarp.js): the animator moves the face; the browser bends the rest of the painting to follow

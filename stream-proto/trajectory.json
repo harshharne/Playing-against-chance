@@ -12,7 +12,8 @@
     "phase_refs: optional style reference paintings, one per phase (BASELINE, CRUST, ADULTHOOD, LATER LIFE), e.g. \"refs/crust.jpg\" in web/refs/. Empty = none.",
     "passage (on an event): the years until the next event, as 3 to 6 scenes the world moves through while the event plays (the director writes its own from the life so far; these are used when it doesn't). Plain paintable things, a place seen by someone standing in it, no writing. The life's context is added to each.",
     "objects / people (on an event): the things and the people of that stretch of life, short and paintable (\"a tiffin box open on a desk\"). With the passage, they are what the EVER-CHANGING world shows, each picture one of them, seen in a shot chance picks. The director adds its own. People: in the background, never one person in the middle (the avatar stands there).",
-    "context.intrusions: [from this age, [things]] = the times you live in, coming in from outside the life (a power cut, a new flyover, a funeral passing). context.weather: the weather chance can paint over any picture. pacing shot_min / shot_max: ever-changing, the usual gap between two pictures (chance sets each one; sometimes a quick burst, sometimes a long hold)."
+    "context.intrusions: [from this age, [things]] = the times you live in, coming in from outside the life (a power cut, a new flyover, a funeral passing). context.weather: the weather chance can paint over any picture. pacing shot_min / shot_max: ever-changing, the usual gap between two pictures (chance sets each one; sometimes a quick burst, sometimes a long hold).",
+    "heritage (on a Where card): the people of that birthplace, in a word or two. The face is a MIX of the player's photo and this heritage (HERITAGE on /panel: from yours to the birthplace's): it goes first in every face prompt (\"a 23-year-old man of mixed East Asian heritage\"), the baby's too."
   ],
   "pacing": {
     "fade": 1.2,
@@ -248,56 +249,64 @@
           "reveals": "The youngest region on earth. Everyone is your age.",
           "target": "2 or more",
           "scene": "a cot in a small room with a tin roof",
-          "place": "sub-saharan africa, red earth, acacia trees, tin roofs, warm dusty light"
+          "place": "sub-saharan africa, red earth, acacia trees, tin roofs, warm dusty light",
+          "heritage": "African"
         },
         {
           "name": "South Asia",
           "reveals": "A fifth of humanity, and all of them have an opinion about your name.",
           "target": "2 or more",
           "scene": "a cot in a busy home, relatives crowding round",
-          "place": "south asia, crowded lanes, monsoon clouds, colourful walls"
+          "place": "south asia, crowded lanes, monsoon clouds, colourful walls",
+          "heritage": "South Asian"
         },
         {
           "name": "East Asia",
           "reveals": "A billion and a half people, very few of them siblings.",
           "target": "3 or more",
           "scene": "a cot in a quiet small apartment",
-          "place": "east asia, dense city blocks, apartment towers, neon signs"
+          "place": "east asia, dense city blocks, apartment towers, neon signs",
+          "heritage": "East Asian"
         },
         {
           "name": "Southeast Asia and the Pacific",
           "reveals": "Thousands of islands. The nearest hospital is on another one.",
           "target": "4 or more",
           "scene": "a cot in a wooden stilt house by the sea, a boat outside",
-          "place": "southeast asia, tropical islands, palm trees, turquoise sea"
+          "place": "southeast asia, tropical islands, palm trees, turquoise sea",
+          "heritage": "Southeast Asian"
         },
         {
           "name": "Middle East and North Africa",
           "reveals": "Oil under the ground, history on top of it.",
           "target": "4 or more",
           "scene": "a cot in a sandstone house, oil derricks on the horizon",
-          "place": "middle east, desert, sandstone buildings, domes, golden light"
+          "place": "middle east, desert, sandstone buildings, domes, golden light",
+          "heritage": "Middle Eastern"
         },
         {
           "name": "Latin America",
           "reveals": "Between two oceans, and always between two currencies.",
           "target": "5 or more",
           "scene": "a cot in a painted house on a green hillside",
-          "place": "latin america, bright painted houses, green hills"
+          "place": "latin america, bright painted houses, green hills",
+          "heritage": "Latin American"
         },
         {
           "name": "Europe",
           "reveals": "Free healthcare, expensive everything else.",
           "target": "a 6",
           "scene": "a cot in a tidy clinic, a nurse in a white uniform",
-          "place": "europe, old stone streets, tiled roofs, grey rainy sky"
+          "place": "europe, old stone streets, tiled roofs, grey rainy sky",
+          "heritage": "European"
         },
         {
           "name": "North America",
           "reveals": "The passport everyone else queues for.",
           "target": "a 6",
           "scene": "a cot in a large suburban house, a passport on the table",
-          "place": "north america, wide suburbs, highways, big skies"
+          "place": "north america, wide suburbs, highways, big skies",
+          "heritage": "North American"
         }
       ],
       "bridge": "The place is decided. Now, whose house.",
