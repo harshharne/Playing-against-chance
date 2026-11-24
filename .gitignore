@@ -29,3 +29,6 @@ stream-proto/logs/
 stream-proto/tuned.json
 stream-proto/.version
 stream-proto/server.env
+
+# test tooling (installed by tests/run.sh)
+stream-proto/tests/node_modules/

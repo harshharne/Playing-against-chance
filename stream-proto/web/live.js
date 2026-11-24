@@ -611,7 +611,7 @@ export function createLive({ out, video, params }) {
       if (r >= 1 && P.stage === "two") { P.stage = "promoting"; if (P.ws && P.ws.readyState === 1) P.ws.send(JSON.stringify({ cmd: "promote" })); }
     }
     if (P.stage === "promoting") k = 1;
-    const put = (gg, st, dx = 0, dy = 0) => { const [x, y, side] = at(st), p = piece(st, now, side); gg.drawImage(p.c, x + p.ox - dx, y + p.oy - dy, p.w, p.h); };
+    const put = (gg, st, dx = 0, dy = 0) => { const [x, y, side] = at(st), p = piece(st, now, side); gg.drawImage(p.c, x + p.ox - dx, y + p.oy - dy, p.w, p.h); stat.portraitX = (x + side / 2) / W; };
     g.globalAlpha = personAlpha;
     if (k <= 0.001 || !(P.next && P.next.bmp)) put(g, P.main);
     else if (k >= 0.999) put(g, P.next);

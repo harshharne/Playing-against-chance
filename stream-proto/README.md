@@ -1,5 +1,9 @@
 # Live generation — webcam → fast diffusion, you and the background separately
 
+
+Tests: `bash tests/run.sh` (quick, ~6 min) or `bash tests/run.sh full` (+ a soak of several lives in one page).
+No GPU or keys needed; see tests/README.md.
+
 ## First time only: download the models (on the cloud machine, ~6 GB, saved in ~/.cache/huggingface)
 ```
 cd ~/stream-proto && source .venv/bin/activate && python download_models.py

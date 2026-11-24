@@ -70,6 +70,10 @@ export function createSound({ base = "" } = {}) {
   const rnd = (a, b) => a + Math.random() * (b - a);
   const pick = (xs) => xs[Math.floor(Math.random() * xs.length)];
   const timers = new Set();
+  // a repeating timer that can never throw into the page (a sound that fails is skipped and noted, the game goes on)
+  const every = (ms, f) => setInterval(() => { try { f(); } catch (e) { stat.note = "sound: " + e.message; } }, ms);
+  // a synth's notes must come in time order, also across timer ticks (a busy page can make a tick early or late)
+  const inOrder = (syn, t, gap = 0.005) => { const u = Math.max(t, (syn._pacT || 0) + gap); syn._pacT = u; return u; };
   const later = (ms, f) => { const id = setTimeout(() => { timers.delete(id); try { f(); } catch (e) { stat.note = "sound: " + e.message; } }, ms); timers.add(id); return id; };
 
   // ---------- the mix: bed and place duck under the voice; everything through one limiter ----------
@@ -209,7 +213,7 @@ export function createSound({ base = "" } = {}) {
       vs.push({ n, f, f2, env, pan, next: now() + rnd(0, 1.5), phraseEnd: 0 });
     }
     let live = true;
-    const tick = setInterval(() => {                           // one scheduler for all voices, a little ahead of time
+    const tick = every(100, () => {                            // one scheduler for all voices, a little ahead of time
       if (!live) return;
       const t0 = now();
       for (const v of vs) {
@@ -228,7 +232,7 @@ export function createSound({ base = "" } = {}) {
         }
       }
       if (calls && Math.random() < calls * 0.1) call();         // children: a call or a squeal now and then
-    }, 100);
+    });
     function call() {
       const o = new T.Oscillator({ type: "triangle", frequency: rnd(550, 800), volume: -30 }), vib = new T.Vibrato(7, 0.15);
       const e = new T.AmplitudeEnvelope({ attack: 0.05, decay: 0.1, sustain: 0.7, release: 0.25 }), p = new T.Panner(rnd(-0.7, 0.7));
@@ -275,15 +279,15 @@ export function createSound({ base = "" } = {}) {
     const df = new T.Filter({ type: "bandpass", frequency: 3000, Q: 3 }), dp = new T.Panner(0);
     drop.chain(df, dp, out); drop.volume.value = -26;
     let live = true;
-    const tick = setInterval(() => {                           // drops on things nearby
+    const tick = every(120, () => {                            // drops on things nearby
       if (!live) return;
       let t = now() + 0.02;
       for (let i = 0; i < 3; i++) {
-        t += rnd(0.01, 0.04);                                   // (a synth's notes must come in order)
+        t = inOrder(drop, t + rnd(0.01, 0.04));                 // (in order, also after the last tick's drops)
         df.frequency.setValueAtTime(rnd(1800, 6000), t); dp.pan.setValueAtTime(rnd(-0.9, 0.9), t);
         drop.triggerAttackRelease(0.02, t, rnd(0.2, 1));
       }
-    }, 120);
+    });
     return [{ dispose() { live = false; clearInterval(tick); } }, n, hp, lp, g, drop, df, dp];
   }
   function kitWind(out) {
@@ -375,7 +379,7 @@ export function createSound({ base = "" } = {}) {
     const s = new T.NoiseSynth({ noise: { type: "white" }, envelope: { attack: 0.001, decay: 0.012, sustain: 0 } });
     const f = new T.Filter({ type: "bandpass", frequency: 3200, Q: 8 }); s.chain(f, out); s.volume.value = -22;
     let i = 0;
-    const id = setInterval(() => { const t = now() + 0.05; f.frequency.setValueAtTime(i++ % 2 ? 2600 : 3300, t); s.triggerAttackRelease(0.01, t); }, 1000);
+    const id = every(1000, () => { const t = inOrder(s, now() + 0.05); f.frequency.setValueAtTime(i++ % 2 ? 2600 : 3300, t); s.triggerAttackRelease(0.01, t); });
     return [{ dispose() { clearInterval(id); } }, s, f, ...kitRoom(out)];
   }
   function kitKitchen(out) {
@@ -413,7 +417,7 @@ export function createSound({ base = "" } = {}) {
   function kitHospital(out) {
     const s = new T.Synth({ oscillator: { type: "sine" }, envelope: { attack: 0.005, decay: 0.05, sustain: 0.8, release: 0.03 } }).connect(out);
     s.volume.value = -32;
-    const id = setInterval(() => s.triggerAttackRelease(988, 0.09, now() + 0.05), 1100);
+    const id = every(1100, () => s.triggerAttackRelease(988, 0.09, inOrder(s, now() + 0.05)));
     return [{ dispose() { clearInterval(id); } }, s, ...kitRoom(out), ...kitMurmur(out, { voices: 3, level: 0.12, gap: [1, 3] })];
   }
   const BUILD = {
@@ -540,7 +544,10 @@ export function createSound({ base = "" } = {}) {
   function pause(on) { paused = !!on; levelMaster(on ? 0.5 : 1.2); }
   function level() { return M ? M.master.gain.value : 0; }
 
-  return { unlock, wake, sleep: sleepAll, age, scene, mood, cue, duck, pause, end, setMix, level, stat, tagsFor, kits: KITS,
+  // what the game calls can never throw into the game: a sound that fails is skipped and noted (stat.note)
+  const safe = (f) => (...args) => { try { return f(...args); } catch (e) { stat.note = "sound: " + e.message; console.warn("[sound]", e); } };
+  return { unlock: safe(unlock), wake: safe(wake), sleep: safe(sleepAll), age: safe(age), scene: safe(scene), mood: safe(mood), cue: safe(cue),
+           duck: safe(duck), pause: safe(pause), end: safe(end), setMix: safe(setMix), level, stat, tagsFor, kits: KITS,
            _debug: () => ({ M, mix, playing: playing.map(k => k.name), mode: mode[1], colour, awake }) };
 }
 

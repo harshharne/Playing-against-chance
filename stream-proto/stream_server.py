@@ -60,7 +60,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageOps, ImageStat
 import bookkeeper   # the voice in the room (its panel settings live in the game's live settings)
 
 # ---------- settings you may want to tweak ----------
-PORT = 8766
+PORT = int(os.environ.get("PORT") or 8766)   # (tests run a stand-in on another port, so they never meet the tunnel)
 WIDTH, HEIGHT = 640, 384          # avatar size (set per painter below); both must be multiples of 64
 SEED = 7                          # noise used for the live person frames
 PAINTER = os.environ.get("PAINTER", "dmd")
@@ -99,7 +99,7 @@ BG_IMAGE_KEEP = 0.35              # background IMAGE reference: how much of the 
 HERE = os.path.dirname(os.path.abspath(__file__))
 LORA_DIR = os.path.join(HERE, "loras")
 PRESET_DIR = os.path.join(HERE, "presets")
-TRAJECTORY_FILE = os.path.join(HERE, "trajectory.json")   # the life: events, cards, bridge lines, timings (edit freely)
+TRAJECTORY_FILE = os.environ.get("TRAJECTORY") or os.path.join(HERE, "trajectory.json")   # the life: events, cards, bridge lines, timings (edit freely; tests may use a short one)
 STYLES_FILE = os.path.join(HERE, "styles.json")      # the looks on /panel (cartoon, caricature, pixel art, ...): edit freely
 
 # style LoRAs fetched on first start (all SD 1.5, none anime). file in loras/ <- (repo, file in repo or None = find it), trigger words
