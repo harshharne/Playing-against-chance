@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>World shots · Playing Against Chance</title>
+<script>try { document.documentElement.dataset.theme = localStorage.getItem("pac-panel-theme") || "light"; } catch (e) {}</script>
+<style>
+/* World shots: a contact sheet of what the ever-changing world paints for one event, with what chance rolled for each
+   (web/worldclock.js). For judging the rules and the look on the GPU. Same look as the panel. */
+@font-face { font-family: "Inter Tight"; src: url("fonts/inter-tight-latin-wght-normal.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
+:root { --bg: #e6e6e3; --card: #f8f8f6; --track: #e9e9e6; --ink: #161616; --soft: #4a4a47; --dim: #8b8b86; --bad: #c0392b;
+        --shadow: 0 1px 2px rgba(0,0,0,.04), 0 10px 30px rgba(0,0,0,.05); color-scheme: light; }
+:root[data-theme="dark"] { --bg: #0c0c0b; --card: #171716; --track: #262624; --ink: #f2f1ec; --soft: #c4c3bd; --dim: #807f79; --bad: #ff7a6b; --shadow: 0 1px 2px rgba(0,0,0,.4); color-scheme: dark; }
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 "Inter Tight", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.wrap { max-width: 1400px; margin: 0 auto; padding: 22px 24px 60px; display: flex; flex-direction: column; gap: 14px; }
+.brand { font-size: 22px; font-weight: 500; letter-spacing: -0.02em; } .brand span { color: var(--dim); font-weight: 400; }
+.card { border-radius: 26px; background: var(--card); box-shadow: var(--shadow); padding: 20px 22px; display: flex; gap: 14px; flex-wrap: wrap; align-items: end; }
+label { display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; color: var(--dim); }
+select, input { border: 0; background: var(--track); border-radius: 12px; height: 40px; padding: 0 12px; min-width: 120px; }
+input.place { min-width: 320px; }
+.go { border: 0; background: var(--ink); color: var(--bg); border-radius: 999px; height: 42px; padding: 0 22px; font-weight: 500; cursor: pointer; }
+.go:disabled { opacity: .5; cursor: default; }
+.note { color: var(--dim); font-size: 13px; margin: 0; } .bad { color: var(--bad); }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+figure { margin: 0; border-radius: 18px; background: var(--card); box-shadow: var(--shadow); overflow: hidden; display: flex; flex-direction: column; }
+figure .img { aspect-ratio: 16 / 9; background: var(--track); display: grid; place-items: center; color: var(--dim); font-size: 13px; }
+figure img { width: 100%; height: 100%; object-fit: cover; display: block; }
+figcaption { padding: 10px 14px 14px; font-size: 12.5px; color: var(--soft); display: flex; flex-direction: column; gap: 4px; }
+figcaption b { color: var(--ink); font-weight: 500; font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand">World shots <span>· what the ever-changing world paints for one event</span></div>
+  <p class="note">Each picture is one roll of the rules: a fragment of the event's pool, a shot, the light and the weather. They're painted one after another on the GPU machine, in the look that's on (STYLE on the panel). Each costs one world picture of GPU time.</p>
+  <div class="card">
+    <label>Event<select id="ev"></select></label>
+    <label>Age<input id="age" type="number" min="0" max="95" step="1"></label>
+    <label>Where (the Where card's words)<input id="place" class="place" placeholder="e.g. a small town in Kerala, coconut palms, red-tiled roofs"></label>
+    <label>Pictures<input id="n" type="number" min="1" max="24" value="12"></label>
+    <label>Seed<input id="seed" type="number" min="1"></label>
+    <button class="go" id="go">Paint</button>
+  </div>
+  <p class="note" id="stat"></p>
+  <div class="grid" id="grid"></div>
+</div>
+<script type="module">
+import { createWorldClock } from "./worldclock.js";
+const $ = (id) => document.getElementById(id);
+let T = null;
+async function load() {
+  T = await (await fetch("/trajectory", { cache: "no-store" })).json();
+  $("ev").innerHTML = T.events.map((e, i) => `<option value="${i}">${e.title} (${e.age})</option>`).join("");
+  $("ev").value = String(Math.max(0, T.events.findIndex(e => e.id === "school")));
+  $("age").value = T.events[+$("ev").value].age;
+  $("seed").value = 1 + Math.floor(Math.random() * 1e6);
+}
+$("ev").addEventListener("change", () => { $("age").value = T.events[+$("ev").value].age; });
+const lightAt = (age) => { let w = ""; for (const [a, words] of (T.context.light || [])) if (age >= a) w = words; return w; };
+const intrusionsAt = (age) => { let w = []; for (const [a, list] of (T.context.intrusions || [])) if (age >= a) w = list; return w; };
+
+async function paint(prompt, seed) {                       // one shot, as the game asks for it (POST /world, shot: true)
+  const res = await fetch("/world", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt, seed, shot: true }) });
+  const buf = new Uint8Array(await res.arrayBuffer());
+  if (buf.length < 4) throw new Error("nothing came back");
+  const hl = new DataView(buf.buffer, 0, 4).getUint32(0), info = JSON.parse(new TextDecoder().decode(buf.subarray(4, 4 + hl)));
+  if (info.error) throw new Error(info.error);
+  return { url: URL.createObjectURL(new Blob([buf.slice(4 + hl, 4 + hl + info.jpeg)], { type: "image/jpeg" })), info };
+}
+
+$("go").addEventListener("click", async () => {
+  const ev = T.events[+$("ev").value], age = +$("age").value || 0, n = Math.max(1, Math.min(24, +$("n").value || 12)), seed = +$("seed").value || 1;
+  const st = { light: lightAt(age), place: $("place").value.trim(), means: "", weather: T.context.weather || [],
+               lightWords: T.context.light_words ? new RegExp(`\\b(${T.context.light_words})\\b`, "i") : null };
+  const clock = createWorldClock({ live: { dropShot() {}, worldBusy: () => false }, sleep: (ms) => new Promise(r => setTimeout(r, ms)), state: () => st });
+  clock.life(seed);
+  clock.know({ scene: ev.scene, passage: ev.passage || [], objects: ev.objects || [], people: ev.people || [], intrusions: intrusionsAt(age), weather: st.weather, ageNow: age });
+  clock.stop();                                            // (only its rolls are wanted here: it paints nothing itself)
+  const R = clock._roll, grid = $("grid");
+  grid.innerHTML = ""; $("go").disabled = true;
+  const t0 = performance.now(), used = new Set(); let ok = 0;
+  for (let i = 0; i < n; i++) {
+    let frag = i === 0 ? { kind: "place", text: ev.scene } : R.fragment();
+    for (let k = 0; k < 6 && i > 0 && used.has(frag.text); k++) frag = R.fragment();   // (as in the game: no repeats while there are others)
+    used.add(frag.text);
+    const shot = i === 0 ? "wide" : R.shot(frag.kind), prompt = R.prompt(frag, shot), tr = R.transition(false).kind;
+    const fig = document.createElement("figure");
+    fig.innerHTML = `<div class="img">painting…</div><figcaption><b>${frag.kind} · ${shot}${i === 0 ? " · the arrival" : ` · comes in as a ${tr === "cut" ? "cut" : tr === "quick" ? "quick dissolve" : "slow patchy dissolve"}`}</b><span></span></figcaption>`;
+    fig.querySelector("span").textContent = prompt;
+    grid.appendChild(fig);
+    $("stat").textContent = `painting ${i + 1} of ${n}…`;
+    try {
+      const { url, info } = await paint(prompt, seed * 101 + i);
+      fig.querySelector(".img").innerHTML = `<img alt="">`; fig.querySelector("img").src = url;
+      fig.querySelector("b").insertAdjacentText("beforeend", ` · ${(info.ms / 1000).toFixed(1)} s${info.tokens > 77 ? ` · ${info.tokens} tokens: the end is cut off` : ""}`);
+      ok++;
+    } catch (e) { fig.querySelector(".img").innerHTML = `<span class="bad">${String(e.message || e)}</span>`; }
+  }
+  $("stat").textContent = `${ok} of ${n} painted in ${((performance.now() - t0) / 1000).toFixed(0)} s. Seed ${seed}: the same seed rolls the same shots.`;
+  $("go").disabled = false;
+});
+load().catch(e => { $("stat").textContent = "couldn't read the life: " + (e.message || e); $("stat").className = "note bad"; });
+</script>
+</body>
+</html>

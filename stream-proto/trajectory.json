@@ -10,7 +10,9 @@
     "world: keep / turn_keep / chapter_keep = how much of the picture on screen survives a change (arriving at an event / its outcome / after a chapter): lower = it becomes a more different place. morph_steps = the most pictures one change is painted in. breathe = seconds between the steps of the PASSAGE (the life moving on inside an event), breathe_keep = how much of the picture each step keeps. rev: leave it (push.sh uses it to know these settings were re-based).",
     "context: what the life adds to every written scene. light: [from this age, words] = the light of your age, a life as one day (a scene that already names its light, matched by light_words, keeps its own). means_until: the age until which the family's means show. outcome: words added after a good / bad / neutral Happens. breaths: the small changes the world breathes through inside an event. Empty a list or a string to switch that part off.",
     "phase_refs: optional style reference paintings, one per phase (BASELINE, CRUST, ADULTHOOD, LATER LIFE), e.g. \"refs/crust.jpg\" in web/refs/. Empty = none.",
-    "passage (on an event): the years until the next event, as 3 to 6 scenes the world moves through while the event plays (the director writes its own from the life so far; these are used when it doesn't). Plain paintable things, a place seen by someone standing in it, no writing. The life's context is added to each."
+    "passage (on an event): the years until the next event, as 3 to 6 scenes the world moves through while the event plays (the director writes its own from the life so far; these are used when it doesn't). Plain paintable things, a place seen by someone standing in it, no writing. The life's context is added to each.",
+    "objects / people (on an event): the things and the people of that stretch of life, short and paintable (\"a tiffin box open on a desk\"). With the passage, they are what the EVER-CHANGING world shows, each picture one of them, seen in a shot chance picks. The director adds its own. People: in the background, never one person in the middle (the avatar stands there).",
+    "context.intrusions: [from this age, [things]] = the times you live in, coming in from outside the life (a power cut, a new flyover, a funeral passing). context.weather: the weather chance can paint over any picture. pacing shot_min / shot_max: ever-changing, the usual gap between two pictures (chance sets each one; sometimes a quick burst, sometimes a long hold)."
   ],
   "pacing": {
     "fade": 1.2,
@@ -20,6 +22,8 @@
     "turn": 4.5,
     "passage": 3.5,
     "morph_frame": 0.6,
+    "shot_min": 2.0,
+    "shot_max": 10.0,
     "settle": 3.0,
     "card_rise": 0.25,
     "lock": 1.5,
@@ -102,6 +106,74 @@
       "a moment later, small things moved",
       "dust drifting in the light",
       "a cloud passing over"
+    ],
+    "weather": [
+      "light rain",
+      "heavy monsoon rain",
+      "morning mist",
+      "dust in the air",
+      "wet streets after rain",
+      "harsh sun, heat haze",
+      "strong wind",
+      "overcast, flat grey light",
+      "winter haze"
+    ],
+    "intrusions": [
+      [
+        0,
+        [
+          "a power cut, a candle on a window sill",
+          "a kite caught in electric wires",
+          "monsoon water flooding the lane",
+          "a stray dog asleep on warm steps",
+          "a festival procession passing at the end of the street",
+          "a vegetable cart under a streetlight"
+        ]
+      ],
+      [
+        13,
+        [
+          "a new flyover being built, scaffolding and dust",
+          "a cricket match on an empty plot",
+          "fireworks over the rooftops",
+          "a mobile tower rising over old houses",
+          "a broken-down bus on a highway",
+          "a crowded railway platform at night"
+        ]
+      ],
+      [
+        25,
+        [
+          "a crane over a half-built tower",
+          "a traffic jam at night, red tail lights",
+          "an airport window, planes waiting",
+          "a wedding band passing on the street",
+          "a hospital corridor at night",
+          "a festival crowd by the sea"
+        ]
+      ],
+      [
+        45,
+        [
+          "an old cinema being torn down",
+          "glass towers where fields used to be",
+          "a funeral procession crossing a road",
+          "a new metro line over old roofs",
+          "a storm bending the trees",
+          "a shuttered shop that used to be open"
+        ]
+      ],
+      [
+        65,
+        [
+          "pigeons on a park bench",
+          "a hospital waiting room",
+          "the old neighbourhood rebuilt, unrecognisable",
+          "grandchildren's toys on the floor",
+          "a temple bell at dawn",
+          "an empty railway station at night"
+        ]
+      ]
     ]
   },
   "phase_refs": [
@@ -120,6 +192,15 @@
       "tries": 3,
       "setup": "Before anything else, the form needs a box ticked.",
       "scene": "a hospital maternity ward, a small cot under a window, soft morning light",
+      "objects": [
+        "a steel cot with a thin mattress",
+        "a nurse's trolley with folded towels",
+        "a window with a torn curtain, morning"
+      ],
+      "people": [
+        "relatives waiting on a hospital bench",
+        "a nurse walking down a long corridor"
+      ],
       "cards": [
         {
           "name": "Boy",
@@ -152,6 +233,15 @@
       "age": 0,
       "setup": "Somewhere on the map, a cot is waiting.",
       "scene": "an old paper world map unfolding on a wooden table, soft light",
+      "objects": [
+        "an old globe on a shelf",
+        "a train ticket window at dawn",
+        "a suitcase tied with rope"
+      ],
+      "people": [
+        "a crowd at a railway station",
+        "people crossing a busy road"
+      ],
       "cards": [
         {
           "name": "Sub-Saharan Africa",
@@ -220,6 +310,15 @@
       "age": 0,
       "setup": "The household decides most of what comes next, and you don't get a vote.",
       "scene": "the front door of a home, seen from a cot",
+      "objects": [
+        "a front door with a brass latch",
+        "slippers lined up at a doorstep",
+        "a ceiling fan turning slowly"
+      ],
+      "people": [
+        "a family photograph on a wall",
+        "neighbours talking on a staircase"
+      ],
       "cards": [
         {
           "name": "Landless farmers",
@@ -290,6 +389,16 @@
       "chapter": true,
       "setup": "The genes are dealt before you arrive. You may ask for a hand.",
       "scene": "inside the home, a cot by the window, soft morning light",
+      "objects": [
+        "a cot mobile turning slowly",
+        "a steel tumbler of warm milk",
+        "a rattle on a woven mat",
+        "small shoes by the door"
+      ],
+      "people": [
+        "a grandmother folding clothes",
+        "relatives crowding a doorway"
+      ],
       "cards": [
         {
           "name": "Average in every way",
@@ -476,6 +585,17 @@
       "type": "happens",
       "age": 8,
       "scene": "a school classroom, rows of wooden desks, a blackboard",
+      "objects": [
+        "a tiffin box open on a desk",
+        "chalk dust on a blackboard ledge",
+        "a school bag hanging on a hook",
+        "an exercise book with ink blots"
+      ],
+      "people": [
+        "children running across a dusty playground",
+        "a line of children at morning assembly",
+        "a teacher's back at the blackboard"
+      ],
       "passage": [
         "a narrow lane at dawn, children with school bags walking, a bicycle leaning on a wall",
         "a dusty school playground at noon, a cricket bat on the ground, shade under a big tree",
@@ -506,6 +626,15 @@
       "age": 16,
       "setup": "Choose a stream at sixteen, as if you knew who you'd be at forty.",
       "scene": "a school noticeboard covered in pinned lists, a crowded corridor",
+      "objects": [
+        "a stack of guide books with folded corners",
+        "a calculator and an eraser on a desk",
+        "a ceiling fan above rows of benches"
+      ],
+      "people": [
+        "students crowding around a noticeboard",
+        "parents waiting outside a coaching centre"
+      ],
       "passage": [
         "a coaching classroom packed with students, a whiteboard full of formulas, late evening",
         "a bedroom desk at midnight, piles of guide books, a table lamp, a clock",
@@ -559,6 +688,15 @@
       "age": 18,
       "chapter": true,
       "scene": "an exam hall, rows of desks, a big clock on the wall",
+      "objects": [
+        "a wall clock above rows of desks",
+        "a pencil box and two pens on a wooden desk",
+        "an empty chair by the exam hall door"
+      ],
+      "people": [
+        "students pouring out of a gate after an exam",
+        "a parent waiting under a tree with a water bottle"
+      ],
       "passage": [
         "a college gate in the morning, groups of students, scooters parked in rows",
         "a hostel room with two beds, clothes drying on a chair, a window onto trees",
@@ -588,6 +726,15 @@
       "age": 20,
       "setup": "Who do you dream of becoming?",
       "scene": "a rooftop at dusk, city lights below",
+      "objects": [
+        "a notebook full of sketches on a bed",
+        "a guitar leaning on a wall",
+        "a train window with the city sliding past"
+      ],
+      "people": [
+        "friends laughing on a rooftop at night",
+        "a crowded local train at dusk"
+      ],
       "passage": [
         "a city street at dusk, food stalls lighting up, crowds going home",
         "a shared rented room, a mattress on the floor, a window onto other windows",
@@ -640,6 +787,15 @@
       "type": "happens",
       "age": 22,
       "scene": "a city street, a big news screen, people looking up",
+      "objects": [
+        "a television flickering in a dim room",
+        "a phone screen glowing in the dark",
+        "an empty street with shuttered shops"
+      ],
+      "people": [
+        "a crowd gathered silently in front of a big screen",
+        "people on balconies looking out"
+      ],
       "passage": [
         "a quiet city at night, empty roads, streetlights",
         "a balcony with potted plants, a laptop on a small table, a city skyline",
@@ -667,6 +823,15 @@
       "type": "fluke",
       "age": 23,
       "scene": "a cramped room, a laptop open to job listings",
+      "objects": [
+        "a laptop with a cracked corner, a cup of cold tea",
+        "a pressed shirt hanging on a door",
+        "a folder of papers on a bed"
+      ],
+      "people": [
+        "a queue outside an office building",
+        "candidates waiting on plastic chairs"
+      ],
       "passage": [
         "an office floor of cubicles, rows of monitors, fluorescent light",
         "a crowded morning train, commuters holding the straps",
@@ -701,6 +866,15 @@
       "allot": false,
       "setup": "One day. Somewhere in the city is the love of your life. You meet only if you end up in the same place.",
       "scene": "a city morning, crowds, many streets",
+      "objects": [
+        "two cups of tea on a café table",
+        "a scooter parked under a flowering tree",
+        "a cinema hall in the dark, a lit screen"
+      ],
+      "people": [
+        "couples walking along a sea wall",
+        "a crowd at a bus stop in the rain"
+      ],
       "passage": [
         "two cups of tea on a balcony railing, early morning, a city waking up",
         "a busy weekend market, fruit stalls, strings of lights",
@@ -752,6 +926,16 @@
       "age": 32,
       "setup": "A chance to change the direction of your life. It expires on Friday.",
       "scene": "an office desk with a ringing phone, a wall calendar",
+      "objects": [
+        "a desk phone and a cup of coffee",
+        "a wall calendar",
+        "an elevator door half open",
+        "files stacked on a desk"
+      ],
+      "people": [
+        "colleagues in a glass meeting room",
+        "a crowded office canteen"
+      ],
       "passage": [
         "a highway at night, streams of car headlights",
         "an airport gate at dawn, rows of empty seats, a plane outside",
@@ -798,6 +982,15 @@
       "type": "happens",
       "age": 35,
       "scene": "an office floor, the same routine every day",
+      "objects": [
+        "identical rows of desks under white lights",
+        "a commuter train door in the morning",
+        "a lunchbox on a keyboard"
+      ],
+      "people": [
+        "commuters packed on a platform",
+        "a security guard dozing at a gate"
+      ],
       "passage": [
         "an office lobby in the morning, glass doors, people with lanyards",
         "a weekend drive past green fields, a roadside tea stall"
@@ -825,6 +1018,15 @@
       "age": 36,
       "setup": "Who do you want to spend your life with?",
       "scene": "a wedding hall full of relatives and garlands",
+      "objects": [
+        "marigold garlands strung over a doorway",
+        "a plate of sweets on a silver tray",
+        "a heap of shoes outside a hall"
+      ],
+      "people": [
+        "relatives dancing under string lights",
+        "a band playing in a wedding procession"
+      ],
       "passage": [
         "a new home with half-unpacked boxes, curtains being hung",
         "a family lunch at a crowded table, many dishes, relatives talking",
@@ -878,6 +1080,16 @@
       "age": 40,
       "chapter": true,
       "scene": "a family home in the evening, a dinner table",
+      "objects": [
+        "a pressure cooker on a stove",
+        "school shoes lined up by a door",
+        "a television on in an empty living room",
+        "a car parked in a narrow lane"
+      ],
+      "people": [
+        "children doing homework at a dining table",
+        "neighbours talking across a balcony"
+      ],
       "passage": [
         "a school gate in the afternoon, parents waiting with umbrellas",
         "a corner of a home office, files, reading glasses on a stack of papers",
@@ -908,6 +1120,16 @@
       "age": 48,
       "setup": "Something true about your life has been hidden all along. Now it comes out. Choose which.",
       "scene": "an old box of papers opened on a table, dust in the light",
+      "objects": [
+        "a tin box of old photographs",
+        "a dusty trophy on a shelf",
+        "a yellowed letter",
+        "an old cassette player"
+      ],
+      "people": [
+        "an old friend waving from across a street",
+        "a group photo on a wall"
+      ],
       "passage": [
         "a clinic waiting room, a television on the wall, rows of chairs",
         "a morning walk in a park, an old banyan tree, joggers in the distance",
@@ -968,6 +1190,15 @@
       "plant": true,
       "text": "On a rainy evening, you lend your umbrella to a stranger at a bus stop. You never see it again.",
       "scene": "a rainy bus stop at night, a stranger walking off under an umbrella",
+      "objects": [
+        "a black umbrella left open by a door",
+        "rain streaming down a bus window",
+        "a puddle reflecting street lights"
+      ],
+      "people": [
+        "a stranger walking away under an umbrella",
+        "people huddled under a bus shelter"
+      ],
       "passage": [
         "an evening bus ride, wet windows, city lights blurring",
         "a quiet office at dusk, half the desks empty",
@@ -983,6 +1214,15 @@
       "age": 60,
       "setup": "The office gives you a cake and a shawl. What will you mostly do now?",
       "scene": "an office party, a cake and a folded shawl",
+      "objects": [
+        "a folded shawl and a bouquet on a desk",
+        "an empty office chair",
+        "a farewell cake, half cut"
+      ],
+      "people": [
+        "colleagues clapping in a small office",
+        "a watchman at a gate"
+      ],
       "passage": [
         "a park bench in the morning, pigeons, a newspaper folded on the seat",
         "a kitchen with steel utensils, a pressure cooker, afternoon light",
@@ -1036,6 +1276,15 @@
       "age": 64,
       "reveals": "umbrella",
       "scene": "a rainy street, a black umbrella",
+      "objects": [
+        "a black umbrella leaning in a corner",
+        "rain on a window, a cup of tea",
+        "a walking stick by a chair"
+      ],
+      "people": [
+        "a stranger's back disappearing in the rain",
+        "an old man feeding pigeons"
+      ],
       "passage": [
         "a window seat on a train, fields passing, an old suitcase",
         "a quiet balcony, a cane chair, a radio, late afternoon",
@@ -1066,6 +1315,16 @@
       "age": 79,
       "setup": "You get to choose how you go. Mostly.",
       "scene": "a quiet room, evening light, an empty chair by a window",
+      "objects": [
+        "an empty chair by a window",
+        "a pair of spectacles on a closed book",
+        "a clock on the wall",
+        "a glass of water on a bedside table"
+      ],
+      "people": [
+        "family gathered quietly in a doorway",
+        "children playing far down the lane"
+      ],
       "passage": [
         "an empty cane chair on a balcony at night, a single lamp",
         "a quiet room at night, curtains moving, a glass of water",

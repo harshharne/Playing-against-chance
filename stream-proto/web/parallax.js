@@ -5,12 +5,16 @@
 //   dissolve   B doesn't ghost in over the whole frame at once: it soaks in in soft patches, the far parts first
 //   push       the view moves in through each picture (near things growing a little faster than far ones), so a run
 //              of pictures reads as travelling forward through the years, not as a slideshow
+//   drift      each picture also moves on its own while it is up: a slow push in, a pull out, or a slide sideways
+//              (near parts sliding more than far ones), so a still picture breathes like a held camera
 //
 //   const px = createParallax()   -> null if WebGL isn't there (then the page crossfades flat, as before)
 //   px.render(w, h, a, b, k, offX, offY, fx) -> a canvas.  a, b: { img, depth } (b may be null);  k: 0..1, how far b is in
-//       fx: { wet, push, dolly, seed }   wet 0 = plain crossfade .. 1 = patchy;  push: how far the view moves in over
-//       this change (a goes 0 -> push, b comes -push -> 0);  seed: which patches (a number per picture)
+//       fx: { wet, push, dolly, seed, ma, mb }   wet 0 = plain crossfade .. 1 = patchy;  push: how far the view moves in
+//       over this change (a goes 0 -> push, b comes -push -> 0);  seed: which patches (a number per picture);
+//       ma, mb: where each picture's own drift is now, { z (0.. zoomed in), x, y (slide) }
 //   px.setPush(p)     the biggest push there will be: the picture rests zoomed in by that much, so its edges never show
+//   px.setDrift(d)    the biggest slide there will be (same idea: room at the edges)
 //   px.forget(img)    free the texture of a picture that's gone (call before closing its ImageBitmap)
 
 const VS = `attribute vec2 p; varying vec2 uv; void main() { uv = p * 0.5 + 0.5; gl_Position = vec4(p, 0.0, 1.0); }`;
@@ -23,22 +27,22 @@ precision mediump float;
 varying vec2 uv;
 uniform sampler2D A, DA, B, DB;
 uniform float k, zoom, za, zb, dolly, wet, seed;
-uniform vec2 off;
+uniform vec2 off, pa, pb;
 float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
 float vnoise(vec2 p) {
   vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
 }
 float cloud(vec2 p) { return 0.55 * vnoise(p) + 0.3 * vnoise(p * 2.3 + 11.7) + 0.15 * vnoise(p * 5.1 + 3.1); }
-vec4 look(sampler2D img, sampler2D dep, vec2 q, float z) {
+vec4 look(sampler2D img, sampler2D dep, vec2 q, float z, vec2 pan) {
   float d = texture2D(dep, q).r;                          // near = white = moves most
   float s = 1.0 + z * (1.0 + dolly * (d - 0.35));         // the push: near things grow a little faster than far ones
-  return texture2D(img, (q - 0.5) / s + 0.5 + off * (d - 0.35));
+  return texture2D(img, (q - 0.5) / s + 0.5 + off * (d - 0.35) + pan * (0.75 + 0.5 * d));   // a slide: near parts slide more
 }
 void main() {
   vec2 q = (uv - 0.5) / zoom + 0.5;                       // a little zoomed in, so the edges never show
   q.y = 1.0 - q.y;                                        // pictures are uploaded top row first (ImageBitmaps ignore FLIP_Y)
-  vec4 a = look(A, DA, q, za), b = look(B, DB, q, zb);
+  vec4 a = look(A, DA, q, za, pa), b = look(B, DB, q, zb, pb);
   // when each spot turns: soft patches (a different set for every picture), the far parts a little earlier
   float th = 0.62 * cloud(q * vec2(4.2, 2.6) + seed) + 0.38 * texture2D(DB, q).r;
   float m = clamp(k * (1.0 + wet) - th * wet, 0.0, 1.0);
@@ -50,7 +54,7 @@ export function createParallax() {
   const opts = { premultipliedAlpha: false, preserveDrawingBuffer: true, antialias: false };
   let gl = c.getContext("webgl", opts);
   if (!gl) return null;
-  let U = null, cache = new Map(), ok = false, push = 0.02;
+  let U = null, cache = new Map(), ok = false, push = 0.02, drift = 0;
   const DOLLY = 1.5;
 
   function setup() {                                       // also run again if the browser takes the GPU away and gives it back
@@ -63,7 +67,7 @@ export function createParallax() {
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
     const loc = gl.getAttribLocation(prog, "p"); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
     U = {};
-    for (const n of ["k", "zoom", "za", "zb", "dolly", "wet", "seed", "off"]) U[n] = gl.getUniformLocation(prog, n);
+    for (const n of ["k", "zoom", "za", "zb", "dolly", "wet", "seed", "off", "pa", "pb"]) U[n] = gl.getUniformLocation(prog, n);
     ["A", "DA", "B", "DB"].forEach((n, i) => gl.uniform1i(gl.getUniformLocation(prog, n), i));
     cache = new Map();
     return true;
@@ -90,6 +94,7 @@ export function createParallax() {
     get ok() { return ok; },
     get textures() { return cache.size; },
     setPush(p) { push = Math.max(0, +p || 0); },
+    setDrift(d) { drift = Math.max(0, Math.min(0.08, +d || 0)); },
     forget(img) { const t = img && cache.get(img); if (t) { gl.deleteTexture(t); cache.delete(img); } },
     render(w, h, a, b, k, ox, oy, fx = {}) {
       if (!ok) return null;
@@ -98,9 +103,12 @@ export function createParallax() {
       const B = b || a;
       [a.img, a.depth || flat, B.img, B.depth || flat].forEach((img, i) => { gl.activeTexture(gl.TEXTURE0 + i); gl.bindTexture(gl.TEXTURE_2D, tex(img)); });
       const kk = b ? Math.max(0, Math.min(1, k)) : 0, p = b ? (+fx.push || 0) : 0;
-      // at rest the picture is zoomed by: room for your head's shift + room for the biggest push (so nothing jumps when one starts)
-      gl.uniform1f(U.zoom, 1 + Math.hypot(ox, oy) * 1.4 + 0.02 + push * (1 + DOLLY * 0.65));
-      gl.uniform1f(U.k, kk); gl.uniform1f(U.za, p * kk); gl.uniform1f(U.zb, p * (kk - 1));
+      const ma = fx.ma || {}, mb = b ? (fx.mb || {}) : ma, cl = v => Math.max(-drift, Math.min(drift, +v || 0));
+      // at rest the picture is zoomed by: room for your head's shift + room for the biggest push + room for the biggest
+      // slide (so nothing jumps when one starts, and the edges never show)
+      gl.uniform1f(U.zoom, 1 + Math.hypot(ox, oy) * 1.4 + 0.02 + push * (1 + DOLLY * 0.65) + drift * 2.6);
+      gl.uniform1f(U.k, kk); gl.uniform1f(U.za, p * kk + Math.max(0, +ma.z || 0)); gl.uniform1f(U.zb, p * (kk - 1) + Math.max(0, +mb.z || 0));
+      gl.uniform2f(U.pa, cl(ma.x), cl(ma.y)); gl.uniform2f(U.pb, cl(mb.x), cl(mb.y));
       gl.uniform1f(U.dolly, DOLLY); gl.uniform1f(U.wet, b ? Math.max(0, Math.min(1, +fx.wet || 0)) : 0);
       gl.uniform1f(U.seed, (+fx.seed || 0) % 97);
       gl.uniform2f(U.off, ox, oy);

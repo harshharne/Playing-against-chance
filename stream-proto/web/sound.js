@@ -456,7 +456,7 @@ export function createSound({ base = "" } = {}) {
   function clearPlace(sec = 2) { playing.forEach(k => stopKit(k, sec)); playing = []; stat.kits = []; }
 
   // ======================================================================== the CUES
-  let C = null;
+  let C = null, rattleEnd = 0;
   function cuesBuilt() {
     if (C) return C;
     const soft = new T.PolySynth(T.Synth, { oscillator: { type: "sine" }, envelope: { attack: 0.005, decay: 0.4, sustain: 0, release: 0.8 } }).connect(M.cueVerb);
@@ -486,7 +486,8 @@ export function createSound({ base = "" } = {}) {
       }
       case "lock": c.thud.triggerAttackRelease("C2", 0.2, t, 0.5); c.swish.triggerAttackRelease(0.6, t, 0.4); break;
       case "rattle":                                            // the screen's throw (a real die makes its own sound)
-        { let u = t; for (let i = 0; i < 14; i++) { u += rnd(0.02, 0.05); c.rf.frequency.setValueAtTime(rnd(1800, 3800), u); c.rattle.triggerAttackRelease(0.02, u, rnd(0.4, 1)); } }
+        { let u = Math.max(t, rattleEnd); for (let i = 0; i < 14; i++) { u += rnd(0.02, 0.05); c.rf.frequency.setValueAtTime(rnd(1800, 3800), u); c.rattle.triggerAttackRelease(0.02, u, rnd(0.4, 1)); }
+          rattleEnd = u + 0.05; }                               // (a second throw while one still rattles starts after it: Tone needs times in order)
         break;
       case "land": {                                            // the number: each has its own note; then hit (a fifth) or miss (a rub)
         const n = Math.max(1, Math.min(6, a || 1)), f = mtof(degreeNote(n) + 12);

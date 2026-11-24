@@ -148,6 +148,7 @@ import { createBaby } from "./baby.js";
 import { createFog } from "./ui-fog.js";
 import { createBookkeeper } from "./bookkeeper.js";
 import { createSound } from "./sound.js";
+import { createWorldClock } from "./worldclock.js";
 
 const $ = (id) => document.getElementById(id);
 const sayEl = $("say"), bigEl = $("big"), deckEl = $("deck"), flipEl = $("flip"), debugEl = $("debug");
@@ -186,6 +187,20 @@ function applyUI(next) {
 // an event (arriving, the cards, what happened); the text boxes step back while it's there (unless show_text).
 // the sound under the voice (sound.js: the bed, the place, the cues). It ducks while the Bookkeeper speaks.
 const sound = createSound();
+// the ever-changing world (worldclock.js): chance picks what the background shows, how, and when. WORLD RULES on /panel:
+// "ever" (this) or "continuous" (the earlier way: one picture morphing into the next through the passage)
+let worldRules = "ever";
+const EVER = () => worldRules === "ever";
+const clock = createWorldClock({ live, sound, sleep, state: () => ({
+  paused, screenUp, held, covered: !!scene, picking: turn === "pick", throwing: turn === "throw", tempo,
+  lightWords: CX().light_words ? new RegExp(`\\b(${CX().light_words})\\b`, "i") : null,
+  light: lightAt(S.ageF), place: S.place || "", means: S.means && S.ageF < (+CX().means_until || 0) ? S.means : "",
+  shotMin: +P.shot_min || 2, shotMax: +P.shot_max || 10, weather: CX().weather || [] }) });
+// what an event brings to the clock's pool besides its places: its things and people (trajectory.json), and the times
+// you live in (context.intrusions, by age)
+function intrusionsAt(age) { let w = []; for (const [a, list] of CX().intrusions || []) if (age >= a) w = list; return w; }
+const evNow = () => (T && T.events[Math.max(0, evIdx)]) || {};
+if (new URLSearchParams(location.search).has("test")) window.__pac = { clock, live, sound };   // (for the automated tests only)
 addEventListener("pac-voice", (e) => sound.duck(!!(e.detail && e.detail.speaking)));
 const V = createBookkeeper({ onPick: (name) => deckPick ? deckPick(name) : { ok: false, reason: "the cards aren't up" } });
 let scene = null;                                              // the drawn scene on screen now
@@ -431,10 +446,22 @@ function compose(scene, { directed = false, mood = "", age = null } = {}) {
 // the new scene itself and becomes this moment's own world. Then the life moves on through its PASSAGE (below).
 //   keep: how much of the old picture survives · dur: ms for the whole change · fresh: a new life
 let worldDone = Promise.resolve(), worldScene = null, worldGen = 0, worldBreaths = null, breathN = 0, worldNoise = 0, worldAt = 0, worldOn = "";
-function world(scene, { keep = 0, fresh = false, breaths = null, dur = 0, directed = false, mood = "", age = null, turn = false, sounds = null } = {}) {
+function world(scene, { keep = 0, fresh = false, breaths = null, dur = 0, directed = false, mood = "", age = null, turn = false, sounds = null, pool = null } = {}) {
   const prompt = compose(scene, { directed, mood, age });
   sound.scene(scene, dur || sec("world_fade"), sounds);
-  const from = fresh ? "" : (worldScene || ""), ms = dur || sec("world_fade");
+  const ms = dur || sec("world_fade");
+  const ev = evNow(), at = age ?? S.ageF;
+  const known = { scene, passage: breaths || [], objects: ev.objects || [], people: ev.people || [], intrusions: intrusionsAt(at),
+                  weather: CX().weather || [], extra: pool, ageNow: at };
+  if (EVER() && !turn) {                                        // arriving: a wide shot of the place, painted on its own, coming in slowly
+    ++worldGen;
+    worldScene = prompt; worldOn = prompt; breathN = 0; worldBreaths = null;
+    if (FOG() && !fresh) fog.swell(ms);
+    worldDone = clock.arrive({ ...known, dur: fresh ? 0 : ms, light: directed ? null : lightAt(at) });
+    return worldDone;
+  }
+  // (ever-changing, an outcome: the turn is painted from the shot on screen, as before; then the clock goes on from it)
+  const from = fresh ? "" : EVER() ? (live.stat.shotPrompt || worldScene || "") : (worldScene || "");
   const each = Math.max(300, sec("morph_frame") || 1200);
   const n = fresh || !from || from === prompt || sceneCovers() ? 1 : Math.max(1, Math.min(Math.round(+WK.morph_steps || 1), Math.round(ms / each)));
   ++worldGen;
@@ -447,6 +474,8 @@ function world(scene, { keep = 0, fresh = false, breaths = null, dur = 0, direct
   worldDone = live.world(prompt, { from, keep: fresh ? 0 : keep, frames: n, dur: ms, base: fresh ? "none" : "last", fresh,
                                    seed: S.seed, event: worldNoise, push: n > 1 })
     .then(ok => { if (my === worldGen) worldAt = performance.now(); return ok; });
+  if (EVER()) worldDone = clock.outcome(worldDone, { ...known, mood: mood && CX().outcome ? CX().outcome[mood] || "" : "" });
+  else clock.know(known);                                       // (so ever-changing can take over at once from the panel)
   return worldDone;
 }
 const sceneCovers = () => !!scene;                            // the egg, the map or the house is drawn over the world: one picture is enough
@@ -501,7 +530,7 @@ function worldFor(key, scene, { keep = 0, dur = 0, outcome = false, mood = "", a
     if (d) { live.stat.directed = (live.stat.directed || 0) + 1; dispatchEvent(new CustomEvent("pac-moment", { detail: { key, line: d.line, world: d.world, written: scene } })); }
     lastLine = d && +WK.director_lines ? d.line : "";
     await world(d ? d.world : scene, { keep, dur, directed: !!d, breaths: d && d.breathe && d.breathe.length > 1 ? d.breathe : passage, mood, age, turn: outcome,
-                                       sounds: d && d.sound && d.sound.length ? d.sound : null });
+                                       sounds: d && d.sound && d.sound.length ? d.sound : null, pool: d && d.pool && d.pool.length ? d.pool : null });
   })();
   worldDone = p;
   return p;
@@ -522,7 +551,7 @@ const dline = () => lastLine ? `<br><span style="color:#555;font-style:italic">$
   for (;;) {
     await sleep(250);
     const every = (+WK.breathe || 0) * 1000 * tempo, now = performance.now();
-    if (!(every > 0) || !worldScene || held || scene || bridging || document.hidden || now - last < every || now - worldAt < every * 0.6) continue;
+    if (EVER() || !(every > 0) || !worldScene || held || scene || bridging || document.hidden || now - last < every || now - worldAt < every * 0.6) continue;
     const list = worldBreaths || [];
     const step = breathN < list.length, n0 = breathN++;
     last = performance.now();
@@ -930,6 +959,8 @@ async function life(begun = false) {                            // begun: the th
   await unsay();
   if (!T) await loadLife();
   S = freshLife(); setPhase(0); D.clear(); evIdx = -1; lastLine = "";
+  S.seed = await Promise.race([draw(1, 999999999), sleep(3000).then(() => S.seed)]);   // one draw seeds every roll of this life
+  clock.life(S.seed); clock.run(EVER());
   V.stop();                                                     // each life gets a fresh voice, with no memory of the last
   deckGone(); bigEl.classList.remove("on");
   live.setPerson(null); live.setReal(false); live.setPersonAlpha(1); live.setControl({ age: 0, ramp: 1 });
@@ -962,6 +993,7 @@ async function life(begun = false) {                            // begun: the th
   }
   if (prev && prev.bridge) { await say({ s: esc(prev.bridge), cls: "bridge" }); await sleep(sec("arrive")); await unsay(); }
   V.listen("closed");
+  clock.stop();                                                 // the world stops changing: the last picture stays
   sound.end(Math.max(3000, sec("final_silence")));             // the sound lets go into the final silence
   await sleep(sec("final_silence"));                           // a final silence before anything else
   await V.cue(G("close", ["the life, as the game recorded it:", ...lifeLines()]));   // it closes the books
@@ -1004,6 +1036,8 @@ async function fromPanel() {
       if (L.sound) sound.setMix(L.sound);
       V.setLive(L.bk);                                          // speed, volume, line length, breath, which moments: at once
       voiceOn = L.voice !== false;
+      const rules = L.world_rules === "continuous" ? "continuous" : "ever";
+      if (rules !== worldRules) { worldRules = rules; clock.run(EVER()); }
       if (!voiceOn && V.stat.state !== "off") { V.stop(); V.stat.note = "off on the panel"; }   // off: at once (on: from the next life)
     }
   } catch (e) {}
@@ -1014,7 +1048,8 @@ setInterval(() => {                                              // what the gam
   fetch("/game/report", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
     event: ev ? ev.title : (evIdx < 0 ? "not started" : "the end"), n: evIdx + 1, of: T ? T.events.length : 0, age: Math.floor(S.ageF),
     ui, ui_next: uiNext || "", avatar: S.avatar ? pMode : "none yet", portrait: st.portraitNote || "", portrait_ms: st.portraitMs || 0, screen_fps: st.drawFps || 0,
-    world: worldOn || "", directed: st.directed || 0, director_error: st.directorError || "", paused, turn, tempo,
+    world: EVER() ? (st.shotPrompt || worldOn || "") : (worldOn || ""), directed: st.directed || 0,
+    shots: EVER() ? `ever-changing · ${clock.stat.shown} shown · ${clock.stat.last || "–"}${clock.stat.wait ? " · waiting: " + clock.stat.wait : ""}` : "continuous", director_error: st.directorError || "", paused, turn, tempo,
     place: S.place || "", gender: S.gender || "", wear: S.wear || "", screen: screenUp ? "on" : "off",
     voice: V.stat.state, voice_note: V.stat.note || "", voice_said: V.stat.said, voice_heard: V.stat.heard, voice_last: (V.stat.last || "").slice(0, 240),
     voice_model: V.model, subtitles: V.showText,
@@ -1055,7 +1090,7 @@ function status() {                                             // the hidden de
   if (debugEl.dataset.flash && performance.now() > camFlash) { delete debugEl.dataset.flash; debugEl.hidden = true; }
   if (!debugEl.hidden) {
     const st = live.stat;
-    if (!debugEl.dataset.flash) debugEl.textContent = !st.online ? "server offline" : [`${st.fps} fps`, source && `chance ${source}`, `camera: ${st.camera || "?"}`, st.camNote, `die${diceSrc ? ` (${diceSrc})` : ""}: ${dieText}`, `turn: ${turn}`, `screen ${st.drawFps || 0} fps`, st.worldError ? `WORLD ERROR: ${st.worldError}` : (st.worldId ? `world ${st.worldId}${st.bgMs ? ` (${st.bgMs} ms)` : ""}` : ""), st.worldTokens > 77 ? `PROMPT TOO LONG (${st.worldTokens} tokens, 77 are read)` : "",
+    if (!debugEl.dataset.flash) debugEl.textContent = !st.online ? "server offline" : [`${st.fps} fps`, source && `chance ${source}`, `camera: ${st.camera || "?"}`, st.camNote, `die${diceSrc ? ` (${diceSrc})` : ""}: ${dieText}`, `turn: ${turn}`, `screen ${st.drawFps || 0} fps`, st.worldError ? `WORLD ERROR: ${st.worldError}` : (st.worldId ? `world ${st.worldId}${st.bgMs ? ` (${st.bgMs} ms)` : ""}` : ""), st.worldTokens > 77 ? `PROMPT TOO LONG (${st.worldTokens} tokens, 77 are read)` : "", EVER() ? `shots ${clock.stat.shown} (${clock.stat.last || "–"}; ahead ${clock.stat.queue}${clock.stat.failed ? `, failed ${clock.stat.failed}` : ""}${clock.stat.wait ? `; waiting: ${clock.stat.wait}` : ""})` : "continuous world",
     pMode === "portrait" ? `portrait${pShown.age >= 0 ? " at " + pShown.age : ""}${st.portraitMs ? ` ${st.portraitMs} ms` : ""}${st.portraitNote ? " · " + st.portraitNote : ""}` : (st.portraitNote || ""), +WK.director ? (st.directorError ? `director: ${st.directorError}` : `directed ${st.directed || 0}`) : "director off",
     screenUp ? "" : "screen off: waiting for a throw", `voice: ${V.stat.state}${V.stat.note ? " (" + V.stat.note + ")" : ""}${V.on ? ` · said ${V.stat.said} · heard ${V.stat.heard}` : ""}`, st.note, st.seg].filter(Boolean).join(" · ");
   }

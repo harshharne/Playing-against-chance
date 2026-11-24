@@ -39,7 +39,7 @@ export function createLive({ out, video, params }) {
   let online = false, fgPrompt = null, fgTo = "", fgMix = 0, bgPrompt = null, flying = 0, seq = 0, shownSeq = 0;
   let person = null, personAt = 0, fade = 150, lastSig = null, held = false;
   let showReal = true, personAlpha = 1, control = null, serverPose = false;
-  const px = createParallax(); let par = [0, 0], parallax = 0.03, dissolve = 0.5, pushAmt = 0.02, serverHead = null;
+  const px = createParallax(); let par = [0, 0], parallax = 0.03, dissolve = 0.5, pushAmt = 0.02, moveAmt = 0.5, serverHead = null;
   let personPose = null, prevPose = null, livePose = null, avatarCfg = "painted", animatorCfg = false;
   let segmenter = null, segImage = null, segOk = false, camCover = 0, scene = null;
   const stat = { ms: 0, bgMs: 0, times: [], note: "", seg: "", online: false, engine: "", references: true, fps: "–" };
@@ -189,8 +189,20 @@ export function createLive({ out, video, params }) {
   // ---------- the world: a playlist of painted pictures ----------
   // worlds[0] is on screen (or being left); worlds[1] is soaking in over it; the rest wait their turn. A fade that has
   // started always finishes, so the picture never jumps: a change of plan only drops the pictures that haven't started.
-  const worlds = [];                                         // { img, depth, id, fade (ms), ease, push, seed, shown }
-  let wk = 0, wTick = 0;                                     // how far worlds[1] is in (0..1); when the world's clock last moved
+  const worlds = [];                                         // { img, depth, id, fade (ms), ease, push, seed, shown, wet, mv, born }
+  let wk = 0, wTick = 0, wClock = 0;                         // how far worlds[1] is in (0..1); when the world's clock last moved; the
+                                                             // world's own clock (ms; it stops while the die rolls)
+  // DRIFT: a picture that came with mv = { z0, z1, x0, x1, y0, y1, T } (-1..1 each, T ms) moves on its own while it is up:
+  // from (x0, y0, z0) toward (x1, y1, z1), fast at first and settling, like a camera that was moving and comes to rest.
+  // SLIDE and ZOOM: how far that is at MOVE 1 (from /panel).
+  const SLIDE = 0.03, ZOOM = 0.1;
+  function driftOf(w) {
+    if (!w || !w.mv) return null;
+    if (w.born == null) w.born = wClock;
+    const m = w.mv, k = Math.min(1, (wClock - w.born) / Math.max(1000, m.T || 15000)), e = 1 - (1 - k) * (1 - k);
+    const at = (a, b) => (a || 0) + ((b || 0) - (a || 0)) * e;
+    return { z: Math.max(0, at(m.z0, m.z1)) * ZOOM * moveAmt, x: at(m.x0, m.x1) * SLIDE * moveAmt, y: at(m.y0, m.y1) * SLIDE * moveAmt * 0.6 };
+  }
   // a run of pictures moves at one speed: it eases in on the first and out on the last; a single picture does both
   const EASE = { lin: k => k, in: k => k * k * (2 - k), out: k => 1 - (1 - k) * (1 - k) * (1 + k), inout: k => k * k * (3 - 2 * k) };
   function freeWorld(w) {                                    // a picture that's gone: give its memory back (it adds up over a life)
@@ -205,6 +217,7 @@ export function createLive({ out, video, params }) {
   }
   function stepWorld(now) {
     const dt = Math.min(100, Math.max(0, now - (wTick || now))); wTick = now;   // (a hold or a hidden tab doesn't skip ahead)
+    wClock += dt;
     if (worlds.length < 2) { wk = 0; return; }
     wk += dt / worlds[1].fade;
     while (worlds.length > 1 && wk >= 1) {
@@ -232,7 +245,9 @@ export function createLive({ out, video, params }) {
       const p = sh ? [-(sh.x - 0.5), -(sh.y - 0.45) * 0.6] : livePose ? [-(livePose.cx / W - 0.5), -(livePose.cy / H - 0.5) * 0.6] : [0, 0];
       const drift = [Math.sin(performance.now() / 5200) * 0.12, Math.cos(performance.now() / 7300) * 0.06];
       par = [par[0] + ((p[0] + drift[0]) * parallax - par[0]) * 0.06, par[1] + ((p[1] + drift[1]) * parallax - par[1]) * 0.06];
-      const cv = px.render(W * S, H * S, a, b, k, par[0], par[1], b ? { wet: dissolve, push: b.push, seed: b.seed } : {});
+      const ma = driftOf(a), mb = b ? driftOf(b) : null;
+      const cv = px.render(W * S, H * S, a, b, k, par[0], par[1],
+        b ? { wet: b.wet ?? dissolve, push: b.push, seed: b.seed, ma, mb } : { ma });
       if (cv) { g.drawImage(cv, 0, 0, W, H); return; }
     }
     g.globalAlpha = 1; g.drawImage(a.img, 0, 0, W, H);        // flat (no WebGL, or the copy the painter gets): a plain crossfade
@@ -585,8 +600,8 @@ export function createLive({ out, video, params }) {
   }
   const offline = () => { online = false; flying = 0; setTimeout(connect, 2000); };
   function worldLook(m) {                                    // tuned on /panel: parallax, how one world soaks into the next, the push
-    parallax = m.parallax ?? parallax; dissolve = m.dissolve ?? dissolve; pushAmt = m.push ?? pushAmt;
-    if (px) px.setPush(pushAmt);
+    parallax = m.parallax ?? parallax; dissolve = m.dissolve ?? dissolve; pushAmt = m.push ?? pushAmt; moveAmt = m.move ?? moveAmt;
+    if (px) { px.setPush(pushAmt); px.setDrift(SLIDE * moveAmt); }
   }
 
   // the look is tuned live on /panel: when it changes, repaint the world and the avatar straight away
@@ -728,7 +743,10 @@ export function createLive({ out, video, params }) {
           const now = performance.now();
           if (got) gap = gap ? gap * 0.5 + (now - lastAt) * 0.5 : now - lastAt;       // how fast the painter is delivering
           lastAt = now; got++;
-          addWorld({ img, depth, id: info.id, seed: info.id * 7.31, push: push ? pushAmt : 0,
+          // a change from a drifting picture (an ever-changing shot) carries on its camera move, so the two line up
+          const lead = worlds[worlds.length - 1];
+          if (lead && lead.mv && lead.born == null) lead.born = wClock;
+          addWorld({ img, depth, id: info.id, seed: info.id * 7.31, push: push ? pushAmt : 0, mv: lead ? lead.mv : null, born: lead ? lead.born : null,
             fade: info.final ? each : Math.max(each, gap * 1.05),                    // never dissolve faster than the pictures come
             ease: info.n === 1 ? "inout" : info.i === 1 ? "in" : info.final ? "out" : "lin",
             shown: info.final ? done : null });
@@ -742,6 +760,57 @@ export function createLive({ out, video, params }) {
     if (!ok) done(false);
     return finished;
   }
+  // ---------- shots: the ever-changing world ----------
+  // A SHOT is one picture of its own, painted from its own noise (POST /world with shot: true). Shots are painted a few
+  // ahead and shown when the game's world clock says so; they never stop each other, and a change (an outcome) is
+  // painted before them. paintShot -> { img, depth, id, prompt, ms } or null (failed, timed out, or dropped via signal).
+  // A shot that is never shown must be given back with dropShot.
+  async function paintShot(prompt, seed, { signal = null, timeout = 45000 } = {}) {
+    const ctl = new AbortController(), stop = () => ctl.abort();
+    if (signal) { if (signal.aborted) return null; signal.addEventListener("abort", stop, { once: true }); }
+    const timer = setTimeout(stop, timeout);
+    try {
+      const res = await fetch("/world", { method: "POST", signal: ctl.signal, cache: "no-store", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt, seed: Math.max(1, Math.floor(seed) % 1073741823), shot: true }) });
+      if (!res.ok) throw new Error("status " + res.status);
+      const buf = new Uint8Array(await res.arrayBuffer());
+      if (buf.length < 4) return null;                       // (the server gave up: the page had gone, or nothing was painted)
+      const hl = new DataView(buf.buffer, buf.byteOffset, 4).getUint32(0);
+      const info = JSON.parse(new TextDecoder().decode(buf.subarray(4, 4 + hl)));
+      if (info.error) { stat.worldError = info.error; return null; }
+      if (!info.jpeg) return null;
+      const j0 = 4 + hl, d0 = j0 + info.jpeg, end = d0 + (info.depth || 0);
+      if (buf.length < end) return null;
+      const img = await createImageBitmap(new Blob([buf.slice(j0, d0)], { type: "image/jpeg" }));
+      let depth = null;
+      if (info.depth) { try { depth = await createImageBitmap(new Blob([buf.slice(d0, end)], { type: "image/jpeg" })); } catch (e) {} }
+      if (ctl.signal.aborted) { img.close(); if (depth) depth.close(); return null; }
+      stat.worldError = ""; stat.bgMs = info.ms; stat.worldTokens = info.tokens;
+      return { img, depth, id: info.id, prompt, ms: info.ms };
+    } catch (e) {
+      if (e.name !== "AbortError" && !(signal && signal.aborted)) stat.worldError = "shot: " + (e.message || e);
+      return null;
+    } finally {
+      clearTimeout(timer);
+      if (signal) signal.removeEventListener("abort", stop);
+    }
+  }
+  function dropShot(sh) { if (sh) { try { sh.img.close(); if (sh.depth) sh.depth.close(); } catch (e) {} } }
+  // Put a painted shot on screen. fade (ms), ease, wet (0 crossfade .. 1 patchy; a cut is a short plain fade), mv (its
+  // drift, see driftOf). Resolves true when it is fully in, false if it was dropped (a change, a new life) first.
+  // Never stops a change being painted: if one is, the shot is given back and this resolves false.
+  function showShot(sh, { fade = 1200, ease = "inout", wet = null, mv = null } = {}) {
+    if (!sh) return Promise.resolve(false);
+    if (changing) { dropShot(sh); return Promise.resolve(false); }
+    bgPrompt = sh.prompt || bgPrompt || "world"; stat.shotPrompt = sh.prompt || "";
+    return new Promise(r => {
+      addWorld({ img: sh.img, depth: sh.depth, id: sh.id, seed: (sh.id * 7.31) % 97, push: 0, fade: Math.max(60, fade),
+                 ease: EASE[ease] ? ease : "inout", wet, mv, shown: r });
+      refresh();
+    });
+  }
+  const worldBusy = () => changing > 0;                      // a change (an outcome) is being painted
+
   // the lab page's simple way: one picture for the prompt (null = your real room)
   function setBackground(prompt, { keep = 0, fade = 600, fresh = false, base = "", anchor = true } = {}) {
     return world(prompt, { keep, dur: fade, fresh, anchor, base: base === "anchor" ? "anchor" : keep > 0 ? "last" : "none" });
@@ -777,7 +846,7 @@ export function createLive({ out, video, params }) {
   const camera = startCamera();
   connect();
   return {
-    stat, setPerson, setBackground, world, setScene, portrait, photo, setPortraitPlace, setAnimatorOpts, avatarMode: () => (avatarCfg === "portrait" && animatorCfg ? "portrait" : "painted"),   // what can run now
+    stat, setPerson, setBackground, world, paintShot, showShot, dropShot, worldBusy, setScene, portrait, photo, setPortraitPlace, setAnimatorOpts, avatarMode: () => (avatarCfg === "portrait" && animatorCfg ? "portrait" : "painted"),   // what can run now
     avatarWanted: () => avatarCfg,                           // what /panel asks for (the animator may still be loading)
     refresh, camera, hold, setReal, setPersonAlpha, setControl, where, skinTone, nextCamera,
     worldState: () => ({ queued: worlds.length, k: wk, textures: px ? px.textures : 0, webgl: !!(px && px.ok) }),

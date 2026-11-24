@@ -84,7 +84,9 @@ Test page, through the tunnel: http://localhost:8766/animate.html
        pip install -q peft && python train_style_lora.py ~/style --name mylook
    About 20-30 min (+ a ~7 GB download the first time). It prints the loss and the minutes left.
    It can run while the server runs (both fit on the GPU), in its own ssh window.
-4. On /panel: LORA A = mylook (or mylook-early), weight about 0.8. It works on worlds, portraits and the live avatar.
+4. The game starts in it: the look "My LoRA" (styles.json "mine") uses mylook-early, else mylook, at 0.8, whenever
+   the file is in loras/ when the server starts. On /panel (STYLE) you can pick the other file or another look. It
+   works on worlds, portraits and the live avatar.
 
 ## Updating the code later
 Edit on the Mac as usual, then from the stream-proto folder on the Mac:

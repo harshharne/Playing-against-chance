@@ -157,6 +157,7 @@ TUNE_DEFAULTS = {
     "between_steps": 2,       # steps for the in-between pictures of a change (tiny decoder below 4; 4 = as good as the last one)
     "dissolve": 0.5,          # browser: 0 = a plain crossfade between worlds, 1 = the new one soaks in in patches, far parts first
     "push": 0.02,             # browser: how far the view pushes in through each picture of a change (0 = still)
+    "move": 0.5,              # browser: how far each picture of the ever-changing world drifts while it is up (0 = still)
     "world_yield": 0.04,      # seconds the world painter rests between the pictures of a change, so the animator's frames get the GPU
 }
 TUNE = dict(TUNE_DEFAULTS)
@@ -207,6 +208,32 @@ def load_styles():
 
 def current_style():
     return load_styles().get(TUNE["style"], {})
+
+
+def look_lora(look):
+    """A look's LoRA as [file, weight], or None: its "lora" is [file, weight] or a list of them to try in order."""
+    v = (look or {}).get("lora")
+    if not v:
+        return None
+    tries = v if isinstance(v[0], (list, tuple)) else [v]
+    have = set(list_loras())
+    for t in tries:
+        if len(t) >= 2 and t[0] in have:
+            return [t[0], float(t[1])]
+    return None
+
+
+def default_look():
+    """The look the game starts in: your own LoRA ("mine" in styles.json) when its file is in loras/, else painterly."""
+    mine = look_lora(load_styles().get("mine"))
+    if mine:
+        for d in (TUNE_DEFAULTS, TUNE):
+            if d is TUNE and (TUNE["style"] != "painterly" or TUNE["lora_a"]):
+                continue                                         # (already changed from the panel: leave it)
+            d.update(style="mine", lora_a=mine[0], lora_a_w=mine[1])
+        print(f"[style] starting in your LoRA: {mine[0]} at {mine[1]}", flush=True)
+    else:
+        print("[style] no mylook LoRA in loras/: starting in painterly", flush=True)
 
 
 # ---------- LoRA files ----------
@@ -1043,7 +1070,7 @@ class MockGenerator:
     def world_frame(self, prompt, seed, init=None, keep=0.0, fast=False):
         """A stand-in world: soft blobs in the prompt's colour, laid out by the noise recipe (so the same seed gives the
         same layout, like the real painter), blended with the picture it is painted from."""
-        time.sleep(0.12 if fast else 0.3)
+        time.sleep((0.12 if fast else 0.3) * float(os.environ.get("MOCK_SLOW", "1")))   # (MOCK_SLOW: act like a slower GPU, for tests)
         ref = self.refs["background"]["image"]
         if ref is not None and (init is None or keep <= 0):
             return ImageOps.fit(ref.convert("RGB"), (WORLD_W, WORLD_H)).filter(ImageFilter.GaussianBlur(3))
@@ -1170,7 +1197,8 @@ def run_person(jpeg, prompt, pose=None, to="", mix=0.0, age=None, ramp=1.0):
 # What keeps one life looking like one life: the look's words in front of every prompt, the style LoRAs, one seed per
 # life (LAYOUT HOLD: every world shares part of its noise), and PALETTE HOLD (colours lean toward the life's own).
 MORPH_START = 0.3             # how much the first picture of a change is repainted; the run climbs from here
-WORLD_MEMORY = 16             # the last pictures kept, so a change can start from exactly the one on screen
+WORLD_MEMORY = 32             # the last pictures kept, so a change can start from exactly the one on screen (shots are
+                              # painted a few ahead, so the one on screen may be several pictures back)
 world_seq, world_last = 0, {"id": 0, "img": None, "anchor": None}
 world_frames = collections.OrderedDict()           # id -> {"img", "depth"}
 world_change, world_error, world_tokens = None, "", 0
@@ -1257,9 +1285,13 @@ def new_life_worlds():
 def world_job_for(prompt, frm="", keep=0.0, frames=1, base=None, seed=0, event=0, breath=0, anchor=True, kind="change", plan=None):
     if base is None or keep <= 0:                                # nothing to paint from: one picture, from noise
         base, keep, frames = None, 0.0, 1
-    return {"prompt": prompt, "from": frm, "keep": keep, "n": frames, "base": base, "anchor": anchor, "kind": kind,
-            "noise": world_noise(seed or random.randrange(1, 1 << 30), event, breath), "plan": plan or morph_plan(frames, keep),
-            "t0": time.perf_counter(), "ms": []}
+    seed = seed or random.randrange(1, 1 << 30)
+    shot = kind == "shot"
+    return {"prompt": prompt, "from": "" if shot else frm, "keep": keep, "n": frames, "base": base,
+            "anchor": anchor and not shot, "kind": kind,
+            # a SHOT is its own picture: its own noise, nothing shared with the life's other pictures
+            "noise": ((seed % (1 << 30), 1.0),) if shot else world_noise(seed, event, breath),
+            "plan": plan or morph_plan(frames, keep), "t0": time.perf_counter(), "ms": []}
 
 
 def paint_world(job, i):
@@ -1277,7 +1309,8 @@ def paint_world(job, i):
         before = world_last["img"]
         try:
             img = gen.world_frame(p, job["noise"], base, 1 - repaint if base is not None else 0.0, fast=not final)
-            img = hold_palette(img, final and job["anchor"])
+            if job["kind"] != "shot":                            # a shot keeps its own colours (it doesn't teach them either)
+                img = hold_palette(img, final and job["anchor"])
             depth = gen.depth_array(img)
         except Exception as e:
             import traceback
@@ -1409,6 +1442,7 @@ async def load():
     global gen
     if not MOCK:
         await asyncio.to_thread(download_loras)
+    default_look()
     global PAINTER, painter_note
     if MOCK:
         gen = MockGenerator()
@@ -1492,7 +1526,7 @@ async def config():
             "references": True, "look": look_version, "tune": tune_version, "shape": TUNE["shape"],
             "filter": current_style().get("filter", ""), "skip_still": TUNE["skip_still"], "pace": pace_version,
             "out_scale": 2, "world_w": WORLD_W, "world_h": WORLD_H, "parallax": TUNE["parallax"],
-            "dissolve": TUNE["dissolve"], "push": TUNE["push"],
+            "dissolve": TUNE["dissolve"], "push": TUNE["push"], "move": TUNE["move"],
             "avatar": TUNE["avatar"], "animator": animator is not None,   # (the animator loads ~45 s after the painter)
             "server_pose": bool(_wb["model"]) or MOCK}
 
@@ -1505,7 +1539,7 @@ def clean_tune(d):
            "ip_style": (0, 1.5), "guidance": (1, 4), "steady": (0, 0.9), "cn_strength": (0, 1.5),
            "ghost_guard": (0, 1), "skip_still": (0, 10), "child_until": (0, 20), "child_cn": (0, 1), "parallax": (0, 0.1),
            "layout_hold": (0, 1), "drift": (0, 1), "palette_hold": (0, 0.9), "between_steps": (1, 4), "dissolve": (0, 1),
-           "push": (0, 0.05), "world_yield": (0, 0.3)}
+           "push": (0, 0.05), "world_yield": (0, 0.3), "move": (0, 1)}
     for k, v in d.items():
         if k not in TUNE_DEFAULTS:
             continue
@@ -1551,7 +1585,7 @@ def settings_view():
     return {
         "tune": TUNE, "defaults": TUNE_DEFAULTS, "look": look_version,
         "styles": [{"id": k, "name": v.get("name", k), "prompt": v.get("prompt", ""), "filter": v.get("filter", ""),
-                    "lora": v.get("lora")} for k, v in load_styles().items()],
+                    "lora": look_lora(v)} for k, v in load_styles().items()],
         "loras": [{"file": f, "trigger": trigger_words(f), "error": (gen.lora_errors.get(f) if gen else None)} for f in list_loras()],
         "readout": {
             "painter": "mock" if MOCK else PAINTER,
@@ -1613,6 +1647,8 @@ GAME_LIVE_DEFAULTS = {
     "sound": {"on": True, "master": 0, "bed": -8, "place": -8, "cues": -4, "duck": 10},   # the game's sound (dB; duck = how far under the voice)
     "voice": True,          # the Bookkeeper speaks (from the next life; off = the text carries the words)
     "subtitles": "",        # "" = as bookkeeper.json says (show_text) · "on" = the words on screen as well · "off" = voice only
+    "world_rules": "ever",  # the background: "ever" = ever-changing (every picture its own, chance sets the rhythm) ·
+                            # "continuous" = the earlier way (one picture morphing into the next through the passage)
     "bk": dict(bookkeeper.PANEL_DEFAULTS),   # the Bookkeeper's voice, from the panel's Voice tab (bookkeeper.py says what each does)
 }
 game_cmds = collections.deque(maxlen=64)
@@ -1650,6 +1686,8 @@ def clean_live(body):
         out["voice"] = body["voice"]
     if body.get("subtitles") in ("", "on", "off"):
         out["subtitles"] = body["subtitles"]
+    if body.get("world_rules") in ("ever", "continuous"):
+        out["world_rules"] = body["world_rules"]
     if isinstance(body.get("bk"), dict):
         out["bk"] = bookkeeper.clean_panel({**game_live.get("bk", {}), **body["bk"]})
     if isinstance(body.get("sound"), dict):
@@ -1848,6 +1886,9 @@ async def world(request: Request):
         seed     the life's seed · event: which event · breath: which breath (0 = not a breath)
         anchor   the last picture becomes this event's own world · fresh: a new life (forget the old pictures and colours)
         polite   a breath: gives way while a change is being painted, and never stops one
+        shot     one picture of its own (ever-changing worlds): painted from its own noise (seed), no shared layout, no
+                 colour lean. It never stops anything and nothing stops it (the page drops ones it no longer wants by
+                 closing the request), so several can be painted ahead; it waits while a change is being painted.
     Answer: a stream, one message per picture as it is painted (see world_pack); {"error": ...} if one fails,
     {"skipped": true} for a breath that gave way. A newer change stops an older one after the picture in hand."""
     global world_job, world_morphs
@@ -1860,9 +1901,12 @@ async def world(request: Request):
         seed, event, breath = int(b.get("seed") or 0), int(b.get("event") or 0), int(b.get("breath") or 0)
         from_id, base_kind = int(b.get("from_id") or 0), str(b.get("base") or "last")
         polite, anchor, fresh = bool(b.get("polite")), bool(b.get("anchor", True)), bool(b.get("fresh"))
+        shot = bool(b.get("shot"))
     except (ValueError, TypeError, AttributeError):
         return JSONResponse({"error": "bad request"}, status_code=400)
     hd = {"Cache-Control": "no-store", "X-Accel-Buffering": "no"}
+    if shot:
+        return StreamingResponse(run_shot(prompt, seed, request), media_type="application/octet-stream", headers=hd)
     if polite and world_morphs > 0:
         return Response(world_pack({"skipped": True}), media_type="application/octet-stream", headers=hd)
     if not polite:
@@ -1904,6 +1948,31 @@ async def world(request: Request):
                 world_morphs -= 1
 
     return StreamingResponse(run(), media_type="application/octet-stream", headers=hd)
+
+
+async def run_shot(prompt, seed, request):
+    """One shot (see /world). Gives way to a change being painted (an outcome is the one moment that must not wait),
+    for up to SHOT_WAIT seconds; gives up if the page has gone."""
+    t_end = time.monotonic() + SHOT_WAIT
+    while world_morphs > 0 and time.monotonic() < t_end:
+        if await request.is_disconnected():
+            return
+        await asyncio.sleep(0.1)
+    if await request.is_disconnected():
+        return
+    async with world_lock:
+        if await request.is_disconnected():                      # dropped while waiting its turn: don't spend the GPU on it
+            return
+        job = world_job_for(prompt, "", 0.0, 1, None, seed, kind="shot")   # (a new life needs nothing forgotten: shots share nothing)
+        try:
+            msg = await asyncio.to_thread(world_message, job, 0)
+        except Exception:
+            yield world_pack({"error": world_error or "the world failed"})
+            return
+    yield msg
+
+
+SHOT_WAIT = 25.0
 
 
 @app.get("/background")

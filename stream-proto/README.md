@@ -157,7 +157,32 @@ A painted portrait, moved live by your face: LivePortrait warps the painting the
 - Setup on the cloud machine: `bash setup_liveportrait.sh` (see CLOUD.md). Speed alone: `python bench_animate.py`.
 - On the Mac with MOCK=1 the portrait just sways (no model); it needs `pip install "uvicorn[standard]"` for the WebSocket.
 
-## The living world (the transition is the piece)
+## The ever-changing world (WORLD RULES: ever-changing, the default)
+Life isn't continuous: it jumps, it repeats, things come in from outside. So the background never settles into one
+picture morphing into the next. web/worldclock.js runs it; chance rolls everything, from ONE random.org draw per life:
+- WHAT: a fragment from the event's POOL: its places (the scene and its passage), its objects and people
+  (trajectory.json "objects" / "people" on each event), the weather (context.weather), the times coming in from
+  outside the life (context.intrusions, by age), and MEMORIES (earlier moments of this life coming back, more often as
+  you age). The director writes 8-12 more for each arrival ("pool"); the written ones always fill the rest.
+- HOW: a shot (wide, close-up, detail, from above, through a window, reflected, silhouette, empty, crowded, from low).
+  LIGHT: the light of your age most of the time, sometimes any time of day; sometimes weather.
+- WHEN: a gap of about SHORT GAP to LONG GAP seconds (panel, WORLD), mostly short, now and then a burst of quick
+  pictures or a long hold; x TEMPO; slower while you choose; frozen while the die rolls; nothing while paused or dark.
+- CHANGE: a cut, a quick dissolve or a slow patchy one. MOVE: each picture drifts on its own while it is up (a push
+  in, a pull out, a slide), in depth (panel, WORLD: MOVE).
+- Every picture is painted on its own from its own noise (POST /world with shot: true): no layout or colour held
+  over. Shots never cancel each other and wait while a change is painted. Two are painted AHEAD at full quality and
+  shown when their time comes: the screen never goes blank and never shows a rough picture. If the painter is slow or
+  gone, the picture on screen stays (drifting) and the clock backs off, then carries on.
+- ARRIVING at an event: a wide shot of its scene comes in slowly. An OUTCOME is the one continuous moment: the world
+  turns into what happened from the picture on screen (as below), then the pictures go on in its air.
+- Prompts stay short (about 40 words: shot, thing, place, light, weather); the LoRA's trigger words go first.
+- The look: "mine" in styles.json is your LoRA (mylook-early, else mylook, from loras/ on the GPU machine); the server
+  starts in it when the file is there, else in painterly.
+- CONTINUOUS (WORLD RULES on the panel) is the earlier way, below, kept for comparing on the GPU. Switching takes
+  effect at once.
+
+## The living world (WORLD RULES: continuous)
 - A CHANGE (arriving at an event, or the world turning into what happened) is painted as a run of pictures, streamed
   as they're made (POST /world: each message is [length][json][jpeg][depth jpeg]). All of them start from the picture
   on screen and use the same noise; each is repainted a little more than the one before (from 30% up to 1 - KEEPS)
@@ -234,7 +259,8 @@ painters load LoRAs from loras/ onto both pipelines (worlds + portraits, and the
 ## The director (an LLM writes each moment's world)
 director.py + director.json. For every moment of the life it writes, from the life so far: the WORLD prompt (your
 written scene elaborated: light, weather, season, viewpoint, things that carry over), the PASSAGE (4-6 scenes of the
-years until the next event, from the author's passage), CLOTHES when the moment changes them, and one quiet LINE. The written trajectory stays the
+years until the next event, from the author's passage), for arrivals a POOL of 8-12 fragments for the ever-changing
+world, CLOTHES when the moment changes them, and one quiet LINE. The written trajectory stays the
 spine and the fallback: off, too slow (WAIT FOR IT UP TO), or failing its checks (director.json never_in_pictures,
 word limits) -> the written scene. It never decides anything; chance does.
 - Asked AHEAD: the next event's arrival as soon as this one's outcome is known, and all of an event's branches as it

@@ -9,7 +9,9 @@ If it is slow, off, or writes something that fails the checks, the written scene
 For each moment it writes:
     world     the scene prompt for the painter (short: the painter reads 77 tokens, and the look's words and the
               place take about 30 of them, so a world is cut at 36 words)
-    breathe   three small variations of that scene, for the world breathing inside the event
+    breathe   the passage: 4 to 6 scenes of the life moving on after this moment
+    pool      (arrivals) 8 to 12 short fragments of this stretch of life: places, objects, people, weather, the times
+              (intrusions), memories. The ever-changing world paints them one by one, each seen in a shot chance picks
     clothes   what the player wears now, or "" (keeps the card's)
     line      one line for the narrative box / the Bookkeeper (used only when the panel says so)
 
@@ -49,6 +51,9 @@ def read_bible():
 # what the game can sound like (web/sound.js KITS): the director picks 1-3 for each moment's place
 SOUNDS = ["room", "fan", "murmur", "crowd", "children", "street", "rain", "wind", "birds", "night",
           "train", "water", "clock", "kitchen", "bells", "typing", "hospital"]
+# what a fragment of the ever-changing world can be (web/worldclock.js)
+KINDS = ["place", "object", "people", "weather", "intrusion", "memory"]
+MAX_FRAGMENT_WORDS = 16
 
 TOOL = {
     "name": "write_moments",
@@ -68,8 +73,14 @@ TOOL = {
                         "line": {"type": "string", "description": "one line for the narrative box"},
                         "sound": {"type": "array", "items": {"type": "string", "enum": SOUNDS},
                                   "description": "1 to 3 sounds of this place, loudest first, from the list"},
+                        "pool": {"type": "array", "description": "arrival moments only (key ends with :arrive): 8 to 12 fragments of this stretch of life; [] for every other moment",
+                                 "items": {"type": "object", "properties": {
+                                     "kind": {"type": "string", "enum": KINDS},
+                                     "text": {"type": "string", "description": "6 to 14 words, one paintable thing"},
+                                     "sound": {"type": "array", "items": {"type": "string", "enum": SOUNDS}, "description": "0 to 2 sounds of it"}},
+                                     "required": ["kind", "text", "sound"], "additionalProperties": False}},
                     },
-                    "required": ["key", "world", "breathe", "clothes", "line", "sound"],
+                    "required": ["key", "world", "breathe", "clothes", "line", "sound", "pool"],
                     "additionalProperties": False,
                 },
             }
@@ -138,7 +149,14 @@ class Director:
         br = [clip_words(b, MAX_WORLD_WORDS) for b in (m.get("breathe") or []) if isinstance(b, str) and b.strip()]
         br = [b for b in br if not any(re.search(r"\b" + re.escape(x) + r"\b", b.lower()) for x in bad)][:6] or [world]
         snd = [x for x in (m.get("sound") or []) if x in SOUNDS][:3]
-        return {"world": world, "breathe": br, "clothes": clip_words(m.get("clothes", ""), 14), "sound": snd,
+        pool = []
+        for f in (m.get("pool") or [])[:14]:                       # a fragment that fails is dropped on its own
+            if not isinstance(f, dict) or f.get("kind") not in KINDS:
+                continue
+            t = clip_words(f.get("text", ""), MAX_FRAGMENT_WORDS)
+            if t and not any(re.search(r"\b" + re.escape(x) + r"\b", t.lower()) for x in bad):
+                pool.append({"kind": f["kind"], "text": t, "sound": [x for x in (f.get("sound") or []) if x in SOUNDS][:2]})
+        return {"world": world, "breathe": br, "clothes": clip_words(m.get("clothes", ""), 14), "sound": snd, "pool": pool,
                 "line": clip_words(m.get("line", ""), int(bible.get("line_words", 28))), "written": written}
 
     def prompt(self, life, event, moments, bible):
@@ -173,7 +191,7 @@ class Director:
             if h in self.cache:
                 self.stats["cached"] += 1
                 return self.cache[h]
-        body = request_body(model, system, user, 1500 + 700 * len(moments), bible)
+        body = request_body(model, system, user, 1500 + 700 * len(moments) + 500 * sum(1 for m in moments if m["key"].endswith(":arrive")), bible)
         t0 = time.perf_counter()
         data, err = None, ""
         for attempt in range(2):
@@ -212,7 +230,8 @@ class Director:
             else:
                 self.stats["rejected"] += 1
         self.stats["last_error"] = ""
-        self.stats["last"] = {"event": event.get("title", ""), "moments": {k: {"world": v["world"], "passage": v["breathe"], "clothes": v["clothes"], "line": v["line"], "sound": v.get("sound", [])}
+        self.stats["last"] = {"event": event.get("title", ""), "moments": {k: {"world": v["world"], "passage": v["breathe"], "clothes": v["clothes"], "line": v["line"], "sound": v.get("sound", []),
+                                                                             "pool": [f"{f['kind']}: {f['text']}" for f in v.get("pool", [])]}
                                                                          for k, v in list(out.items())[:4]}}
         print(f"[director] {event.get('title', '')}: {len(out)}/{len(moments)} moments in {ms / 1000:.1f} s ({model})", flush=True)
         for k, v in out.items():

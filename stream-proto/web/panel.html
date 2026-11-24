@@ -259,8 +259,13 @@ label.txt { display: flex; flex-direction: column; gap: 8px; font-size: 13px; co
 
     <!-- WORLD -->
     <section class="tab" id="t_world" role="tabpanel">
-      <p class="lead">The world is always on its way somewhere. A change of place is painted as a run of pictures the screen dissolves through; inside each event the life moves on through its <b>passage</b> (the years until the next event).</p>
+      <p class="lead">The world is always on its way somewhere. <b>Ever-changing</b>: every picture is painted on its own and chance sets the rhythm (the shot, the light, the cut). <b>Continuous</b>: the earlier way, one picture morphing into the next through the event's <b>passage</b>.</p>
       <div class="cards">
+        <div class="card wide"><h3>World rules</h3>
+          <div class="seg" style="max-width:420px"><div class="opts" id="s_rules"><button type="button" data-v="ever">Ever-changing</button><button type="button" data-v="continuous">Continuous</button></div></div>
+          <label class="ctl"><span>Move</span><span class="v" id="moveV"></span><input id="move" type="range" min="0" max="1" step="0.05"><small>Ever-changing: how far each picture drifts while it is up (a slow push in, a pull out, a slide). 0 = still.</small></label>
+          <div class="status" id="rules_now">–</div>
+        </div>
         <div class="card"><h3>How far it moves</h3><div class="grid2 pace" id="pace_world"></div></div>
         <div class="card"><h3>One life, one look</h3>
           <label class="ctl"><span>Layout hold</span><span class="v" id="layout_holdV"></span><input id="layout_hold" type="range" min="0" max="1" step="0.05"><small>How much every world of a life shares its composition. 0 = each place composed afresh; high = places change less.</small></label>
@@ -434,7 +439,7 @@ label.txt { display: flex; flex-direction: column; gap: 8px; font-size: 13px; co
 <script>
 const $ = (id) => document.getElementById(id);
 const SLIDERS = ["cn_strength", "lora_a_w", "lora_b_w", "ip_style", "guidance", "change", "world_steps", "steady", "ghost_guard", "skip_still", "child_until", "child_cn", "parallax",
-                 "layout_hold", "palette_hold", "drift", "between_steps", "dissolve", "push", "world_yield"];
+                 "layout_hold", "palette_hold", "drift", "between_steps", "dissolve", "push", "world_yield", "move"];
 const TEXTS = ["style_prompt", "negative"];
 const fmt = (k, v) => ["world_steps", "child_until", "between_steps"].includes(k) ? String(Math.round(v)) : ["parallax", "push"].includes(k) ? (+v).toFixed(3)
   : k === "world_yield" ? (+v).toFixed(2) + " s" : (+v).toFixed(2);
@@ -613,6 +618,8 @@ const PACE = [
   ["Body", null, 0, 0, 0, "", "pace"],
   ["gene", "Each trait", 0.5, 8, 0.5, "how long each trait is named as it emerges on the baby", "pace"],
   ["takeover", "The kid emerges", 1, 15, 0.5, "the baby fading into your portrait", "pace"],
+  ["shot_min", "Ever-changing: short gap", 0.8, 8, 0.1, "the usual shortest time between two pictures (chance picks each gap; bursts go quicker)", "world"],
+  ["shot_max", "Ever-changing: long gap", 3, 30, 0.5, "the usual longest (now and then chance holds a picture longer than this)", "world"],
   ["w:keep", "Arriving keeps", 0, 0.9, 0.05, "how much of the picture survives when the life moves to the next event (lower = a more different place)", "world"],
   ["w:turn_keep", "An outcome keeps", 0, 0.9, 0.05, "the same, when the world turns into what happened", "world"],
   ["w:chapter_keep", "A chapter keeps", 0, 0.9, 0.05, "the same, after a chapter (lowest: a new stretch of life)", "world"],
@@ -699,6 +706,7 @@ seg("s_dir", (v) => { if (pace) paceSave("w:director", +v); });
 seg("s_voice", (v) => liveSend({ voice: v === "on" }));
 seg("s_sound", (v) => liveSend({ sound: { on: v === "on" } }));
 seg("s_subs", (v) => liveSend({ subtitles: v }));
+seg("s_rules", (v) => liveSend({ world_rules: v }));
 let liveTimer = 0, livePending = {};
 document.querySelectorAll("input[data-s]").forEach(inp => inp.addEventListener("input", () => {
   $(inp.id + "V").textContent = (+inp.value).toFixed(0) + " dB";
@@ -774,6 +782,8 @@ async function gamePoll() {
     segShow("s_ui", wantUi);
     segShow("s_voice", L.voice === false ? "off" : "on");
     segShow("s_sound", L.sound && L.sound.on === false ? "off" : "on");
+    segShow("s_rules", L.world_rules || "ever");
+    $("rules_now").textContent = fresh && s.shots ? s.shots : "–";
     $("snd_now").textContent = fresh ? (s.sound || "–") : "–"; segShow("s_subs", L.subtitles || "");
     const vs = fresh ? s.voice : "", waiting = fresh && L.voice !== false && vs !== "ready" && s.voice_note === "off on the panel";
     if (waiting) { chip("c_voice", "", "on from the next life"); $("c_voice").title = ""; } else {
@@ -815,7 +825,8 @@ async function gamePoll() {
         $("d_list").dataset.key = key;
         const esc = (x) => String(x || "").replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
         $("d_list").innerHTML = Object.entries(d.last.moments).map(([k, m]) => `<div class="m"><div class="k">${esc(k)}${m.clothes ? " · wears " + esc(m.clothes) : ""}</div><div class="w">${esc(m.world)}</div>
-          ${(m.passage || []).length ? `<ol>${m.passage.map(p => `<li>${esc(p)}</li>`).join("")}</ol>` : ""}</div>`).join("");
+          ${(m.passage || []).length ? `<ol>${m.passage.map(p => `<li>${esc(p)}</li>`).join("")}</ol>` : ""}
+          ${(m.pool || []).length ? `<div class="k">its pool (ever-changing)</div><ul>${m.pool.map(p => `<li>${esc(p)}</li>`).join("")}</ul>` : ""}</div>`).join("");
       }
     }
   } catch (e) { chip("c_game", "bad", "–"); }
