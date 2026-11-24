@@ -214,6 +214,8 @@ label.txt { display: flex; flex-direction: column; gap: 8px; font-size: 13px; co
     <div class="seg"><h2>Avatar</h2>
       <div class="opts" id="s_avatar"><button type="button" data-v="portrait">Portrait</button><button type="button" data-v="painted">Painted</button></div>
       <div class="help">Portrait: your face painted at each age, moved live. Painted: the camera repainted frame by frame. Switches at the next event.</div>
+      <div class="opts" id="s_body"><button type="button" data-v="arms">Body + arms</button><button type="button" data-v="lean">Body leans</button><button type="button" data-v="still">Still</button></div>
+      <div class="help">The portrait's body. Body + arms: painted waist up; it leans and sways with you, and an arm that hangs free follows yours. Body leans: no arms. Still: head and shoulders, only the face moves. The look changes at the next age; the movement at once.</div>
     </div>
     <div class="seg"><h2>Director</h2>
       <div class="opts" id="s_dir"><button type="button" data-v="1">On</button><button type="button" data-v="0">Off</button></div>
@@ -521,6 +523,7 @@ function show(s, controls) {
     ["lora_a", "lora_b"].forEach(k => { $(k).value = s.tune[k]; });
   }
   segShow("s_avatar", s.tune.avatar || "portrait");
+  segShow("s_body", s.tune.body || "arms");
   fillLoras(s.loras);
   const r = s.readout;
   chip("c_server", r.ready ? "ok" : "warn", r.ready ? r.painter : "loading…");
@@ -702,6 +705,7 @@ const liveSend = (body) => fetch("/game/live", { method: "POST", headers: { "Con
 const command = (cmd) => fetch("/game/command", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cmd }) }).catch(() => {});
 seg("s_ui", (v) => liveSend({ ui: v }));
 seg("s_avatar", (v) => send("avatar", v, 0));
+seg("s_body", (v) => send("body", v, 0));
 seg("s_dir", (v) => { if (pace) paceSave("w:director", +v); });
 seg("s_voice", (v) => liveSend({ voice: v === "on" }));
 seg("s_sound", (v) => liveSend({ sound: { on: v === "on" } }));

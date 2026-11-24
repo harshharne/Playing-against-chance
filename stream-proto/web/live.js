@@ -22,11 +22,15 @@
 //                                         // (LivePortrait on the server), cut out and standing in the world. A second
 //                                         // call dissolves into the new one over `fade` ms, both moving with you. null = none
 //   live.photo()                          // a still of the camera (mirrored), to paint the portraits from
-//   live.setPortraitPlace({ x, scale })   // where the portrait stands (x: 0..1 across); null = the middle
+//   await live.portrait(jpegBlob, { fade, frame })   frame: "half" (waist up: its body moves with yours, BODY on /panel)
+//                                         // or "bust" (head and shoulders)
+//   live.resetBody()                      // where you stand now is "upright, in the middle" (each event: game.html)
+//   live.setPortraitPlace({ scale })      // the portrait's size; it always stands in the middle
 //   live.stat                             // fps, timings, notes for a status line
 
 import { findCamera, builtInCamera, listCameras, saveCamera } from "./cameras.js";
 import { createParallax } from "./parallax.js";
+import { createBodyWarp, createMotion, fromMediaPipe, MARGIN } from "./bodywarp.js";
 
 export function createLive({ out, video, params }) {
   const octx = out.getContext("2d");
@@ -40,7 +44,7 @@ export function createLive({ out, video, params }) {
   let person = null, personAt = 0, fade = 150, lastSig = null, held = false;
   let showReal = true, personAlpha = 1, control = null, serverPose = false;
   const px = createParallax(); let par = [0, 0], parallax = 0.03, dissolve = 0.5, pushAmt = 0.02, moveAmt = 0.5, serverHead = null;
-  let personPose = null, prevPose = null, livePose = null, avatarCfg = "painted", animatorCfg = false;
+  let personPose = null, prevPose = null, livePose = null, avatarCfg = "painted", animatorCfg = false, bodyCfg = "arms";
   let segmenter = null, segImage = null, segOk = false, camCover = 0, scene = null;
   const stat = { ms: 0, bgMs: 0, times: [], note: "", seg: "", online: false, engine: "", references: true, fps: "–" };
 
@@ -254,7 +258,18 @@ export function createLive({ out, video, params }) {
     if (b) { g.globalAlpha = k; g.drawImage(b.img, 0, 0, W, H); g.globalAlpha = 1; }
   }
   const rTimes = [];                                         // when the screen was drawn: the page's own frame rate (D line)
+  // a frame that fails (a broken image, a lost WebGL context) is skipped and said on the D line: the screen never stops
+  let frameErrors = 0;
   function render(now) {
+    try { renderFrame(now); }
+    catch (e) {
+      frameErrors++; stat.frameError = `${frameErrors} frame(s) failed: ${(e && e.message || e).toString().slice(0, 120)}`;
+      if (frameErrors < 5) console.warn("[live] a frame failed:", e);
+      try { octx.setTransform(1, 0, 0, 1, 0, 0); octx.globalAlpha = 1; octx.globalCompositeOperation = "source-over"; } catch (e2) {}
+      requestAnimationFrame(render);
+    }
+  }
+  function renderFrame(now) {
     if (held) { requestAnimationFrame(render); return; }      // everything holds still (the die is rolling)
     stepWorld(now);
     octx.setTransform(S, 0, 0, S, 0, 0);                       // draw in painting units on the bigger screen canvas
@@ -392,6 +407,53 @@ export function createLive({ out, video, params }) {
   }
 
 
+  // ---------- BODY: the portrait's body follows yours (bodywarp.js; BODY on /panel) ----------
+  // Your skeleton: MediaPipe Pose on the camera, ~30 times a second, mirrored like the screen. The painting's skeleton:
+  // the same reader on each portrait, once. Without a reader (no internet for MediaPipe), or with no shoulders found in
+  // the painting, the portrait simply stands still, as before.
+  const B = { warp: null, motion: createMotion(), poser: null, imgPoser: null, loading: false, at: 0, ts: 0, test: null, note: "" };
+  async function startBody() {
+    if (B.poser || B.loading || !vision) return;
+    B.loading = true;
+    try {
+      const model = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task";
+      B.poser = await vision.mod.PoseLandmarker.createFromOptions(vision.files, { baseOptions: { modelAssetPath: model, delegate: "GPU" }, runningMode: "VIDEO", numPoses: 1 });
+      B.imgPoser = await vision.mod.PoseLandmarker.createFromOptions(vision.files, { baseOptions: { modelAssetPath: model, delegate: "GPU" }, runningMode: "IMAGE", numPoses: 1 });
+    } catch (e) { console.warn("body pose unavailable:", e); B.note = "no body reader (it didn't load: check internet)"; }
+    B.loading = false;
+  }
+  function bodyOn() { return bodyCfg !== "still" && avatarCfg === "portrait"; }
+  function trackBody(now) {                                  // your skeleton -> the motion (both portraits share it)
+    if (!bodyOn()) return;
+    if (!B.warp) { B.warp = createBodyWarp(); if (!B.warp) { B.note = "no WebGL for the body"; return; } }
+    if (B.test) { if (now - B.at >= 33) { B.motion.update(B.test(now), Math.min(100, now - (B.at || now))); B.at = now; } return; }
+    if (!B.poser) { startBody(); return; }
+    if (now - B.at < 33 || !video.videoWidth) return;        // ~30 a second is plenty
+    const dt = Math.min(100, now - (B.at || now)); B.at = now;
+    try {
+      B.ts = Math.max(B.ts + 1, now);
+      const res = B.poser.detectForVideo(video, B.ts), lm = res.landmarks && res.landmarks[0];
+      B.motion.update(lm ? fromMediaPipe(lm, video.videoWidth, video.videoHeight, true) : null, dt);
+    } catch (e) { B.motion.update(null, dt); }
+  }
+  async function rigFor(st, blob) {                         // the painting's skeleton, once per portrait
+    st.rig = null; st.rigNote = ""; st.blob = blob; st.rigTried = false;
+    if (!bodyOn() || !blob) return;
+    st.rigTried = true;
+    if (!B.warp) { B.warp = createBodyWarp(); if (!B.warp) { B.note = "no WebGL for the body"; return; } }
+    if (B.testRest) { st.rig = B.warp.rig(B.testRest); st.rigNote = st.rig ? st.rig.why.join(", ") : "no shoulders"; return; }
+    for (let t = 0; t < 40 && !B.imgPoser && !B.note; t++) { startBody(); await new Promise(r => setTimeout(r, 250)); }
+    if (!B.imgPoser || !B.warp) return;
+    try {
+      const bmp = await createImageBitmap(blob);
+      const res = B.imgPoser.detect(bmp), lm = res.landmarks && res.landmarks[0];
+      bmp.close();
+      st.rig = lm ? B.warp.rig(fromMediaPipe(lm, 1, 1, false)) : null;
+      st.rigNote = st.rig ? st.rig.why.join(", ") : "no shoulders found in the portrait: it stands still";
+    } catch (e) { st.rigNote = "the portrait's skeleton failed: it stands still"; }
+  }
+  function resetBody() { B.motion.reset(); }
+
   // ---------- the portrait: your face painted at your age, moved live by you, standing in the world ----------
   // The server's animator (LivePortrait) moves the portrait with your face: camera frames go out over a WebSocket,
   // the moved portrait comes back. During an age change it moves TWO portraits with the same motion (the one you
@@ -400,7 +462,8 @@ export function createLive({ out, video, params }) {
   // world, growing with your age, drifting a little with your head.
   const P = { ws: null, flying: 0, sentAt: 0, main: null, next: null, k: 0, fade: 2000, t0: 0, stage: "one", lastOk: 0, lost: false,
               done: null, x: 0.5, place: null, cut: null, mix: null, sendCanvas: null };
-  function pStream() { return { bmp: null, matte: document.createElement("canvas"), mattedAt: 0, alpha: null, cut: document.createElement("canvas"), cutOf: null, cutV: -1, matteV: 0 }; }
+  function pStream(frame = "bust") { return { bmp: null, matte: document.createElement("canvas"), mattedAt: 0, alpha: null, cut: document.createElement("canvas"), cutOf: null, cutV: -1, matteV: 0,
+                                             frame, rig: null, rigNote: "", bent: document.createElement("canvas") }; }
   const PFLY = 2;                                            // two frames in flight: the network's wait overlaps the GPU's work
   function pConnect() {
     if (P.ws && P.ws.readyState <= 1) return;
@@ -475,6 +538,7 @@ export function createLive({ out, video, params }) {
     if (now - st.mattedAt < 120 && st.mattedAt) return m;
     st.mattedAt = now;
     const g = m.getContext("2d");
+    if (B.testMatte && B.testMatte.naturalWidth !== 0) { g.clearRect(0, 0, SEG, SEG); g.drawImage(B.testMatte, 0, 0, SEG, SEG); st.segOk = true; st.matteV++; return m; }   // (tests only)
     if (segImage && st.bmp) {
       const sg = segCanvas.getContext("2d"); sg.clearRect(0, 0, SEG, SEG); sg.drawImage(st.bmp, 0, 0, SEG, SEG);
       try {
@@ -520,38 +584,52 @@ export function createLive({ out, video, params }) {
     g.globalCompositeOperation = "source-over";
     return c;
   }
+  // one portrait as it stands now: the cut-out, bent by your body when BODY is on and its rig was found
+  function piece(st, now, side) {
+    const px2 = Math.round(side * S), cut = cutPortrait(st, now, px2);
+    if (bodyOn() && !st.rigTried && st.blob) rigFor(st, st.blob);   // BODY switched on after this portrait came: find its skeleton now
+    if (!bodyOn() || !st.rig || !B.warp) return { c: cut, ox: 0, oy: 0, w: side, h: side };
+    const rig = bodyCfg === "lean" ? (st.leanRig || (st.leanRig = { ...st.rig, arms: [null, null] })) : st.rig;
+    const fw = Math.round(px2 * (1 + 2 * MARGIN.x)), fh = Math.round(px2 * (1 + MARGIN.top));
+    const gl = B.warp.render(cut, rig, B.motion.state, fw, fh);
+    const b = st.bent; if (b.width !== fw || b.height !== fh) { b.width = fw; b.height = fh; }
+    const bg = b.getContext("2d"); bg.clearRect(0, 0, fw, fh); bg.drawImage(gl, 0, 0);
+    return { c: b, ox: -side * MARGIN.x, oy: -side * MARGIN.top, w: side * (1 + 2 * MARGIN.x), h: side * (1 + MARGIN.top) };
+  }
   function drawPortrait(g, now) {
     pSend();
     if (!P.main.bmp) return;
+    trackBody(now);
     const age = control && control.age != null ? +control.age : 30;
-    const pl = P.place || {}, home = pl.x ?? 0.5;
-    const side = H * (0.66 + 0.3 * Math.max(0, Math.min(1, (age - 4) / 14))) * (pl.scale || 1);   // a child stands smaller in the world
-    const sh = serverHead && performance.now() - serverHead.at < 800 ? serverHead : null;
-    P.x += ((sh ? home + (sh.x - 0.5) * 0.5 : home) - P.x) * 0.05;                 // drifts a little with you, never off screen
-    const x = Math.max(0, Math.min(W - side, P.x * W - side / 2)), y = H - side;
-    const px2 = Math.round(side * S);                        // cut at screen resolution
+    const pl = P.place || {}, grow = Math.max(0, Math.min(1, (age - 4) / 14));          // a child stands smaller in the world
+    // the portrait always stands in the middle, at the bottom (its body sways with yours; it never drifts away)
+    const sizeOf = (st) => H * (st.frame === "half" ? 0.72 + 0.18 * grow : 0.66 + 0.3 * grow) * (pl.scale || 1);
+    const at = (st) => { const side = sizeOf(st); return [W / 2 - side / 2, H - side, side]; };
     let k = 0;
     if (P.next && P.next.bmp && P.t0) {
       const r = Math.min(1, (now - P.t0) / P.fade); k = r * r * (3 - 2 * r);
       if (r >= 1 && P.stage === "two") { P.stage = "promoting"; if (P.ws && P.ws.readyState === 1) P.ws.send(JSON.stringify({ cmd: "promote" })); }
     }
     if (P.stage === "promoting") k = 1;
+    const put = (gg, st, dx = 0, dy = 0) => { const [x, y, side] = at(st), p = piece(st, now, side); gg.drawImage(p.c, x + p.ox - dx, y + p.oy - dy, p.w, p.h); };
     g.globalAlpha = personAlpha;
-    if (k <= 0.001 || !(P.next && P.next.bmp)) g.drawImage(cutPortrait(P.main, now, px2), x, y, side, side);
-    else if (k >= 0.999) g.drawImage(cutPortrait(P.next, now, px2), x, y, side, side);
+    if (k <= 0.001 || !(P.next && P.next.bmp)) put(g, P.main);
+    else if (k >= 0.999) put(g, P.next);
     else {                                                   // a true crossfade of two cut-outs (their outlines differ: added, not stacked)
       const m = P.mix || (P.mix = document.createElement("canvas"));
-      if (m.width !== px2) { m.width = m.height = px2; }
-      const mg = m.getContext("2d"); mg.clearRect(0, 0, px2, px2);
-      mg.globalAlpha = 1 - k; mg.drawImage(cutPortrait(P.main, now, px2), 0, 0);
-      mg.globalAlpha = k; mg.globalCompositeOperation = "lighter"; mg.drawImage(cutPortrait(P.next, now, px2), 0, 0);
+      if (m.width !== W * S || m.height !== H * S) { m.width = W * S; m.height = H * S; }
+      const mg = m.getContext("2d"); mg.setTransform(S, 0, 0, S, 0, 0); mg.clearRect(0, 0, W, H);
+      mg.globalAlpha = 1 - k; put(mg, P.main);
+      mg.globalAlpha = k; mg.globalCompositeOperation = "lighter"; put(mg, P.next);
       mg.globalCompositeOperation = "source-over"; mg.globalAlpha = 1;
-      g.drawImage(m, x, y, side, side);
+      g.drawImage(m, 0, 0, W, H);
     }
     g.globalAlpha = 1;
+    stat.body = !bodyOn() ? "" : B.note || `${bodyCfg === "lean" ? "leans" : "arms"}: ${P.main.rig ? P.main.rigNote : P.main.rigNote || "finding the portrait's skeleton"}` +
+      (B.warp ? ` · ${B.warp.stat.ms.toFixed(1)} ms` : "");
   }
   function finishAge(ok) { const f = P.done; P.done = null; P.t0 = 0; if (f) f(ok); }
-  async function portrait(blob, { fade = 2000 } = {}) {
+  async function portrait(blob, { fade = 2000, frame = "bust" } = {}) {
     if (!blob) {                                             // no portrait: back to nothing
       if (P.ws && P.ws.readyState === 1) P.ws.send(JSON.stringify({ cmd: "drop" }));
       for (const st of [P.main, P.next]) if (st && st.bmp) st.bmp.close();
@@ -561,7 +639,8 @@ export function createLive({ out, video, params }) {
     if (!P.main) {                                           // the first: set it, and it's there as soon as frames come
       const r = await fetch("/animate/source", { method: "POST", body: blob }).then(r => r.json()).catch(() => ({ ok: false }));
       if (!r.ok) { stat.portraitNote = r.note || "the portrait couldn't be set"; return false; }
-      P.main = pStream(); P.stage = "one"; P.lastOk = performance.now(); P.lost = false;
+      P.main = pStream(frame); P.stage = "one"; P.lastOk = performance.now(); P.lost = false;
+      rigFor(P.main, blob);                                  // (it stands still until its skeleton is found)
       return true;
     }
     if (P.stage !== "one") {                                 // a change is under way: let it land first (it never jumps)
@@ -569,14 +648,15 @@ export function createLive({ out, video, params }) {
     }
     const r = await fetch("/animate/source?slot=next", { method: "POST", body: blob }).then(r => r.json()).catch(() => ({ ok: false }));
     if (!r.ok || !P.main) { stat.portraitNote = r.note || "the next portrait couldn't be set"; return false; }
-    P.next = pStream(); P.fade = Math.max(300, fade); P.t0 = 0; P.stage = "two";
+    P.next = pStream(frame); P.fade = Math.max(300, fade); P.t0 = 0; P.stage = "two";
+    rigFor(P.next, blob);
     return new Promise(res => { P.done = res; });
   }
   function setAnimatorOpts(o) {                              // the portrait's movement, from /panel
     P.opts = { ...(P.opts || {}), ...o };
     if (P.ws && P.ws.readyState === 1) P.ws.send(JSON.stringify({ cmd: "opts", ...P.opts }));
   }
-  function setPortraitPlace(p) { P.place = p || null; }      // where the portrait stands: { x: 0..1 across, scale } (null = the middle)
+  function setPortraitPlace(p) { P.place = p || null; }      // the portrait's size: { scale } (null = as it is); it always stands in the middle
   function photo() {                                         // the camera, mirrored, full size
     if (!video.videoWidth) return Promise.resolve(null);
     const c = document.createElement("canvas"); c.width = video.videoWidth; c.height = video.videoHeight;
@@ -590,7 +670,7 @@ export function createLive({ out, video, params }) {
     try {
       const m = await (await fetch("/config", { cache: "no-store" })).json();
       if (m.width !== W || m.height !== H || (m.out_scale || 2) !== S) { W = m.width; H = m.height; S = m.out_scale || 2; sizeCanvases(); }
-      serverPose = !!m.server_pose; worldLook(m); avatarCfg = m.avatar || "painted"; animatorCfg = !!m.animator;
+      serverPose = !!m.server_pose; worldLook(m); avatarCfg = m.avatar || "painted"; animatorCfg = !!m.animator; bodyCfg = m.body || "arms";
       stat.engine = m.engine; stat.references = m.references;
       if (lookSeen === null) { lookSeen = m.look; tuneSeen = m.tune; }
       stat.filter = m.filter || ""; stat.skip = m.skip_still;
@@ -614,7 +694,7 @@ export function createLive({ out, video, params }) {
       if (lookSeen !== null && m.look !== lookSeen && lastWorld)                     // the look: the same world again (same seed), in the new look
         world(lastWorld.prompt, { ...lastWorld.o, from: "", base: "none", keep: 0, frames: 1, breath: 0, fresh: false, polite: false, dur: 800 });
       lookSeen = m.look; tuneSeen = m.tune; shapeMode = m.shape || "depth"; stat.filter = m.filter || ""; stat.skip = m.skip_still;
-      serverPose = !!m.server_pose; worldLook(m); avatarCfg = m.avatar || "painted"; animatorCfg = !!m.animator;
+      serverPose = !!m.server_pose; worldLook(m); avatarCfg = m.avatar || "painted"; animatorCfg = !!m.animator; bodyCfg = m.body || "arms";
       if ((shapeMode === "pose" || shapeMode === "both") && !serverPose) startPoser();
     } catch (e) {}
   }, 1000);
@@ -846,7 +926,9 @@ export function createLive({ out, video, params }) {
   const camera = startCamera();
   connect();
   return {
-    stat, setPerson, setBackground, world, paintShot, showShot, dropShot, worldBusy, setScene, portrait, photo, setPortraitPlace, setAnimatorOpts, avatarMode: () => (avatarCfg === "portrait" && animatorCfg ? "portrait" : "painted"),   // what can run now
+    stat, setPerson, setBackground, world, paintShot, showShot, dropShot, worldBusy, setScene, portrait, photo, setPortraitPlace, setAnimatorOpts, resetBody,
+    bodyMode: () => (bodyOn() ? bodyCfg : "still"),
+    _bodyTest: { live(fn) { B.test = fn; }, rest(sk) { B.testRest = sk; }, matte(c) { B.testMatte = c; }, motion: () => B.motion.state, stat: () => ({ ...B.warp ? B.warp.stat : {}, main: P.main && P.main.rigNote }) }, avatarMode: () => (avatarCfg === "portrait" && animatorCfg ? "portrait" : "painted"),   // what can run now
     avatarWanted: () => avatarCfg,                           // what /panel asks for (the animator may still be loading)
     refresh, camera, hold, setReal, setPersonAlpha, setControl, where, skinTone, nextCamera,
     worldState: () => ({ queued: worlds.length, k: wk, textures: px ? px.textures : 0, webgl: !!(px && px.ok) }),

@@ -228,7 +228,7 @@ picture morphing into the next. web/worldclock.js runs it; chance rolls everythi
   initial. Font in web/fonts (OFL), so no internet is needed.
 - The fog moves: it rolls and curls, its edges breathe, wisps drift over the picture, and at every change of place it
   thickens over the middle and clears as the new place forms (SWELL in ui-fog.js).
-- In the fog the portrait stands to the right (the event's name has the middle).
+- In the fog the portrait stands in the middle too, a little smaller.
 - Legibility: every line is fitted to the screen (a long option or title shrinks before it would run off), the options
   sit on one fog bank, more than five options go on two rows, and TYPE SIZE on the panel scales it all.
 - A switch during a choice waits until the choice is over.
@@ -239,7 +239,20 @@ picture morphing into the next. web/worldclock.js runs it; chance rolls everythi
   ahead of time (POST /portrait/from: this life's seed, so all ages look like one person; your clothes from Whom and
   the outcomes; what the Body throw gave you). Children are repainted more (0.75) than adults (0.6).
 - The animator (LivePortrait) moves the portrait with your face. It is cut out of its plain background (MediaPipe, in
-  the browser) and stands at the bottom of the world, growing with your age, drifting a little with your head.
+  the browser) and stands at the bottom of the world, in the middle, growing with your age.
+- BODY on /panel (web/bodywarp.js): the animator moves the face; the browser bends the rest of the painting to follow
+  your body (MediaPipe Pose on the camera, ~30 a second, mirrored like the screen):
+  - BODY + ARMS (default): portraits are painted waist up ("arms hanging relaxed at the sides"). The chest leans, sways
+    and grows a little as you lean in (against where you usually stand: reset at every event, then following you
+    slowly). An arm that hangs free at the side follows yours (upper arm and forearm, against your shoulder line),
+    drawn as its own layer over the body. An arm painted across the body, on the lap or holding something stays painted
+    on (moving it would leave a second arm behind): the D line says which arms move ("moves", "arm in front of the
+    body", "forearm not hanging").
+  - BODY LEANS: waist up, the chest moves, the arms don't. STILL: head and shoulders, as before.
+  - It is a 2D puppet of the same painting, so the face and clothes can't change. It can't do fingers or a body turning
+    away; a raised arm is rigid and shows a hard edge at the shoulder. If the pose reader or WebGL isn't there, or no
+    shoulders are found in the portrait, the portrait stands still.
+  - The framing changes at the next age (a new portrait is painted); the movement switches at once.
 - As the years pass you DISSOLVE into the next age: the server moves both portraits with the same motion
   (/animate/source?slot=next, then {"cmd":"promote"}), so both faces are alive while one becomes the other. A new
   portrait is only painted when the age moves 3+ years or the clothes change.

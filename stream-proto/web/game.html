@@ -181,7 +181,7 @@ function applyUI(next) {
   try { localStorage.setItem("pac-ui", ui); } catch (e) {}
   sayEl.classList.remove("on"); sayOn = false;                  // whatever the other style was showing goes
   fog.active(ui === "fog");
-  live.setPortraitPlace(ui === "fog" ? { x: 0.73, scale: 0.86 } : null);   // in the fog the event's name has the middle
+  live.setPortraitPlace(ui === "fog" ? { scale: 0.86 } : null);   // the avatar stands in the middle in both styles (a little smaller in the fog)
 }
 // the Bookkeeper: the voice in the room (bookkeeper.md / bookkeeper.json on the server). It speaks at three moments of
 // an event (arriving, the cards, what happened); the text boxes step back while it's there (unless show_text).
@@ -353,8 +353,13 @@ function pWho(age) {
   return n <= 6 ? `a ${n}-year-old little ${kid}` : n < 13 ? `a ${n}-year-old ${kid}` : n < 20 ? `a ${n}-year-old teenage ${kid}`
        : n < 60 ? `a ${n}-year-old ${adult}` : `a ${n}-year-old elderly ${adult}, grey hair, wrinkles`;
 }
-function pPrompt(age, wear) {
-  return [`head and shoulders portrait of ${pWho(age)}`, S.gender === "nb" ? "androgynous" : "", wear ? `in ${wear}` : "", ...S.life,
+// BODY on /panel: a body that moves needs the portrait painted waist up, standing straight with the arms hanging
+// free at the sides (an arm painted across the body or holding something can't move, see bodywarp.js)
+const pFrame = () => (live.bodyMode() === "still" ? "bust" : "half");
+function pPrompt(age, wear, frame = pFrame()) {
+  const shot = frame === "half" ? `waist-up portrait of ${pWho(age)} standing straight` : `head and shoulders portrait of ${pWho(age)}`;
+  return [shot, S.gender === "nb" ? "androgynous" : "", wear ? `in ${wear}` : "", ...S.life,
+          frame === "half" ? "arms hanging relaxed at the sides, a little apart from the body, hands open and visible" : "",
           "looking straight at the viewer, calm face, mouth closed, soft plain background"].filter(Boolean).join(", ");
 }
 function getPhoto() {                                           // a still of you, taken once a life (again if it had no face)
@@ -363,23 +368,24 @@ function getPhoto() {                                           // a still of yo
   return photoTry;
 }
 function paintAt(age, wear = S.wear) {                          // -> a jpeg blob of you at this age (cached), or null
-  const key = `${Math.round(age)}|${wear}|${S.gender}|${S.life.join(",")}`;
+  const frame = pFrame(), key = `${Math.round(age)}|${wear}|${S.gender}|${S.life.join(",")}|${frame}`;
   if (pCache.has(key)) return pCache.get(key);
   const p = (async () => {
     try {
       const ph = await getPhoto(); if (!ph) return null;
       const strength = age < 13 ? 0.75 : 0.6;                    // a child needs more repainting to stop looking like an adult
-      const r = await fetch(`/portrait/from?prompt=${encodeURIComponent(pPrompt(age, wear))}&strength=${strength}&seed=${S.seed}`,
+      const r = await fetch(`/portrait/from?prompt=${encodeURIComponent(pPrompt(age, wear, frame))}&strength=${strength}&seed=${S.seed}&frame=${frame}`,
                             { method: "POST", body: ph, cache: "no-store" });
       if (!r.ok) { pCache.delete(key); return null; }
       if (r.headers.get("X-Face") === "0") photoBlob = null;    // no face in the photo: this portrait stays, the next age gets a new photo
-      return await r.blob();
+      const b = await r.blob(); b.frame = frame;                 // (how it was framed travels with it)
+      return b;
     } catch (e) { pCache.delete(key); return null; }
   })();
   pCache.set(key, p);
   return p;
 }
-const pNeeds = (age) => pMode === "portrait" && age >= 4 && (Math.abs(age - pShown.age) >= 3 || S.wear !== pShown.wear);
+const pNeeds = (age) => pMode === "portrait" && age >= 4 && (Math.abs(age - pShown.age) >= 3 || S.wear !== pShown.wear || pFrame() !== pShown.frame);
 function prepPortrait(ev) { if (ev && pNeeds(ev.age)) paintAt(ev.age); }   // painted ahead, while this event plays
 // The avatar follows /panel (AVATAR) and what's running, at every event: the portrait when it's asked for and the
 // animator is up (also when the animator came up late, or came back), the painted avatar otherwise.
@@ -391,8 +397,8 @@ async function syncAvatar(ev) {
   } else if (pMode === "painted" && want && can) {              // the portrait is possible (again): over to it
     pMode = "portrait";
     const b = await paintAt(ev.age);
-    if (b && await live.portrait(b)) {
-      pShown = { age: ev.age, wear: S.wear }; live.setPerson(null); live.stat.portraitNote = "";
+    if (b && await live.portrait(b, { frame: b.frame })) {
+      pShown = { age: ev.age, wear: S.wear, frame: b.frame }; live.setPerson(null); live.stat.portraitNote = "";
     } else { pMode = "painted"; avatarAt(S.ageF); }
   }
 }
@@ -404,8 +410,8 @@ async function portraitTo(ev, ms) {                             // as the years 
   if (!S.avatar || !pNeeds(ev.age)) return;
   const age = ev.age, wear = S.wear, b = await paintAt(age, wear);
   if (!b || pMode !== "portrait") return;
-  pShown = { age, wear };
-  await live.portrait(b, { fade: Math.max(2000, ms) });
+  pShown = { age, wear, frame: b.frame };
+  await live.portrait(b, { fade: Math.max(2000, ms), frame: b.frame });
 }
 function showAge() {}                                          // the age isn't shown: it lives in the avatar and the bridge lines
 async function ageTo(to, ms) {                                 // the age runs on; the avatar ages with it
@@ -844,7 +850,7 @@ async function takeover(ms, ev) {                               // the live kid 
       pMode = "painted"; live.stat.portraitNote = "the animator isn't loaded on the server: the painted avatar for this life";
     } else {
       const b = await Promise.race([paintAt(ev.age), sleep(Math.max(8000, ms))]);
-      if (b && await live.portrait(b)) pShown = { age: ev.age, wear: S.wear };
+      if (b && await live.portrait(b, { frame: b.frame })) pShown = { age: ev.age, wear: S.wear, frame: b.frame };
       else { pMode = "painted"; live.stat.portraitNote = b ? "the animator found no face in your portrait: the painted avatar for this life" : "your portrait wasn't painted in time: the painted avatar for this life"; }
     }
   }
@@ -928,6 +934,7 @@ async function arrive(ev, prev) {
   if (chapter) { S.phase = Math.min(PHASES.length - 1, S.phase + 1); setPhase(S.phase); }
   const dur = arriveMs(ev, prev);
   sound.age(ev.age); sound.cue("arrive", dur);                  // the bed moves with the years
+  live.resetBody();                                             // where you stand now is "upright, in the middle" (BODY)
   let handover = null;
   if (prev && prev.drawn === "baby") handover = takeover(sec("takeover"), ev);  // the baby becomes the live kid
   else if ((ev.drawn || null) !== (prev && prev.drawn || null)) toScene(ev.drawn === "baby" ? null : ev.drawn);   // drawn scene -> the next one, or the painted world
@@ -1047,7 +1054,7 @@ setInterval(() => {                                              // what the gam
   const ev = T && T.events[evIdx], st = live.stat;
   fetch("/game/report", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
     event: ev ? ev.title : (evIdx < 0 ? "not started" : "the end"), n: evIdx + 1, of: T ? T.events.length : 0, age: Math.floor(S.ageF),
-    ui, ui_next: uiNext || "", avatar: S.avatar ? pMode : "none yet", portrait: st.portraitNote || "", portrait_ms: st.portraitMs || 0, screen_fps: st.drawFps || 0,
+    ui, ui_next: uiNext || "", avatar: S.avatar ? pMode : "none yet", portrait: st.portraitNote || "", portrait_ms: st.portraitMs || 0, body: st.body || "", screen_fps: st.drawFps || 0,
     world: EVER() ? (st.shotPrompt || worldOn || "") : (worldOn || ""), directed: st.directed || 0,
     shots: EVER() ? `ever-changing · ${clock.stat.shown} shown · ${clock.stat.last || "–"}${clock.stat.wait ? " · waiting: " + clock.stat.wait : ""}` : "continuous", director_error: st.directorError || "", paused, turn, tempo,
     place: S.place || "", gender: S.gender || "", wear: S.wear || "", screen: screenUp ? "on" : "off",
@@ -1091,7 +1098,7 @@ function status() {                                             // the hidden de
   if (!debugEl.hidden) {
     const st = live.stat;
     if (!debugEl.dataset.flash) debugEl.textContent = !st.online ? "server offline" : [`${st.fps} fps`, source && `chance ${source}`, `camera: ${st.camera || "?"}`, st.camNote, `die${diceSrc ? ` (${diceSrc})` : ""}: ${dieText}`, `turn: ${turn}`, `screen ${st.drawFps || 0} fps`, st.worldError ? `WORLD ERROR: ${st.worldError}` : (st.worldId ? `world ${st.worldId}${st.bgMs ? ` (${st.bgMs} ms)` : ""}` : ""), st.worldTokens > 77 ? `PROMPT TOO LONG (${st.worldTokens} tokens, 77 are read)` : "", EVER() ? `shots ${clock.stat.shown} (${clock.stat.last || "–"}; ahead ${clock.stat.queue}${clock.stat.failed ? `, failed ${clock.stat.failed}` : ""}${clock.stat.wait ? `; waiting: ${clock.stat.wait}` : ""})` : "continuous world",
-    pMode === "portrait" ? `portrait${pShown.age >= 0 ? " at " + pShown.age : ""}${st.portraitMs ? ` ${st.portraitMs} ms` : ""}${st.portraitNote ? " · " + st.portraitNote : ""}` : (st.portraitNote || ""), +WK.director ? (st.directorError ? `director: ${st.directorError}` : `directed ${st.directed || 0}`) : "director off",
+    pMode === "portrait" ? `portrait${pShown.age >= 0 ? " at " + pShown.age : ""}${st.portraitMs ? ` ${st.portraitMs} ms` : ""}${st.portraitNote ? " · " + st.portraitNote : ""}` : (st.portraitNote || ""), pMode === "portrait" && st.body ? `body ${st.body}` : "", st.frameError || "", +WK.director ? (st.directorError ? `director: ${st.directorError}` : `directed ${st.directed || 0}`) : "director off",
     screenUp ? "" : "screen off: waiting for a throw", `voice: ${V.stat.state}${V.stat.note ? " (" + V.stat.note + ")" : ""}${V.on ? ` · said ${V.stat.said} · heard ${V.stat.heard}` : ""}`, st.note, st.seg].filter(Boolean).join(" · ");
   }
   setTimeout(status, 250);

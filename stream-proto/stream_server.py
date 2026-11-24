@@ -150,6 +150,8 @@ TUNE_DEFAULTS = {
     "parallax": 0.03,         # browser: how far the world shifts with your head (0 = flat)
     "avatar": "portrait",     # the game's avatar: "portrait" = your face painted at each age, moved live by you (LivePortrait);
                               # "painted" = the camera repainted frame by frame (SDXL-Turbo)
+    "body": "arms",           # the portrait's body (web/bodywarp.js): "arms" = painted waist-up, leans, sways and moves its
+                              # arms with yours · "lean" = waist-up, leans and sways only · "still" = head and shoulders, still
     # the world's consistency (one life = one seed, sent by the game)
     "layout_hold": 0.5,       # how much of its noise every world of one life shares, so compositions rhyme (0 = each its own)
     "drift": 0.3,             # how far a breath's noise swings from its event's noise (0 = the same picture again, 1 = unrelated)
@@ -1527,7 +1529,7 @@ async def config():
             "filter": current_style().get("filter", ""), "skip_still": TUNE["skip_still"], "pace": pace_version,
             "out_scale": 2, "world_w": WORLD_W, "world_h": WORLD_H, "parallax": TUNE["parallax"],
             "dissolve": TUNE["dissolve"], "push": TUNE["push"], "move": TUNE["move"],
-            "avatar": TUNE["avatar"], "animator": animator is not None,   # (the animator loads ~45 s after the painter)
+            "avatar": TUNE["avatar"], "body": TUNE["body"], "animator": animator is not None,   # (the animator loads ~45 s after the painter)
             "server_pose": bool(_wb["model"]) or MOCK}
 
 
@@ -1557,6 +1559,8 @@ def clean_tune(d):
             if k == "shape" and v not in ("depth", "pose", "both", "off"):
                 continue
             if k == "avatar" and v not in ("portrait", "painted"):
+                continue
+            if k == "body" and v not in ("arms", "lean", "still"):
                 continue
             if k == "style" and v not in load_styles():
                 continue
@@ -2029,9 +2033,10 @@ async def head():
     return {"head": current_head()}
 
 
-def portrait_crop(img):
-    """A head-and-shoulders square around the face (found by the animator's detector when it's loaded; otherwise
-    the upper middle of the picture), at the portrait size."""
+def portrait_crop(img, frame="bust"):
+    """A square around the face (found by the animator's detector when it's loaded; otherwise the upper middle of the
+    picture), at the portrait size. frame "bust": head and shoulders. "half": waist up, the face near the top, room for
+    the arms (what the camera didn't see is padded and painted in)."""
     import numpy as np
     w, h = img.size
     box = None
@@ -2043,27 +2048,30 @@ def portrait_crop(img):
     if box:
         x1, y1, x2, y2 = box
         s = max(x2 - x1, y2 - y1)
-        side, cx, cy = s * 2.6, (x1 + x2) / 2, (y1 + y2) / 2 + s * 0.35       # room for hair above, shoulders below
+        if frame == "half":                                  # the face's middle at ~20 % from the top
+            side, cx, cy = s * 4.6, (x1 + x2) / 2, (y1 + y2) / 2 + s * 4.6 * 0.3
+        else:
+            side, cx, cy = s * 2.6, (x1 + x2) / 2, (y1 + y2) / 2 + s * 0.35       # room for hair above, shoulders below
     else:
-        side, cx, cy = min(w, h) * 0.9, w / 2, h * 0.45
+        side, cx, cy = (min(w, h) * 1.3, w / 2, h * 0.7) if frame == "half" else (min(w, h) * 0.9, w / 2, h * 0.45)
     l, tp = cx - side / 2, cy - side / 2
     canvas = Image.new("RGB", (int(side), int(side)), img.resize((1, 1)).getpixel((0, 0)))   # edges padded with its mean colour
     canvas.paste(img, (int(-l), int(-tp)))
     return canvas.resize((PORTRAIT, PORTRAIT), Image.LANCZOS), bool(box)
 
 
-def run_portrait_from(img, prompt, seed, strength):
-    crop, found = portrait_crop(img)
+def run_portrait_from(img, prompt, seed, strength, frame="bust"):
+    crop, found = portrait_crop(img, frame)
     with world_paint:
         out = gen.portrait(full_prompt(prompt), seed, crop, strength)
     return jpeg_bytes(out), found
 
 
 @app.post("/portrait/from")
-async def portrait_from(request: Request, prompt: str = "", strength: float = 0.6, seed: int = 0):
+async def portrait_from(request: Request, prompt: str = "", strength: float = 0.6, seed: int = 0, frame: str = "bust"):
     """A portrait painted FROM a photo of the player (the body: a jpeg/png): the face found, framed head and shoulders,
     then repainted by the prompt (an age, clothes). strength = how much is repainted (0.3 keeps a lot of the photo,
-    0.8 keeps little more than the layout)."""
+    0.8 keeps little more than the layout). frame: "bust" (head and shoulders) or "half" (waist up, for BODY)."""
     try:
         img = ImageOps.exif_transpose(Image.open(io.BytesIO(await request.body()))).convert("RGB")
     except Exception:
@@ -2071,7 +2079,7 @@ async def portrait_from(request: Request, prompt: str = "", strength: float = 0.
     prompt = prompt.strip() or "a portrait"
     async with world_lock:
         out, found = await asyncio.to_thread(run_portrait_from, img, prompt, seed or random.randrange(1 << 30),
-                                             max(0.05, min(0.95, strength)))
+                                             max(0.05, min(0.95, strength)), "half" if frame == "half" else "bust")
     return Response(out, media_type="image/jpeg", headers={"Cache-Control": "no-store", "X-Face": "1" if found else "0"})
 
 
