@@ -6,7 +6,9 @@ your files and the tunnel (8766) are never touched.
 
     bash tests/run.sh          # the quick set, ~6 min
     bash tests/run.sh full     # + the soak: 6 lives back to back in one page, ~15 min more (LIVES=10 for more)
-    bash tests/run.sh life     # one test: files | clock | life | drills | panel | live | whom | soak
+    bash tests/run.sh life     # one test: files | clock | face | voice | face | the avatar's steadying (animate.Steady) on made-up tracker data: a slipped frame is held, a huge expression eases off, a neutral caught mid-word drifts back, ordinary movement passes (needs torch: skipped on the Mac) |
+| voice | the Bookkeeper with a fake OpenAI session: one line at a time, nothing cut, the next moment waits for the line before, a stale comment on the cards is dropped, the room's noise gets no reply, a card named during the cards is picked silently, PAUSE still stops it |
+| life | drills | panel | live | whom | soak
 | whom | a life of Where, Whom, the baby: Whom is painted by the picture model (no drawing), with no avatar yet, and the screen never blank |
 
 The first run installs Playwright and its Chromium (~150 MB, into tests/node_modules). The stand-in needs

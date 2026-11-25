@@ -642,12 +642,22 @@ let screenRoll = null, beginAction = null;
 
 // ---------- the deck ----------
 let deckKeys = null, deckPick = null;                          // deckPick(name): the player chose by voice
-function matchCard(cards, said) {                               // the name as the player said it -> that card (or -1)
-  const norm = (x) => String(x || "").toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\b(the|a|an)\b/g, " ").replace(/\s+/g, " ").trim();
+function matchCard(cards, said) {                               // what the player said -> that card (or -1)
+  const STOP = new Set(["the", "a", "an", "and", "of", "to", "in", "on", "at", "for", "your", "you", "i", "id", "ill", "im", "want", "take",
+                        "choose", "pick", "go", "with", "one", "card", "please", "that", "this", "it", "me", "my", "is", "be", "like", "would", "lets", "let"]);
+  const norm = (x) => String(x || "").toLowerCase().replace(/[’']/g, "").replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+  const words = (x) => norm(x).split(" ").filter(w => w.length > 2 && !STOP.has(w));
   const want = norm(said), names = cards.map(c => norm(c.name));
   let i = names.indexOf(want);
-  if (i < 0) { const m = names.map((nm, k) => [k, want && (nm.includes(want) || want.includes(nm))]).filter(x => x[1]); if (m.length === 1) i = m[0][0]; }
-  return i;
+  if (i >= 0) return i;
+  const ORD = { first: 0, second: 1, third: 2, fourth: 3, fifth: 4, sixth: 5, seventh: 6, eighth: 7, last: cards.length - 1 };
+  const NUM = { one: 0, two: 1, three: 2, four: 3, five: 4, six: 5, seven: 6, eight: 7 };
+  const o = want.match(/\b(first|second|third|fourth|fifth|sixth|seventh|eighth|last)\b/) || want.match(/\bnumber (one|two|three|four|five|six|seven|eight|[1-8])\b/);
+  if (o) { const k = ORD[o[1]] ?? NUM[o[1]] ?? (+o[1] - 1); if (k >= 0 && k < cards.length) return k; }
+  const heard = new Set(words(said));                            // the card whose name's words were heard most (and alone)
+  const score = names.map(nm => { const ws = words(nm); return ws.length ? ws.filter(w => heard.has(w) || [...heard].some(h => h.length > 4 && (h.startsWith(w) || w.startsWith(h)))).length / ws.length : 0; });
+  const best = Math.max(...score), at = score.indexOf(best);
+  return best >= 0.3 && score.filter(x => x === best).length === 1 ? at : -1;
 }
 async function deck(cards, onHover = null) {                   // cards rise one by one; resolves with the one you pick
   picking = true;
@@ -769,7 +779,7 @@ async function chosen(ev) {
   await sleep(sec("settle"));
   V.listen("pick"); V.cue(cardsCue(ev));                       // the voice has an opinion while the cards rise
   const { i, els } = await deck(ev.cards, ev.drawn === "map" ? (k) => worldmap.hover(k >= 0 ? ev.cards[k].name : null) : null);
-  V.listen("closed"); V.hush();                                 // the room goes quiet for the throw
+  V.listen("closed");                                           // (its comment on the cards, if already speaking, finishes: nothing is cut)
   const c = ev.cards[i], tg = target(c.target);
   await Promise.all([unsay(), lock(els, i, tg.label, c)]);
   if (FOG() && !diceOn) cardHint(els, i, "press R to roll");
