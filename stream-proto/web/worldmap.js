@@ -62,10 +62,10 @@ export function createWorldMap(canvas) {
     p.save(); p.translate(ox, oy); p.scale(sc, sc);
     for (const n of names) {
       const [r, gg, b] = TINT[n] || [200, 200, 200];
-      p.fillStyle = `rgba(${r},${gg},${b},0.10)`; p.fill(regions[n].path);
+      p.fillStyle = `rgba(${r},${gg},${b},0.22)`; p.fill(regions[n].path);   // (it sits under the fog: strong enough to read)
     }
     p.lineJoin = "round";
-    p.strokeStyle = "rgba(95,80,72,0.55)"; p.lineWidth = 0.9 * dpr / sc;
+    p.strokeStyle = "rgba(80,66,58,0.85)"; p.lineWidth = 1.3 * dpr / sc;
     for (const n of names) p.stroke(regions[n].path);
     p.translate(0.7 * dpr / sc, 0.5 * dpr / sc);
     p.strokeStyle = "rgba(150,120,110,0.18)"; p.lineWidth = 0.6 * dpr / sc;

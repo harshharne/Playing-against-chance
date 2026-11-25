@@ -52,11 +52,22 @@ body.ui-fog .say, body.ui-fog .deck, body.ui-fog .big, body.ui-fog .flip, body.u
   background: radial-gradient(ellipse 60% 55% at 50% 62%, rgba(255,255,255,0.92), rgba(255,255,255,0.7) 50%, rgba(255,255,255,0) 100%);
   filter: blur(18px); opacity: 0; transition: opacity 1.2s ease; }
 .fogl .row.up::before { opacity: 1; }
-.fogl .note { font: 500 calc(clamp(11px, 0.9vw, 15px) * var(--ts, 1))/1 var(--font-event, "PAC Display", serif); letter-spacing: 0.3em; text-transform: uppercase; color: #262626; }
+/* the avatar stands in the middle (body.avatar-on, set by the game): the words keep off its face. The event's name and
+   what happened sit in the band above the head; the options stand in two columns at its sides, each in its own fog */
+body.avatar-on .fogl .stage { top: 15%; left: 18%; right: 18%; gap: 1.2vh; }
+body.avatar-on .fogl .stage .art { font-size: min(var(--fs, 5vw), calc(clamp(30px, 3.4vw, 72px) * var(--ts, 1))) !important; }
+body.avatar-on .fogl .num { font-size: calc(clamp(80px, 16vh, 180px) * var(--ts, 1)); }
+.fogl .row.sides { display: flex; justify-content: space-between; align-items: stretch; top: 24%; bottom: 12%; left: 2.5%; right: 2.5%; }
+.fogl .row.sides .side { width: 22%; display: flex; flex-direction: column; justify-content: center; gap: 3.4vh; }
+.fogl .row.sides::before { left: -3%; right: -3%; top: -12%; bottom: -12%;
+  background: radial-gradient(ellipse 17% 52% at 11% 50%, rgba(255,255,255,0.9), rgba(255,255,255,0.62) 55%, rgba(255,255,255,0) 100%),
+              radial-gradient(ellipse 17% 52% at 89% 50%, rgba(255,255,255,0.9), rgba(255,255,255,0.62) 55%, rgba(255,255,255,0) 100%); }
+.fogl .note { font: 500 calc(clamp(13px, 1.05vw, 19px) * var(--ts, 1))/1 var(--font-event, "PAC Display", serif); letter-spacing: 0.3em; text-transform: uppercase; color: #1d1d1d; }
 .fogl .note b { font-weight: 600; color: var(--ink); }
 .art { font-family: var(--font-event, "PAC Display", "Noto Serif Display", "Didot", serif); text-transform: uppercase; text-align: center; line-height: 1; white-space: nowrap;
        text-shadow: 0 0 1px rgba(255,255,255,0.9), 0 0 9px rgba(255,255,255,0.7); user-select: none; font-kerning: normal; }
 .art.o { font-family: var(--font-option, "PAC Display", "Noto Serif Display", "Didot", serif); }   /* an option (see typefaces.js) */
+.art.o .ln.a, .art.o .ln.b, .art.o .ln.one { font-weight: 520; letter-spacing: 0.07em; }   /* an option's two lines: one weight, one spacing */
 .art .ln { display: block; }
 .art .ln.a { font-weight: 560; letter-spacing: 0.05em; }
 .art .ln.b { font-weight: 300; letter-spacing: 0.13em; }
@@ -79,10 +90,14 @@ body.ui-fog .say, body.ui-fog .deck, body.ui-fog .big, body.ui-fog .flip, body.u
 .fogl .begin { pointer-events: auto; cursor: pointer; background: none; border: 0; padding: 8px 14px; color: inherit; }
 .fogl .num { font: 250 calc(clamp(120px, 30vh, 300px) * var(--ts, 1))/0.9 var(--font-event, "PAC Display", "Noto Serif Display", serif); font-stretch: 62.5%; text-shadow: 0 0 30px rgba(255,255,255,0.9); transition: opacity 0.9s ease, filter 0.9s ease; }
 .fogl .num.pre, .fogl .num.out { opacity: 0; filter: blur(16px); }
-.fogl .end { pointer-events: auto; max-height: 70vh; overflow: auto; font: 300 clamp(14px, 1.2vw, 18px)/1.5 var(--font-event, "PAC Display", serif); text-shadow: 0 0 12px #fff; transition: opacity 1s; }
-.fogl .end table { border-collapse: collapse; } .fogl .end td { padding: 1px 16px 1px 0; vertical-align: top; }
-.fogl .end td:first-child { font-size: 0.8em; color: #555; } .fogl .end td:nth-child(2) { font-size: 0.78em; letter-spacing: 0.16em; text-transform: uppercase; font-weight: 500; }
-.fogl .end i { font-style: italic; color: #555; }
+/* the life, read back: on its own sheet of fog, dark and large enough to read from where the player stands */
+.fogl .end { pointer-events: auto; max-height: 74vh; overflow: auto; padding: 2.4vh 3vw; border-radius: 18px; color: #111;
+  font: 400 calc(clamp(15px, 1.25vw, 24px) * var(--ts, 1))/1.45 var(--font-event, "PAC Display", serif);
+  background: rgba(255,255,255,0.86); box-shadow: 0 0 70px 50px rgba(255,255,255,0.86);   /* a sheet of fog: no hard edge */
+  transition: opacity 1s; }
+.fogl .end table { border-collapse: collapse; } .fogl .end td { padding: 2px 18px 2px 0; vertical-align: top; }
+.fogl .end td:first-child { font-size: 0.8em; color: #444; text-align: right; } .fogl .end td:nth-child(2) { font-size: 0.74em; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 600; white-space: nowrap; }
+.fogl .end i { font-style: italic; color: #444; }
 `;
 
 // ---------- the frame: dark edges, white fog, the picture through the middle (WebGL, half resolution) ----------
@@ -156,6 +171,7 @@ function pickTall(lines, seed) {                              // [line, index, "
   const ln = lines[li], dir = li === 0 ? "up" : "dn";
   let best = -1, score = -1;
   for (let i = 0; i < ln.length; i++) {
+    if (i > 0 && ln[i - 1] !== " ") continue;                    // a word's first letter only (never mid-word)
     const c = ln[i].toUpperCase(), r = PREFER.indexOf(c);
     if (r < 0) continue;
     const mid = 1 - Math.abs(i / Math.max(1, ln.length - 1) - 0.55);   // toward the middle
@@ -183,7 +199,7 @@ export function artHTML(text, { size = "5vw", weights = ["a", "b"], tall: tallSi
 // after it's on the page: the lines of a block spread (gently) to one width; too far apart and they stay centred
 export function fitArt(el) {
   const lines = [...el.querySelectorAll(".ln")];
-  if (lines.length < 2) return;
+  if (lines.length < 2 || el.classList.contains("o")) return;   // (an option's lines stay as set: no stretched letters)
   lines.forEach(l => { l.style.letterSpacing = ""; l.style.marginRight = ""; });
   const ws = lines.map(l => { const r = document.createRange(); r.selectNodeContents(l); return r.getBoundingClientRect().width; });
   const max = Math.max(...ws), fs = parseFloat(getComputedStyle(el).fontSize) || 16;
@@ -293,13 +309,23 @@ export function createFog({ root, sec }) {
   // ---------- the options, along the bottom ----------
   let opts = [], chosen = null, centre = [];
   function deck(cards, onHover, setKeys) {
-    row.innerHTML = ""; row.className = "row";
-    const cols = cards.length <= 5 ? cards.length : Math.ceil(cards.length / 2);          // more than five: two rows
-    row.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
-    const size = sc(cards.length > 5 ? "clamp(15px, 1.4vw, 30px)" : cards.length > 3 ? "clamp(16px, 1.55vw, 32px)" : "clamp(18px, 1.85vw, 38px)");
+    const sides = document.body.classList.contains("avatar-on");   // the avatar in the middle: the options at its sides
+    row.innerHTML = ""; row.className = "row" + (sides ? " sides" : "");
+    let into = () => row;
+    if (sides) {                                               // the first half down the left, the rest down the right (1, 2, 3... in reading order)
+      row.style.gridTemplateColumns = "";
+      const l = node(`<div class="side l"></div>`), r = node(`<div class="side r"></div>`);
+      row.appendChild(l); row.appendChild(r);
+      const half = Math.ceil(cards.length / 2);
+      into = (i) => (i < half ? l : r);
+    } else {
+      const cols = cards.length <= 5 ? cards.length : Math.ceil(cards.length / 2);          // more than five: two rows
+      row.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
+    }
+    const size = sc(sides ? "clamp(18px, 1.75vw, 36px)" : cards.length > 5 ? "clamp(17px, 1.6vw, 34px)" : cards.length > 3 ? "clamp(18px, 1.75vw, 36px)" : "clamp(20px, 2vw, 42px)");
     opts = cards.map((c, i) => {
       const b = node(`<button type="button" class="opt" aria-label="${String(c.name).replace(/"/g, "&quot;")}">${artHTML(c.name, { size, tall: 1.55, initial: true, option: true })}</button>`);
-      row.appendChild(b); return b;
+      into(i).appendChild(b); return b;
     });
     veilTo = 0.26;
     row.classList.add("up");

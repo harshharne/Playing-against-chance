@@ -846,8 +846,10 @@ async function babyArrives() {                                  // the painted h
   const g = S.gender, who = g === "boy" ? "baby boy" : g === "girl" ? "baby girl" : "baby";
   S.baby = `a newborn ${who}${heritage() ? " " + heritage() : ""} lying in a cot, wrapped in a soft blanket, eyes open looking up, tiny hands near the face, close-up portrait, soft window light`;
   const bmp = await portrait(S.baby, false);
-  if (bmp) await baby.show(bmp, sec("world_fade"));
+  if (bmp) { babyShown = true; await baby.show(bmp, sec("world_fade")); }
 }
+let babyShown = false;                                          // the baby, then you, stand in the middle: the words keep off the face
+setInterval(() => document.body.classList.toggle("avatar-on", !!S && !S.ended && (babyShown || !!S.avatar)), 300);
 async function emerge(ev, got) {
   const genes = [{ label: "Your skin", words: skinWords(), life: false }, ...(got.genes || [])];   // (the heritage is in every face prompt already)
   let words = S.baby;
@@ -989,7 +991,7 @@ async function life(begun = false) {                            // begun: the th
   deckGone(); bigEl.classList.remove("on");
   live.setPerson(null); live.setReal(false); live.setPersonAlpha(1); live.setControl({ age: 0, ramp: 1 });
   live.portrait(null); pCache.clear(); photoBlob = null; pShown = { age: -99, wear: "" };
-  baby.hide(0); worldmap.reset(); if (scene) scene.hide(0); scene = null;
+  baby.hide(0); babyShown = false; worldmap.reset(); if (scene) scene.hide(0); scene = null;
   worldmap.load().catch(() => {}); baby.preload();
   await live.whenReady();
   world(T.events[0].scene, { fresh: true, age: 0 });          // a new life: a fresh world, its own seed
@@ -1032,6 +1034,8 @@ async function life(begun = false) {                            // begun: the th
 
 async function ending() {                                       // the life, read back
   setPhase(PHASES.length);
+  S.ended = true;                                               // the ledger takes the middle; you fade back behind it
+  (async () => { for (let k = 1; k <= 20; k++) { live.setPersonAlpha(1 - 0.8 * k / 20); await sleep(60); } })();
   const rows = S.ledger.map(([a, t, what, note]) => `<tr><td>${Math.floor(a)}</td><td>${esc(t)}</td><td>${esc(what)}${note ? ` <i>(${esc(note)})</i>` : ""}</td></tr>`).join("");
   await say({ k: "A LIFE", t: "", s: `<table>${rows}</table>` + (diceOn ? `<br><span style="color:#777;font-size:12px">Throw the die for another life.</span>` : ""), cls: "end", begin: true });
 }
