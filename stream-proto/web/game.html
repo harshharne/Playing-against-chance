@@ -280,9 +280,9 @@ const kickAge = () => `AGE ${Math.floor(S.ageF)}`;                           // 
 
 // ---------- what the Bookkeeper is told: the facts of each moment ([GAME] messages; bookkeeper.md says what to do with them) ----------
 // The game owns every fact. MUST CARRY = what its line has to include, unchanged; the rest it says in its own words.
-const PHASE_WORDS = ["the baseline (birth)", "the crust (childhood to 22)", "adulthood (23 to 48)", "later life (52 on)"];
+const PHASE_WORDS = ["birth", "growing up (to 22)", "adulthood (23 to 48)", "later life (52 on)"];   // (said to the voice: plain words it can't quote oddly)
 const G = (moment, lines) => [`[GAME] ${moment}`, `phase: ${PHASE_WORDS[Math.min(S.phase, PHASE_WORDS.length - 1)]}`, ...lines.filter(Boolean)].join("\n");
-const ageWords = (a) => a < 1 ? "a newborn" : `${Math.floor(a)} years old`;
+const ageWords = (a) => a < 1 ? "a newborn" : `${Math.floor(a)}`;
 function arriveCue(ev, prev) {
   const years = Math.max(0, Math.round((+ev.age || 0) - S.ageF));
   const back = ev.reveals && S.planted[ev.reveals];
@@ -291,7 +291,7 @@ function arriveCue(ev, prev) {
     prev && prev.chapter ? "a new phase of life begins here" : "",
     prev && prev.bridge ? `bridge (retell it in your own words, don't quote it): ${prev.bridge}` : "",
     years ? `years passing now: ${years}` : "",
-    `MUST CARRY: they are ${ageWords(+ev.age || 0)}`,
+    `age now: ${ageWords(+ev.age || 0)} (say it to them your own way, or weave it in; never "they are N years old")`,
     `next: ${ev.title} (${ev.type === "chosen" ? "a choice, then a throw of the die" : ev.type === "happens" ? "chance decides, the player watches" : "a small thing"})`,
     ev.type === "chosen" && ev.setup ? `setup: ${ev.setup}` : "",
     ev.type === "happens" ? (back ? "something small from long ago is coming back. Don't say what." : "something is about to happen. You don't know what.") : "",
@@ -300,16 +300,16 @@ function arriveCue(ev, prev) {
 const cardsCue = (ev) => G("cards", [`event: ${ev.title}`, `${ev.setup || ""}`, "the cards:", ...ev.cards.map(c => `- ${c.name}: ${c.reveals}`)]);
 function outcomeCue(ev, c, got, how, n, tries) {
   const genes = got && got.genes ? `traits emerging on the baby: ${got.genes.map(g => g.label).join(", ")} (and their own skin, from the camera)` : "";
-  if (how === "none") return G("outcome", [`event: ${ev.title}`, `they went for: ${c.name}`, `the throw: ${n}, a miss`, `MUST CARRY: ${ev.miss.text}`]);
+  if (how === "none") return G("outcome", [`event: ${ev.title}`, `the player went for: ${c.name}`, `the throw: ${n}, a miss`, `MUST CARRY: ${ev.miss.text}`]);
   return G("outcome", [`event: ${ev.title}`,
-    how === "hit" ? `they chose ${got.name} and the throw (${n}) got it` :
-    how === "override" ? `they went for ${c.name}, missed all ${tries} throws, and chance's override gave them ${got.name}` :
-                         `they went for ${c.name}, the throw (${n}) missed, and chance allotted ${got.name} instead`,
+    how === "hit" ? `the player chose ${got.name} and the throw (${n}) got it` :
+    how === "override" ? `the player went for ${c.name}, missed all ${tries} throws, and chance's override gave them ${got.name}` :
+                         `the player went for ${c.name}, the throw (${n}) missed, and chance allotted ${got.name} instead`,
     `MUST CARRY: ${got.name}`, got.reveals ? `the card says: ${got.reveals}` : "", genes]);
 }
 function happenedCue(ev, o, mood, back) {
   return G("happened", [`event: ${ev.title}`,
-    back ? `QUOTE (word for word, first): At ${back.age}: ${back.text}` : "",
+    back ? `QUOTE (from when they were ${Math.floor(back.age)}; say only these words, word for word, first): ${back.text}` : "",
     `MUST CARRY: ${o.text}`, `it was a ${mood} turn`]);
 }
 const lifeLines = () => S.ledger.map(([a, t, w, note]) => `- age ${Math.floor(a)}, ${t}: ${w}${note ? ` (${note})` : ""}`);
