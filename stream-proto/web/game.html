@@ -202,7 +202,9 @@ const clock = createWorldClock({ live, sound, sleep, state: () => ({
 // you live in (context.intrusions, by age)
 function intrusionsAt(age) { let w = []; for (const [a, list] of CX().intrusions || []) if (age >= a) w = list; return w; }
 const evNow = () => (T && T.events[Math.max(0, evIdx)]) || {};
-if (new URLSearchParams(location.search).has("test")) window.__pac = { clock, live, sound };   // (for the automated tests only)
+if (new URLSearchParams(location.search).has("test")) window.__pac = { clock, live, sound,   // (for the automated tests only)
+  panel: () => ({ tempo, heritage: heritageMix, ui, rules: worldRules, voiceOn, fonts: fontsNow.slice(), ts: getComputedStyle(document.querySelector(".fogl")).getPropertyValue("--ts").trim(),
+                  fontVar: getComputedStyle(document.documentElement).getPropertyValue("--font-event").trim(), sound: sound._debug().mix, bk: V._live() }) };   // (for the automated tests only)
 addEventListener("pac-voice", (e) => sound.duck(!!(e.detail && e.detail.speaking)));
 const V = createBookkeeper({ onPick: (name) => deckPick ? deckPick(name) : { ok: false, reason: "the cards aren't up" } });
 let scene = null;                                              // the drawn scene on screen now
@@ -1046,21 +1048,21 @@ async function fromPanel() {
       else if (c.cmd === "redraw") fetch("/redraw", { method: "POST" });
     }
     const L = j.live || {}, key = JSON.stringify(L);
-    if (key !== liveSeen) {
+    if (key !== liveSeen) {                                     // each setting on its own: one that fails never stops the rest
       liveSeen = key;
-      tempo = Math.max(0.4, Math.min(2, +L.tempo || 1));
-      heritageMix = L.heritage == null ? 0.5 : Math.max(0, Math.min(1, +L.heritage));
-      fog.setScale(+L.type_scale || 1);
-      if ((L.ui === "glass" || L.ui === "fog") && L.ui !== ui) applyUI(L.ui);
-      if (L.animator) live.setAnimatorOpts(L.animator);
-      V.setSubtitles(L.subtitles || "");
-      if (L.sound) sound.setMix(L.sound);
-      V.setLive(L.bk);                                          // speed, volume, line length, breath, which moments: at once
-      voiceOn = L.voice !== false;
-      if (L.font_event !== fontsNow[0] || L.font_option !== fontsNow[1]) { fontsNow = [L.font_event, L.font_option]; applyTypefaces(L.font_event, L.font_option); }
-      const rules = L.world_rules === "continuous" ? "continuous" : "ever";
-      if (rules !== worldRules) { worldRules = rules; clock.run(EVER()); }
-      if (!voiceOn && V.stat.state !== "off") { V.stop(); V.stat.note = "off on the panel"; }   // off: at once (on: from the next life)
+      const step = (f) => { try { f(); } catch (e) { console.warn("[panel]", e); } };
+      step(() => { tempo = Math.max(0.4, Math.min(2, +L.tempo || 1)); });
+      step(() => { heritageMix = L.heritage == null ? 0.5 : Math.max(0, Math.min(1, +L.heritage)); });
+      step(() => { fog.setScale(+L.type_scale || 1); });
+      step(() => { if ((L.ui === "glass" || L.ui === "fog") && L.ui !== ui) applyUI(L.ui); });
+      step(() => { if (L.animator) live.setAnimatorOpts(L.animator); });
+      step(() => { V.setSubtitles(L.subtitles || ""); });
+      step(() => { if (L.sound) sound.setMix(L.sound); });
+      step(() => { V.setLive(L.bk); });   // speed, volume, line length, breath, which moments, the mic, the waiting: at once
+      step(() => { voiceOn = L.voice !== false; });
+      step(() => { if (L.font_event !== fontsNow[0] || L.font_option !== fontsNow[1]) { fontsNow = [L.font_event, L.font_option]; applyTypefaces(L.font_event, L.font_option); } });
+      step(() => { const rules = L.world_rules === "continuous" ? "continuous" : "ever"; if (rules !== worldRules) { worldRules = rules; clock.run(EVER()); } });
+      step(() => { if (!voiceOn && V.stat.state !== "off") { V.stop(); V.stat.note = "off on the panel"; } });   // off: at once (on: from the next life)
     }
   } catch (e) {}
 }

@@ -340,8 +340,9 @@ real key never leaves the cloud machine.
   and its last line under the event. PAUSE also stops it mid-line.
 - The panel's VOICE tab (saved with the game's live settings): which moments it speaks at (a moment switched off
   is silent, but it still learns what happened), line length (its word limits x this), whether it answers the player,
-  speed, volume, a breath before each line: all at once. Voice, accent, model, calling the player's pick, mic and
-  how long it waits for the player: from the next life, over bookkeeper.json ("As set" = the file).
+  speed, volume, a breath before each line, the mic (laptop / room) and how long it waits for the player: all at
+  once (the mic and the waiting go to the running session). Voice, accent, model, calling the player's pick: from
+  the next life, over bookkeeper.json ("As set" = the file). Which mic: Chrome's (the mic icon in the address bar).
 - The debug line (D) shows the voice: ready / connecting / off (why), lines said and heard.
 - Sound: Chrome may block it until the first click or key. For the installation, start Chrome with
   --autoplay-policy=no-user-gesture-required. The mic uses Chrome's echo cancellation; with speakers in a room,

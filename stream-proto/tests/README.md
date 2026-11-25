@@ -6,7 +6,7 @@ your files and the tunnel (8766) are never touched.
 
     bash tests/run.sh          # the quick set, ~6 min
     bash tests/run.sh full     # + the soak: 6 lives back to back in one page, ~15 min more (LIVES=10 for more)
-    bash tests/run.sh life     # one test: files | clock | body | life | drills | panel | soak
+    bash tests/run.sh life     # one test: files | clock | body | life | drills | panel | live | soak
 
 The first run installs Playwright and its Chromium (~150 MB, into tests/node_modules). The stand-in needs
 `python3 -m pip install fastapi "uvicorn[standard]" pillow numpy`.
@@ -19,6 +19,7 @@ The first run installs Playwright and its Chromium (~150 MB, into tests/node_mod
 | life | a short life played like a visitor (Body, school, exams, a fluke, death): no errors, never blank, the world keeps changing, the portrait stands in the middle, its body follows a scripted player, the next life waits for the die |
 | drills | the server killed mid-life and started again; pause; world rules and body switched mid-life; NEW LIFE |
 | panel | the panel and the other pages load with no errors; its switches reach the server |
+| live | every switch and slider that changes the game at once is moved on the panel while a game plays, and the game page itself is checked (within ~1 s); the mic and the waiting go to a running voice session (OpenAI faked); after a reload the game keeps them. `SLOW=15` acts like a slow GPU |
 | soak | lives back to back in one page (as on a show day): memory, WebGL textures, page elements, frame rate after each life; fails if anything keeps growing |
 
 What they can't test: the real GPU (painter, animator), MediaPipe (the body tracker and the cut-out load from the

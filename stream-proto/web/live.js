@@ -929,7 +929,8 @@ export function createLive({ out, video, params }) {
     stat, setPerson, setBackground, world, paintShot, showShot, dropShot, worldBusy, setScene, portrait, photo, setPortraitPlace, setAnimatorOpts, resetBody,
     bodyMode: () => (bodyOn() ? bodyCfg : "still"),
     _bodyTest: { live(fn) { B.test = fn; }, rest(sk) { B.testRest = sk; }, matte(c) { B.testMatte = c; }, motion: () => B.motion.state, stat: () => ({ ...B.warp ? B.warp.stat : {}, main: P.main && P.main.rigNote }) }, avatarMode: () => (avatarCfg === "portrait" && animatorCfg ? "portrait" : "painted"),   // what can run now
-    avatarWanted: () => avatarCfg,                           // what /panel asks for (the animator may still be loading)
+    avatarWanted: () => avatarCfg,
+    _cfg: () => ({ parallax, dissolve, push: pushAmt, move: moveAmt, avatar: avatarCfg, body: bodyCfg }),   // (tests: what the page took from /panel)                           // what /panel asks for (the animator may still be loading)
     refresh, camera, hold, setReal, setPersonAlpha, setControl, where, skinTone, nextCamera,
     worldState: () => ({ queued: worlds.length, k: wk, textures: px ? px.textures : 0, webgl: !!(px && px.ok) }),
     whenReady: () => online ? Promise.resolve() : new Promise(r => ready.push(r)),

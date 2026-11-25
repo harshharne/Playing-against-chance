@@ -390,6 +390,14 @@ label.txt { display: flex; flex-direction: column; gap: 8px; font-size: 13px; co
           <label class="ctl"><span>Volume</span><span class="v" id="v_volumeV"></span><input id="v_volume" data-bk="volume" type="range" min="0" max="1" step="0.05"><small>In the game's browser, on top of the speakers' own volume.</small></label>
           <label class="ctl"><span>Breath before it speaks</span><span class="v" id="v_breathV"></span><input id="v_breath" data-bk="breath" type="range" min="0" max="3" step="0.1"><small>Seconds of silence after each moment arrives, before it says anything. The room gets a beat to look first.</small></label>
         </div>
+        <div class="card wide"><h3>Listening · at once</h3>
+          <div class="grid2">
+            <div class="seg"><span class="lbl">Microphone</span><div class="opts" id="v_mic"><button type="button" data-v="">As set</button><button type="button" data-v="near">Laptop</button><button type="button" data-v="far">Room</button></div>
+              <div class="help">Room: the player stands away from the mic. Laptop: they speak close to it. Which mic: Chrome's (the mic icon in the address bar).</div></div>
+            <div class="seg"><span class="lbl">Waits for the player</span><div class="opts" id="v_listen"><button type="button" data-v="">As set</button><button type="button" data-v="low">Patient</button><button type="button" data-v="medium">Normal</button><button type="button" data-v="high">Quick</button></div>
+              <div class="help">How long it lets someone pause before it decides they've finished speaking.</div></div>
+          </div>
+        </div>
         <div class="card wide"><h3>Who it is · from the next life</h3>
           <div class="grid2">
             <label class="txt">Voice<select id="v_voice"><option value="">As set (bookkeeper.json)</option><option>cedar</option><option>marin</option><option>ash</option><option>ballad</option><option>coral</option><option>echo</option><option>sage</option><option>shimmer</option><option>verse</option><option>alloy</option></select></label>
@@ -398,9 +406,6 @@ label.txt { display: flex; flex-direction: column; gap: 8px; font-size: 13px; co
               <div class="help">Faster: lines arrive sooner and cost about a third, with a thinner character.</div></div>
             <div class="seg"><span class="lbl">Calls the player's pick</span><div class="opts" id="v_predict"><button type="button" data-v="">As set</button><button type="button" data-v="off">No</button><button type="button" data-v="on">Yes</button></div>
               <div class="help">Yes: when the cards rise, it also says which one they'll take, and keeps score of how predictable they are.</div></div>
-            <div class="seg"><span class="lbl">Microphone</span><div class="opts" id="v_mic"><button type="button" data-v="">As set</button><button type="button" data-v="near">Laptop</button><button type="button" data-v="far">Room</button></div></div>
-            <div class="seg"><span class="lbl">Waits for the player</span><div class="opts" id="v_listen"><button type="button" data-v="">As set</button><button type="button" data-v="low">Patient</button><button type="button" data-v="medium">Normal</button><button type="button" data-v="high">Quick</button></div>
-              <div class="help">How long it lets someone pause before it decides they've finished speaking.</div></div>
           </div>
         </div>
       </div>

@@ -20,7 +20,7 @@ export function createBookkeeper({ onPick = () => ({ ok: false, reason: "the car
   const stat = { state: "off", note: "", said: 0, heard: 0, last: "" };
   let pc = null, dc = null, mic = null, cfg = null, life = "", session = 0, subs = "";   // subs: the panel's SUBTITLES ("" / "on" / "off")
   // the panel's Voice tab, live: how fast, how loud, how long its lines, a breath before each, which moments it speaks at
-  const P = { speed: 1, volume: 1, length: 1, breath: 0.4, moments: {}, talk_back: true };
+  const P = { speed: 1, volume: 1, length: 1, breath: 0.4, moments: {}, talk_back: true, mic: "", listen: "" };
   let speedSent = 1;                                           // the speed the session has now (it changes between lines only)
   const BUDGET = { arrive: 45, cards: 30, outcome: 35, happened: 35, fluke: 18, close: 70 };   // words, as bookkeeper.md has them
   const GROUP = { arrive: "arrive", cards: "cards", outcome: "outcome", happened: "outcome", fluke: "fluke", close: "close" };
@@ -77,6 +77,7 @@ export function createBookkeeper({ onPick = () => ({ ok: false, reason: "the car
       await opened;
       if (mine !== session) return false;
       stat.state = "ready"; stat.said = stat.heard = 0; speedSent = cfg.speed || 1;
+      inputSent = JSON.stringify(cfg.input || {}); applyInput();   // (the panel may have changed while it connected)
       return true;
     } catch (e) {
       if (mine === session) { stop(); stat.state = "off"; stat.note = String(e.message || e).slice(0, 180); }
@@ -213,7 +214,28 @@ export function createBookkeeper({ onPick = () => ({ ok: false, reason: "the car
     for (const k of ["speed", "volume", "length", "breath"]) if (Number.isFinite(+b[k])) P[k] = +b[k];
     if (b.moments && typeof b.moments === "object") P.moments = { ...b.moments };
     if (typeof b.talk_back === "boolean") P.talk_back = b.talk_back;
+    P.mic = ["near", "far"].includes(b.mic) ? b.mic : "";                       // MICROPHONE: laptop / room ("" = as set)
+    P.listen = ["low", "medium", "high"].includes(b.listen) ? b.listen : "";     // WAITS FOR THE PLAYER
     audio.volume = Math.max(0, Math.min(1, P.volume));
+    applyInput();
+  }
+  // the mic's filtering and how long it waits for the player: changed in the running session (no new life needed)
+  let inputSent = "";
+  function inputWanted() {
+    if (!cfg || !cfg.input) return null;
+    const input = JSON.parse(JSON.stringify(cfg.input));
+    input.noise_reduction = { type: P.mic ? P.mic + "_field" : cfg.mic_default || "near_field" };
+    if (input.turn_detection) input.turn_detection.eagerness = P.listen || cfg.listen_default || "low";
+    return input;
+  }
+  function applyInput() {
+    const input = inputWanted();
+    if (!input || !on()) return;
+    const key = JSON.stringify(input);
+    if (key === inputSent) return;
+    inputSent = key;
+    send({ type: "session.update", session: { type: "realtime", audio: { input } } });
+    log("game", `(listening: ${input.noise_reduction.type}, waits ${input.turn_detection ? input.turn_detection.eagerness : "-"})`);
   }
 
   return {
@@ -223,6 +245,7 @@ export function createBookkeeper({ onPick = () => ({ ok: false, reason: "the car
     get showText() { return !on() || subs === "on" || (subs !== "off" && !!(cfg && cfg.show_text)); },
     setSubtitles: (v) => { subs = v === "on" || v === "off" ? v : ""; },
     setLive,
+    _live: () => ({ ...P, moments: { ...P.moments }, volume_now: audio.volume, subs, input: inputWanted() }),   // (tests: what it took from /panel)
     get model() { return cfg ? `${cfg.model}, ${cfg.voice}` : ""; },
   };
 }

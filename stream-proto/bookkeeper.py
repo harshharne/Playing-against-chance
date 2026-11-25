@@ -81,7 +81,9 @@ PANEL_DEFAULTS = {
     "moments": {m: True for m in MOMENTS},   # which moments it speaks at (off: it still learns what happened, silently)
     "talk_back": True,      # it answers the player when they speak
     # from the next life
-    "voice": "", "accent": "", "model": "", "predict": "", "mic": "", "listen": "",
+    "mic": "", "listen": "",   # at once too (the game sends them to the running session)
+    # from the next life
+    "voice": "", "accent": "", "model": "", "predict": "",
 }
 
 
@@ -177,8 +179,11 @@ def mint(panel=None):
         raise VoiceError(f"{type(e).__name__}: {str(e)[:200]}")
     version = hashlib.sha1(instructions.encode()).hexdigest()[:8]    # which version of the personality spoke
     print(f"[voice] a life begins: {s.get('model')}, {s.get('voice')}, prompt {version}", flush=True)
+    base = read_settings()                                           # (the game changes the mic and the waiting live: it needs these)
     return {"token": data.get("value"), "model": s.get("model"), "voice": s.get("voice"), "version": version,
             "speed": float(s.get("speed") or 1.0),
+            "input": session(s, "")["audio"]["input"],
+            "mic_default": base.get("mic") or "near_field", "listen_default": base.get("listen_eagerness") or "low",
             "show_text": bool(s.get("show_text")), "max_wait_s": float(s.get("max_wait_s") or 18),
             "player_can_talk": bool(s.get("player_can_talk", True))}
 
