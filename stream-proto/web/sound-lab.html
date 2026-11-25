@@ -152,12 +152,12 @@ $("duck").addEventListener("click", async () => { await start(); ducked = !ducke
 $("end").addEventListener("click", async () => { await start(); S.end(5000); sel = []; show(); });
 
 // ---------- 2 · the mix (as the panel's Sound tab) ----------
-const MIX = { master: 0, bed: -8, place: -8, cues: -4, duck: 10 };
-try { Object.assign(MIX, JSON.parse(localStorage.getItem("pac-soundlab-mix") || "{}")); } catch (e) {}
+const MIX = { master: 0, bed: -18, place: -16, cues: -12, duck: 14 };   // (as the game)
+try { Object.assign(MIX, JSON.parse(localStorage.getItem("pac-soundlab-mix2") || "{}")); } catch (e) {}
 for (const k of Object.keys(MIX)) {
   const el = $("mx_" + k); el.value = MIX[k]; $("mx_" + k + "V").textContent = (k === "duck" ? "−" : "") + MIX[k];
   el.addEventListener("input", () => { MIX[k] = +el.value; $("mx_" + k + "V").textContent = (k === "duck" ? "−" : "") + MIX[k]; S.setMix({ [k]: MIX[k] });
-    try { localStorage.setItem("pac-soundlab-mix", JSON.stringify(MIX)); } catch (e) {} });
+    try { localStorage.setItem("pac-soundlab-mix2", JSON.stringify(MIX)); } catch (e) {} });
 }
 S.setMix(MIX);
 

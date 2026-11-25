@@ -310,9 +310,11 @@ Three layers under the voice:
   hospital. Up to three at once, cross-fading with the picture. A recording can replace any of them: web/sounds/.
 - CUES: options rising (a note each), the choice locking, the screen's throw, the die landing (each number its own
   note, then a fifth for a hit or a rub for a miss), the years ticking past, a new event.
-Rules: the voice wins (bed and place drop under it: UNDER THE VOICE on the panel); the black screen and the end of a
+Rules: the voice wins (bed and place drop under it by UNDER THE VOICE on the panel, lose the middle where speech
+sits, and come back slowly; the cues dip; it starts as a line is being made, before the first word); the black screen and the end of a
 life are silent; PAUSE silences it. Browsers allow sound only after a click: click the game once (the voice needs it too).
-Panel: SOUND on/off (left) and the SOUND tab (levels, what's playing). Hear every sound alone: /sound-lab.html.
+Panel: SOUND on/off (left) and the SOUND tab (levels, what's playing). The levels are low on purpose (bed -18,
+place -16, cues -12, -14 under the voice); a mix saved before this is replaced by it once (sound on/off is kept). Hear every sound alone: /sound-lab.html.
 
 ## The Bookkeeper: the voice in the room (bookkeeper.md, bookkeeper.json, web/bookkeeper.js)
 An omnipresent voice that carries the life: no narrative box while it's there. OpenAI Realtime, speech to speech. The

@@ -11,8 +11,9 @@
 //   CUES      the game's own moments: options rising, the choice locking, the screen's throw, the die landing
 //             (a note for each number), hit or miss, the screen waking, the years ticking past.
 //
-// Rules: the voice always wins (everything but the cues ducks while it speaks); silence is material (the black screen
-// and the end of a life are silent); restraint (low levels, slow changes).
+// Rules: the voice always wins (while it speaks the bed and the place drop, lose the middle where speech sits, and
+// come back slowly; the cues only dip); silence is material (the black screen and the end of a life are silent);
+// restraint (low levels, slow changes).
 //
 //   const sound = createSound();             sound.unlock()  (also by itself on the first click or key)
 //   sound.wake() / sound.sleep(ms)           the screen comes up / goes black
@@ -62,7 +63,7 @@ export function createSound({ base = "" } = {}) {
   const T = window.Tone;
   const stat = { ready: false, on: true, kits: [], bed: "", mood: "", note: T ? "" : "no Tone.js", ducked: false };
   if (!T) return stub(stat);
-  const mix = { on: true, master: 0, bed: -8, place: -8, cues: -4, duck: 10 };
+  const mix = { on: true, master: 0, bed: -18, place: -16, cues: -12, duck: 14 };   // (subtle: the voice sits on top)
   // each place kit levelled to one loudness (measured), then given its character: a room is quieter than a street
   const TRIM = { room: 11, fan: 15, murmur: 15, crowd: 15, children: 18, street: 12, rain: 15, wind: 23, birds: 20, night: 17,
                  train: 12, water: 17, clock: 13, kitchen: 14, bells: 20, typing: 13, hospital: 13 };
@@ -83,14 +84,15 @@ export function createSound({ base = "" } = {}) {
     built = true;
     const limiter = new T.Limiter(-1).toDestination();
     const master = new T.Gain(0).connect(limiter);              // starts silent: the screen starts black
-    const duckBus = new T.Gain(1).connect(master);
+    const carve = new T.Filter({ type: "peaking", frequency: 2400, Q: 0.7, gain: 0 }).connect(master);   // the voice's room
+    const duckBus = new T.Gain(1).connect(carve);
     const bed = new T.Channel(mix.bed).connect(duckBus);
     const place = new T.Channel(mix.place).connect(duckBus);
     const cues = new T.Channel(mix.cues).connect(master);
     const space = new T.Reverb({ decay: 6, wet: 1 }).connect(place);       // the outdoor air shared by the place kits
     const spaceSend = new T.Gain(0.35).connect(space);
     const cueVerb = new T.Reverb({ decay: 3.5, wet: 0.35 }).connect(cues);
-    M = { limiter, master, duckBus, bed, place, cues, space, spaceSend, cueVerb };
+    M = { limiter, master, carve, duckBus, bed, place, cues, space, spaceSend, cueVerb };
     makeBed();
     stat.ready = true;
   }
@@ -535,11 +537,22 @@ export function createSound({ base = "" } = {}) {
     stopBed(ms / 1000);
     clearPlace(ms / 1000);
   }
+  // under the voice: the bed and the place drop by mix.duck and lose the middle (where speech sits) so the words come
+  // through without the music having to vanish; the cues dip a little. It holds 0.8 s after a line (no pumping
+  // between sentences), then comes back over 1.8 s.
+  let duckHold = 0;
   function duck(on) {
     stat.ducked = !!on;
+    clearTimeout(duckHold);
     if (!M) return;
-    M.duckBus.gain.cancelScheduledValues(now());
-    M.duckBus.gain.rampTo(on ? T.dbToGain(-mix.duck) : 1, on ? 0.25 : 0.9);
+    const go = (down) => {
+      const t = down ? 0.2 : 1.8;
+      for (const [p, v] of [[M.duckBus.gain, down ? T.dbToGain(-mix.duck) : 1], [M.carve.gain, down ? -8 : 0],
+                            [M.cues.volume, mix.cues - (down ? Math.min(6, mix.duck / 2) : 0)]]) {
+        p.cancelScheduledValues(now()); p.rampTo(v, t);
+      }
+    };
+    if (on) go(true); else duckHold = setTimeout(() => go(false), 800);
   }
   function pause(on) { paused = !!on; levelMaster(on ? 0.5 : 1.2); }
   function level() { return M ? M.master.gain.value : 0; }

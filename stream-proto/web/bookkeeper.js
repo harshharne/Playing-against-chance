@@ -102,6 +102,7 @@ export function createBookkeeper({ onPick = () => ({ ok: false, reason: "the car
       case "response.created": {
         const w = asked.shift();
         if (w) byId.set(ev.response.id, w);
+        dispatchEvent(new CustomEvent("pac-voice", { detail: { speaking: true } }));   // the sound makes room before the first word
         break;
       }
       case "output_audio_buffer.started":
@@ -123,6 +124,7 @@ export function createBookkeeper({ onPick = () => ({ ok: false, reason: "the car
         break;
       case "response.done": {
         generating = Math.max(0, generating - 1);
+        if (!speaking) dispatchEvent(new CustomEvent("pac-voice", { detail: { speaking: false } }));   // (nothing was said)
         const resp = ev.response || {}, w = byId.get(resp.id);
         for (const item of resp.output || []) if (item.type === "function_call") toolCall(item);
         if (resp.status && resp.status !== "completed") { finish(w); byId.delete(resp.id); }

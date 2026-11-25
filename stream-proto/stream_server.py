@@ -1648,7 +1648,7 @@ GAME_LIVE_DEFAULTS = {
     "type_scale": 1.0,      # the fog style's letters: x this
     "tempo": 1.0,           # every timing in PACING: x this (1.2 = 20% slower, 0.8 = faster)
     "animator": {"multiplier": 1.0, "smooth": 0.3, "face_smooth": 0.3, "turn_limit": 22},   # the portrait's movement
-    "sound": {"on": True, "master": 0, "bed": -8, "place": -8, "cues": -4, "duck": 10},   # the game's sound (dB; duck = how far under the voice)
+    "sound": {"on": True, "master": 0, "bed": -18, "place": -16, "cues": -12, "duck": 14, "v": 2},   # the game's sound (dB; duck = how far under the voice; v: the mix's version)
     "voice": True,          # the Bookkeeper speaks (from the next life; off = the text carries the words)
     "subtitles": "",        # "" = as bookkeeper.json says (show_text) · "on" = the words on screen as well · "off" = voice only
     "font_event": "noto-serif-display",   # the events' typeface (web/typefaces.js): the event's name, what happened
@@ -1669,6 +1669,8 @@ def load_game_live():
     try:
         with open(GAME_LIVE_FILE, encoding="utf-8") as fh:
             saved = json.load(fh)
+        if isinstance(saved.get("sound"), dict) and saved["sound"].get("v") != GAME_LIVE_DEFAULTS["sound"]["v"]:
+            saved["sound"] = {"on": saved["sound"].get("on", True)}   # an older mix: the new levels, but sound on/off kept
         for k in live:
             if k in saved:
                 live[k] = {**live[k], **saved[k]} if isinstance(live[k], dict) and isinstance(saved[k], dict) else saved[k]
