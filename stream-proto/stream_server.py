@@ -1746,17 +1746,26 @@ async def game_live_set(request: Request):
 
 @app.post("/game/command")
 async def game_command(request: Request):
-    """One command for the running game: {cmd: "new_life" | "pause" | "resume" | "roll" | "redraw"}."""
+    """One command for the running game: {cmd: "new_life" | "pause" | "resume" | "roll" | "redraw"}, or
+    {cmd: "pick", n: 1-9} (the nth card, as its number key: for testing from the panel)."""
     global game_seq
     try:
         body = await request.json()
     except ValueError:
         return JSONResponse({"error": "not JSON"}, status_code=400)
     cmd = str((body or {}).get("cmd") or "")
-    if cmd not in ("new_life", "pause", "resume", "roll", "redraw"):
+    if cmd not in ("new_life", "pause", "resume", "roll", "redraw", "pick"):
         return JSONResponse({"error": "unknown command"}, status_code=400)
+    c = {"cmd": cmd}
+    if cmd == "pick":
+        try:
+            c["n"] = int(body.get("n"))
+        except (TypeError, ValueError):
+            return JSONResponse({"error": "pick needs n (1-9)"}, status_code=400)
+        if not 1 <= c["n"] <= 9:
+            return JSONResponse({"error": "pick needs n (1-9)"}, status_code=400)
     game_seq += 1
-    game_cmds.append({"seq": game_seq, "cmd": cmd, "at": time.time()})
+    game_cmds.append({"seq": game_seq, "at": time.time(), **c})
     return {"ok": True, "seq": game_seq}
 
 

@@ -1042,6 +1042,7 @@ async function fromPanel() {
       else if (c.cmd === "resume") { paused = false; sound.pause(false); }
       else if (c.cmd === "roll") { if (beginAction) beginAction(); else if (screenRoll && turn === "throw") screenRoll(); }
       else if (c.cmd === "redraw") fetch("/redraw", { method: "POST" });
+      else if (c.cmd === "pick" && deckKeys) deckKeys(String(c.n));   // the nth card, as its number key
     }
     const L = j.live || {}, key = JSON.stringify(L);
     if (key !== liveSeen) {                                     // each setting on its own: one that fails never stops the rest
