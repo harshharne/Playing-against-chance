@@ -35,6 +35,20 @@ h2 { margin: 0; font-size: 18px; font-weight: 500; } p.note { margin: 0; color: 
 .age .dots { font: 900 46px/0.8 "Doto", monospace; min-width: 2.2ch; }
 input[type=range] { flex: 1; accent-color: var(--ink); }
 .now { font-size: 13px; color: var(--soft); }
+.ctl { display: grid; grid-template-columns: 130px 52px 1fr; align-items: center; gap: 10px; font-size: 13.5px; }
+.ctl .v { color: var(--dim); font-variant-numeric: tabular-nums; text-align: right; }
+.tour { display: flex; flex-direction: column; gap: 8px; }
+.tour .cap { font-size: 20px; font-weight: 500; letter-spacing: -0.01em; min-height: 1.5em; }
+.tour .sub { font-size: 13px; color: var(--dim); min-height: 1.4em; }
+.prog { height: 4px; border-radius: 4px; background: var(--track); overflow: hidden; } .prog b { display: block; height: 100%; width: 0; background: var(--ink); }
+.test { display: grid; grid-template-columns: 1fr auto; gap: 8px 14px; align-items: center; }
+.test .q { font-size: 14px; } .test .q small { display: block; color: var(--dim); font-size: 12.5px; }
+.test .a { display: flex; gap: 6px; } .test .a button { border: 0; background: var(--track); border-radius: 999px; height: 32px; padding: 0 13px; cursor: pointer; font-size: 13px; color: var(--soft); }
+.test .a button[aria-pressed="true"].ok { background: #2f7d32; color: #fff; } .test .a button[aria-pressed="true"].no { background: #b3261e; color: #fff; }
+.test input.n { grid-column: 1 / -1; border: 0; border-radius: 10px; background: var(--track); padding: 6px 12px; font-size: 13px; display: none; }
+.test input.n.show { display: block; }
+.how { font-size: 13px; color: var(--soft); background: var(--track); border-radius: 14px; padding: 10px 14px; }
+.how code { font-size: 12.5px; }
 textarea { width: 100%; min-height: 52px; border: 0; border-radius: 14px; background: var(--track); padding: 10px 14px; resize: vertical; }
 </style>
 </head>
@@ -46,6 +60,33 @@ textarea { width: 100%; min-height: 52px; border: 0; border-radius: 14px; backgr
     <button class="start" id="start" type="button">Start sound</button>
   </header>
 
+  <section class="card tour">
+    <h2>1 · A life in sound</h2>
+    <p class="note">About two minutes: a whole life as the game plays it (places, the slow chord ageing, options, throws, hit and miss, the voice speaking over it, the years ticking, the end). Listen to it on the speakers you'll show on, at show volume. Then rate it in 3.</p>
+    <div class="row"><button class="start" id="tourGo" type="button">Play a life</button><span class="now" id="tourT"></span></div>
+    <div class="prog"><b id="tourP"></b></div>
+    <div class="cap" id="tourCap"></div>
+    <div class="sub" id="tourSub"></div>
+  </section>
+
+  <section class="card">
+    <h2>2 · The mix</h2>
+    <p class="note">The same levels as the panel's Sound tab. When something's too loud or quiet here, note the number: I'll set it as the game's default.</p>
+    <label class="ctl"><span>Everything</span><span class="v" id="mx_masterV"></span><input id="mx_master" data-m="master" type="range" min="-30" max="6" step="1"></label>
+    <label class="ctl"><span>Bed (the chord)</span><span class="v" id="mx_bedV"></span><input id="mx_bed" data-m="bed" type="range" min="-50" max="-4" step="1"></label>
+    <label class="ctl"><span>Place</span><span class="v" id="mx_placeV"></span><input id="mx_place" data-m="place" type="range" min="-50" max="-2" step="1"></label>
+    <label class="ctl"><span>Cues</span><span class="v" id="mx_cuesV"></span><input id="mx_cues" data-m="cues" type="range" min="-50" max="-2" step="1"></label>
+    <label class="ctl"><span>Under the voice</span><span class="v" id="mx_duckV"></span><input id="mx_duck" data-m="duck" type="range" min="0" max="24" step="1"></label>
+  </section>
+
+  <section class="card">
+    <h2>3 · The listening test</h2>
+    <p class="note">Mark each one right or not right; for "not right" say why in a few words. Then copy the results and paste them to me. (Use 4 below to hear any sound on its own.)</p>
+    <div class="test" id="test"></div>
+    <div class="row"><button class="start" id="copy" type="button">Copy the results</button><span class="now" id="copied"></span></div>
+  </section>
+
+  <h2 style="margin:10px 4px 0">4 · Each sound on its own</h2>
   <section class="card">
     <h2>Places</h2>
     <p class="note">The sound of each place. Up to three play at once, cross-fading as you switch (the game picks them from each scene's words, or the director's tags).</p>
@@ -73,6 +114,7 @@ textarea { width: 100%; min-height: 52px; border: 0; border-radius: 14px; backgr
     </div>
     <div class="row"><div class="chips"><button id="duck">The voice speaks (duck)</button><button id="end">The end of a life</button></div></div>
   </section>
+  <div class="how">Running this without the GPU machine: on the Mac, in Terminal, <code>cd</code> into <code>stream-proto/web</code>, then <code>python3 -m http.server 8010</code>, and open <code>http://localhost:8010/sound-lab.html</code> in Chrome. (With the machine on, it's also at /sound-lab.html through the tunnel.)</div>
 </div>
 <script src="vendor/Tone.js"></script>
 <script type="module">
@@ -108,6 +150,109 @@ $("cues").addEventListener("click", async (e) => {
 let ducked = false;
 $("duck").addEventListener("click", async () => { await start(); ducked = !ducked; S.duck(ducked); $("duck").setAttribute("aria-pressed", String(ducked)); });
 $("end").addEventListener("click", async () => { await start(); S.end(5000); sel = []; show(); });
+
+// ---------- 2 · the mix (as the panel's Sound tab) ----------
+const MIX = { master: 0, bed: -8, place: -8, cues: -4, duck: 10 };
+try { Object.assign(MIX, JSON.parse(localStorage.getItem("pac-soundlab-mix") || "{}")); } catch (e) {}
+for (const k of Object.keys(MIX)) {
+  const el = $("mx_" + k); el.value = MIX[k]; $("mx_" + k + "V").textContent = (k === "duck" ? "−" : "") + MIX[k];
+  el.addEventListener("input", () => { MIX[k] = +el.value; $("mx_" + k + "V").textContent = (k === "duck" ? "−" : "") + MIX[k]; S.setMix({ [k]: MIX[k] });
+    try { localStorage.setItem("pac-soundlab-mix", JSON.stringify(MIX)); } catch (e) {} });
+}
+S.setMix(MIX);
+
+// ---------- 1 · a life in sound ----------
+// [at seconds, caption, detail, what happens]
+const LIFE = [
+  [0, "Birth", "a hospital ward at dawn · the chord starts low", () => { S.age(0); S.scene("a hospital maternity ward at dawn, nurses passing", 2500); S.cue("arrive", 2500); }],
+  [6, "Options rise", "five cards come up", () => S.cue("rise", 5, 250)],
+  [9.5, "A choice locks", "", () => S.cue("lock")],
+  [11, "The throw", "the screen rolls a die", () => S.cue("rattle")],
+  [12.6, "Lands 4 · a hit", "the chord opens", () => { S.cue("land", 4, true); S.mood("hit"); }],
+  [16, "The Bookkeeper speaks", "the bed and the place drop under the voice (4 s)", () => S.duck(true)],
+  [20, "", "", () => S.duck(false)],
+  [21, "The years pass", "a tick for each year, 1 to 8", () => { for (let y = 1; y <= 8; y++) setTimeout(() => { if (!tour.on) return; S.age(y); S.cue("year"); }, (y - 1) * 380); }],
+  [25, "School", "a classroom, children, a ceiling fan", () => { S.scene("a school classroom full of children, a ceiling fan turning", 2500); S.cue("arrive", 2500); }],
+  [34, "The exams", "an exam hall, a big clock, rain outside", () => { S.age(18); S.scene("an exam hall, a big clock on the wall, rain outside the windows", 2500); S.cue("arrive", 2500); }],
+  [39, "Options rise · a choice", "", () => S.cue("rise", 3, 300)],
+  [42, "The throw", "", () => S.cue("rattle")],
+  [43.6, "Lands 2 · a miss", "the chord bends", () => { S.cue("land", 2, false); S.mood("miss"); }],
+  [47, "The Bookkeeper speaks", "(3 s)", () => S.duck(true)],
+  [50, "", "", () => S.duck(false)],
+  [51, "Leaving home", "a crowded railway platform at night", () => { S.age(22); S.scene("a crowded railway platform at night, a train arriving", 2500); S.cue("arrive", 2500); }],
+  [61, "Love", "a café by the sea, birds", () => { S.age(27); S.scene("a small café by the sea in the morning, birds overhead", 2500); S.cue("arrive", 2500); S.mood("good"); }],
+  [71, "Marriage", "a wedding: a crowd, bells", () => { S.age(36); S.scene("a wedding hall, a crowd of relatives, temple bells", 2500); S.cue("arrive", 2500); S.cue("bell"); }],
+  [81, "Work, for years", "an office, typing, a fan · the years tick to 60", () => { S.scene("an office with rows of desks, people typing, a fan", 2500); for (let y = 37; y <= 60; y += 3) setTimeout(() => { if (!tour.on) return; S.age(y); S.cue("year"); }, (y - 37) * 120); }],
+  [94, "Retirement", "a quiet kitchen in the evening, a clock", () => { S.scene("a quiet kitchen in the evening, a wall clock ticking", 2500); S.cue("arrive", 2500); S.mood("neutral"); }],
+  [105, "Old age", "a hospital corridor at night, rain", () => { S.age(79); S.scene("a hospital corridor at night, rain on the windows", 2500); S.cue("arrive", 2500); S.mood("bad"); }],
+  [117, "The end", "the chord lets go, the place thins to nothing", () => { S.end(8000); }],
+  [128, "", "", () => {}],
+];
+const tour = { on: false, t0: 0, timers: [] };
+function stopTour(msg = "") {
+  tour.on = false; tour.timers.forEach(clearTimeout); tour.timers = [];
+  $("tourGo").textContent = "Play a life"; $("tourGo").classList.remove("on"); $("tourCap").textContent = msg; $("tourSub").textContent = "";
+  S.duck(false);
+}
+$("tourGo").addEventListener("click", async () => {
+  if (tour.on) { stopTour("stopped"); return; }
+  await start(); S.wake(800);
+  tour.on = true; tour.t0 = performance.now(); $("tourGo").textContent = "Stop"; $("tourGo").classList.add("on");
+  for (const [at, cap, sub, f] of LIFE) tour.timers.push(setTimeout(() => {
+    if (!tour.on) return;
+    if (cap) { $("tourCap").textContent = cap; $("tourSub").textContent = sub; }
+    try { f(); } catch (e) { $("tourSub").textContent = "error: " + e.message; }
+    if (at === LIFE[LIFE.length - 1][0]) stopTour("That was a life. Now rate it in 3.");
+  }, at * 1000));
+});
+setInterval(() => {
+  const total = LIFE[LIFE.length - 1][0];
+  if (!tour.on) { $("tourP").style.width = "0"; $("tourT").textContent = ""; return; }
+  const t = (performance.now() - tour.t0) / 1000;
+  $("tourP").style.width = Math.min(100, t / total * 100) + "%"; $("tourT").textContent = `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")} / ${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+}, 250);
+
+// ---------- 3 · the listening test ----------
+const CHECKS = [
+  ["whole", "The life as a whole", "Does it carry the life, or is it noise you'd rather switch off?"],
+  ["bed", "The bed (the slow chord)", "Present but not in the way; you notice it changing with age"],
+  ["moods", "Hit, miss, good, bad", "You can hear the chord open (hit, good) and bend (miss, bad)"],
+  ["cues", "The cues", "Options rising, the lock, the throw, the landing: clear, not annoying, not too loud"],
+  ["years", "The years ticking", "A good sense of time passing; not irritating"],
+  ["duck", "Under the voice", "When the Bookkeeper speaks, everything steps back enough for words"],
+  ["end", "The end", "It feels like an ending"],
+  ["levels", "Levels on the show speakers", "Nothing harsh, boomy or lost; the place sounds sit under the bed"],
+  ["glitches", "No glitches", "No clicks, pops, stutters or sudden jumps"],
+];
+const KITQ = KITS.map(k => ["kit:" + k, "Place: " + k, ""]);
+const RES = {}; try { Object.assign(RES, JSON.parse(localStorage.getItem("pac-soundlab-test") || "{}")); } catch (e) {}
+const saveRes = () => { try { localStorage.setItem("pac-soundlab-test", JSON.stringify(RES)); } catch (e) {} };
+$("test").innerHTML = [...CHECKS, ...KITQ].map(([id, q, h]) => `
+  <div class="q">${q}${h ? `<small>${h}</small>` : ""}</div>
+  <div class="a" data-id="${id}">${id.startsWith("kit:") ? `<button type="button" class="play">play</button>` : ""}<button type="button" class="ok">right</button><button type="button" class="no">not right</button></div>
+  <input class="n" data-id="${id}" placeholder="what's wrong (a few words)">`).join("");
+function showRes() {
+  $("test").querySelectorAll(".a").forEach(a => {
+    const r = RES[a.dataset.id] || {};
+    a.querySelector(".ok").setAttribute("aria-pressed", String(r.v === "ok")); a.querySelector(".no").setAttribute("aria-pressed", String(r.v === "no"));
+    const n = $("test").querySelector(`input.n[data-id="${CSS.escape(a.dataset.id)}"]`); n.classList.toggle("show", r.v === "no"); if (document.activeElement !== n) n.value = r.note || "";
+  });
+}
+$("test").addEventListener("click", async (e) => {
+  const a = e.target.closest(".a"); if (!a) return; const id = a.dataset.id;
+  if (e.target.classList.contains("play")) { await start(); S.scene("", 1200, [id.slice(4)]); sel = [id.slice(4)]; show(); return; }
+  const v = e.target.classList.contains("ok") ? "ok" : e.target.classList.contains("no") ? "no" : null; if (!v) return;
+  RES[id] = { ...(RES[id] || {}), v: RES[id] && RES[id].v === v ? null : v }; saveRes(); showRes();
+});
+$("test").addEventListener("input", (e) => { const id = e.target.dataset.id; if (!id) return; RES[id] = { ...(RES[id] || {}), note: e.target.value }; saveRes(); });
+showRes();
+$("copy").addEventListener("click", async () => {
+  const line = ([id, q]) => { const r = RES[id] || {}; return `${r.v === "ok" ? "✓" : r.v === "no" ? "✗" : "·"} ${q}${r.v === "no" && r.note ? ": " + r.note : ""}`; };
+  const txt = ["Sound lab results", ...CHECKS.map(line), "", ...KITQ.map(line), "",
+               `Mix: everything ${MIX.master} dB · bed ${MIX.bed} · place ${MIX.place} · cues ${MIX.cues} · under the voice −${MIX.duck} dB`].join("\n");
+  try { await navigator.clipboard.writeText(txt); $("copied").textContent = "copied: paste it to me"; }
+  catch (e) { const t = document.createElement("textarea"); t.value = txt; document.body.appendChild(t); t.select(); document.execCommand("copy"); t.remove(); $("copied").textContent = "copied: paste it to me"; }
+});
 setInterval(() => {
   const d = S._debug && S._debug();
   $("bed").textContent = S.stat.bed ? "bed: " + S.stat.bed + (S.stat.mood ? " · last: " + S.stat.mood : "") : "–";
