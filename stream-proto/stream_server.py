@@ -1643,7 +1643,7 @@ GAME_LIVE_DEFAULTS = {
     "ui": "",               # the screen's style: "glass" / "fog" ("" = whatever the game's browser last used)
     "type_scale": 1.0,      # the fog style's letters: x this
     "tempo": 1.0,           # every timing in PACING: x this (1.2 = 20% slower, 0.8 = faster)
-    "animator": {"multiplier": 1.0, "smooth": 0.3, "face_smooth": 0.3, "turn_limit": 22},   # the portrait's movement
+    "animator": {"multiplier": 1.0, "smooth": 0.3, "face_smooth": 0.3, "turn_limit": 22, "face_limit": 0.1},   # the portrait's movement
     "sound": {"on": True, "master": 0, "bed": -18, "place": -16, "cues": -12, "duck": 14, "v": 2},   # the game's sound (dB; duck = how far under the voice; v: the mix's version)
     "voice": True,          # the Bookkeeper speaks (from the next life; off = the text carries the words)
     "subtitles": "",        # "" = as bookkeeper.json says (show_text) · "on" = the words on screen as well · "off" = voice only
@@ -1712,7 +1712,7 @@ def clean_live(body):
         out["sound"] = snd
     if isinstance(body.get("animator"), dict):
         a = {}
-        for k, lo, hi in (("multiplier", 0.3, 2.0), ("smooth", 0.0, 0.95), ("face_smooth", 0.0, 0.95), ("turn_limit", 5, 45)):
+        for k, lo, hi in (("multiplier", 0.3, 2.0), ("smooth", 0.0, 0.95), ("face_smooth", 0.0, 0.95), ("turn_limit", 5, 45), ("face_limit", 0.03, 0.3)):
             if k in body["animator"]:
                 try:
                     a[k] = round(max(lo, min(hi, float(body["animator"][k]))), 3)
@@ -2296,7 +2296,7 @@ async def animate_ws(ws: WebSocket):
                 elif animator is not None and cmd.get("cmd") == "drop":
                     animator.drop_next()
                 elif animator is not None and cmd.get("cmd") == "opts":
-                    for k in ("multiplier", "smooth", "face_smooth", "follow", "turn_limit", "redetect", "quality"):
+                    for k in ("multiplier", "smooth", "face_smooth", "follow", "turn_limit", "face_limit", "redetect", "quality"):
                         if k in cmd:
                             try:
                                 animator.opts[k] = float(cmd[k])

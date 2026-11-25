@@ -339,6 +339,7 @@ label.txt { display: flex; flex-direction: column; gap: 8px; font-size: 13px; co
           <label class="ctl"><span>Head smoothing</span><span class="v" id="a_smoothV"></span><input id="a_smooth" data-a="smooth" type="range" min="0" max="0.9" step="0.05"><small>Higher = calmer head, a little behind you.</small></label>
           <label class="ctl"><span>Face smoothing</span><span class="v" id="a_face_smoothV"></span><input id="a_face_smooth" data-a="face_smooth" type="range" min="0" max="0.9" step="0.05"><small>Eyes and mouth. Higher = steadier, slower.</small></label>
           <label class="ctl"><span>Turn limit</span><span class="v" id="a_turn_limitV"></span><input id="a_turn_limit" data-a="turn_limit" type="range" min="8" max="40" step="1"><small>How far the head may turn, in degrees, before it stops following (beyond this the painting distorts).</small></label>
+          <label class="ctl"><span>Face limit</span><span class="v" id="a_face_limitV"></span><input id="a_face_limit" data-a="face_limit" type="range" min="0.03" max="0.3" step="0.01"><small>How far the face (eyes, mouth) may move before it eases off. Lower = steadier, never distorts; higher = bigger expressions. A frame where the tracker slips is held, not drawn.</small></label>
         </div>
         <div class="card"><h3>Painted: its shape</h3>
           <label class="txt">Shape (what holds your body)<select id="shape">

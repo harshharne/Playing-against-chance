@@ -26,6 +26,68 @@ import numpy as np
 
 LP_DIR = os.environ.get("LIVEPORTRAIT_DIR", os.path.expanduser("~/LivePortrait"))
 LOST_AFTER = 45          # frames without a face before the next face is treated as a new person (new neutral)
+MIN_FACE = 0.06          # a face narrower than this share of the camera frame is too small to read (noise): held
+JUMP_DEG = 25.0          # a turn this big between two frames is the tracker slipping, not a head: the frame is held
+JUMP_EXP = 0.08          # the same for the face (eyes, mouth)
+HOLD_MAX = 4             # ...for at most this many frames in a row (then it believes the new pose)
+EXP_LIMIT = 0.1          # how far the face may move from its neutral before it eases off (a yawn, a hand over the
+                         # mouth, a bad frame can't tear the painting)
+DRIFT = 0.003            # per frame, the neutral drifts toward the player's resting face (a neutral caught mid-word,
+                         # or a player standing at an angle, doesn't bend the portrait for the rest of the life)
+
+
+class Steady:
+    """Between the tracker and the warp: what keeps the portrait from distorting. Takes each frame's raw pose
+    (pitch, yaw, roll in degrees; t, scale, exp as tensors) and returns the pose to draw, or None to keep the last
+    frame. Works on anything with abs()/max()/tanh() (torch tensors in the animator, the tests use them too)."""
+    ANG = ("pitch", "yaw", "roll")
+
+    def __init__(self, tanh):
+        self.tanh = tanh
+        self.reset()
+
+    def reset(self):
+        self.ref = None          # the neutral: {"exp", "t", "scale", "ang": {pitch, yaw, roll}}
+        self.prev = None         # the last pose accepted (smoothed)
+        self.raw = None          # the last raw pose seen
+        self.held = 0            # frames held in a row
+        self.stat = {"held": 0, "eased": 0}
+
+    def step(self, raw, opts):
+        """raw: {pitch, yaw, roll, t, scale, exp}. -> {"ang": {...}, "exp": change since neutral (eased), "pose": smoothed}
+        or None (hold the last frame: the tracker slipped)."""
+        f = lambda v: float(v.max()) if hasattr(v, "max") else float(v)
+        if self.raw is not None and self.held < HOLD_MAX:
+            jump = max(abs(f(raw[k] - self.raw[k])) for k in self.ANG)
+            jexp = f((raw["exp"] - self.raw["exp"]).abs())
+            if jump > JUMP_DEG or jexp > JUMP_EXP:
+                self.held += 1; self.stat["held"] += 1
+                return None
+        self.held = 0
+        self.raw = raw
+        a = max(0.0, min(0.9, float(opts.get("smooth", 0.3))))
+        b = max(0.0, min(0.9, float(opts.get("face_smooth", 0.3))))
+        pose = dict(raw)
+        if self.prev is not None:
+            pose = {k: self.prev[k] * (b if k == "exp" else a) + v * (1 - (b if k == "exp" else a)) for k, v in raw.items()}
+        self.prev = pose
+        if self.ref is None:
+            self.ref = {"exp": pose["exp"], "t": pose["t"], "scale": pose["scale"], "ang": {k: pose[k] for k in self.ANG}}
+        else:                                                   # the neutral follows the resting face, slowly
+            r = self.ref
+            r["exp"] = r["exp"] * (1 - DRIFT) + pose["exp"] * DRIFT
+            r["ang"] = {k: r["ang"][k] * (1 - DRIFT) + pose[k] * DRIFT for k in self.ANG}
+        lim = max(5.0, float(opts.get("turn_limit", 22)))
+        ang = {}
+        for k, fac in (("yaw", 1.0), ("pitch", 0.7), ("roll", 0.7)):          # soft limit on the turn since neutral
+            L = lim * fac
+            ang[k] = self.ref["ang"][k] + L * self.tanh((pose[k] - self.ref["ang"][k]) / L)
+        d = pose["exp"] - self.ref["exp"]
+        L = float(opts.get("face_limit", EXP_LIMIT))
+        eased = L * self.tanh(d / L)                            # soft: small changes pass, big ones ease off
+        if f((d - eased).abs()) > L * 0.1:
+            self.stat["eased"] += 1
+        return {"ang": ang, "exp": eased, "pose": pose}
 
 
 def ort_preload():
@@ -96,7 +158,9 @@ class Animator:
         # turn_limit: degrees of turn (left/right) the portrait follows fully; tilts and nods get 70 % of it.
         # Beyond that it eases off instead of bending the painting (LivePortrait smears past ~20 degrees of tilt)
         # face_smooth: steadies eyes and mouth (0 = raw: crisp but the tracker's noise shows)
-        self.opts = {"multiplier": 1.0, "smooth": 0.3, "face_smooth": 0.3, "follow": 0.0, "turn_limit": 22, "redetect": 10, "quality": 85}
+        self.opts = {"multiplier": 1.0, "smooth": 0.3, "face_smooth": 0.3, "follow": 0.0, "turn_limit": 22, "redetect": 10, "quality": 85,
+                     "face_limit": EXP_LIMIT}
+        self.steady = Steady(torch.tanh)
         self.src = None
         self.next = None         # a second portrait, moved by the same motion: the game dissolves one age into the next
         self.last_head = None
@@ -130,7 +194,7 @@ class Animator:
                 self.next = src                                       # (the driver's neutral and smoothing carry on)
             else:
                 self.src, self.next = src, None
-                self.prev = None
+                self.last_imgs = None
         return True
 
     def promote(self):
@@ -150,6 +214,9 @@ class Animator:
         self.lmk = None          # tracked landmarks
         self.n = 0
         self.missing = 0
+        self.last_imgs = None    # the last frame drawn (held while the tracker slips)
+        if hasattr(self, "steady"):
+            self.steady.reset()
 
     # ---- a head-and-shoulders square around the face in a photo (for painting portraits from the player) ----
     def face_box(self, rgb):
@@ -175,7 +242,7 @@ class Animator:
         lmk = self.cropper.human_landmark_runner.run(rgb, lmk)
         span = lmk.max(0) - lmk.min(0)
         cx, cy = lmk.mean(0)
-        if span.min() < 12 or not (0 <= cx < rgb.shape[1] and 0 <= cy < rgb.shape[0]):
+        if span.min() < 12 or span[0] < MIN_FACE * rgb.shape[1] or not (0 <= cx < rgb.shape[1] and 0 <= cy < rgb.shape[0]):
             self.lmk = None
             return None
         self.lmk = lmk
@@ -191,9 +258,11 @@ class Animator:
         t["track"] = (t1 - t0) * 1000
         if lmk is None:
             self.missing += 1
-            if self.missing > LOST_AFTER:
-                self.ref, self.prev, self.ref_lmk = None, None, None  # they left: the next face is a new neutral
+            if self.missing > LOST_AFTER:                             # they left: the next face is a new neutral
+                self.steady.reset(); self.ref_lmk = None; self.last_imgs = None
             self.last_head = None
+            if self.last_imgs is not None and len(self.last_imgs) == len([x for x in (s, self.next) if x is not None]):
+                return self.last_imgs, {"face": False, "ms": t, "held": True}   # a blink of a lost face: no jump back
             return [x["img"] for x in (s, self.next) if x is not None], {"face": False, "ms": t}
         self.missing = 0
         follow = max(0.0, min(1.0, float(self.opts.get("follow", 0.0))))
@@ -201,49 +270,43 @@ class Animator:
             c0, c1 = self.ref_lmk.mean(0), lmk.mean(0)                 # window -> start a new neutral there
             size = float((self.ref_lmk.max(0) - self.ref_lmk.min(0)).max())
             if float(np.abs(c1 - c0).max()) > size * 0.9:
-                self.ref, self.prev, self.ref_lmk = None, None, None
+                self.steady.reset(); self.ref_lmk = None
         with torch.no_grad():
             # crop where the face was at neutral (so moving your head moves you in the crop) unless follow is off
             box = self.ref_lmk if (self.ref_lmk is not None and follow > 0) else lmk
             crop = self.crop_image(rgb, box, dsize=256, scale=2.2, vy_ratio=-0.1, flag_do_rot=False)
             I_d = w.prepare_source(crop["img_crop"])
             x_d = w.get_kp_info(I_d)
-            # steady the HEAD (angles, position, size) a little; eyes and mouth (exp) stay raw so blinks and speech are crisp
-            a = max(0.0, min(0.9, float(self.opts["smooth"])))
-            b = max(0.0, min(0.9, float(self.opts.get("face_smooth", 0.3))))
-            pose = {k: x_d[k] for k in ("pitch", "yaw", "roll", "t", "scale", "exp")}
-            if self.prev is not None:
-                pose = {k: self.prev[k] * (b if k == "exp" else a) + v * (1 - (b if k == "exp" else a)) for k, v in pose.items()}
-            self.prev = pose
-            if self.ref is None:
-                self.ref = ({"exp": x_d["exp"], "t": pose["t"], "scale": pose["scale"],
-                             "ang": {k: pose[k].clone() for k in ("pitch", "yaw", "roll")}},
-                            self.rot(pose["pitch"], pose["yaw"], pose["roll"]))
-                self.ref_lmk = lmk.copy()
-            x0, R0 = self.ref
-            lim = max(5.0, float(self.opts.get("turn_limit", 22)))
-            ang = {}
-            for k, f in (("yaw", 1.0), ("pitch", 0.7), ("roll", 0.7)):          # soft limit on the turn since neutral
-                L = lim * f
-                ang[k] = x0["ang"][k] + L * torch.tanh((pose[k] - x0["ang"][k]) / L)
-            R_d = self.rot(ang["pitch"], ang["yaw"], ang["roll"])
+            raw = {k: x_d[k] for k in ("pitch", "yaw", "roll", "t", "scale", "exp")}
+            st = self.steady.step(raw, self.opts)                     # steadied: glitches held, big faces eased
             t2 = time.perf_counter()
             t["motion"] = (t2 - t1) * 1000
-            faces = [(src, self.move(src, R_d, R0, x0, pose, follow)) for src in (s, self.next) if src is not None]
+            if st is None and self.last_imgs is not None:              # the tracker slipped: keep the last frame
+                return self.last_imgs, {"face": True, "head": self.last_head, "ms": t, "held": True, "steady": dict(self.steady.stat)}
+            if st is None:                                            # (nothing drawn yet to hold: take this one)
+                self.steady.held = HOLD_MAX
+                st = self.steady.step(raw, self.opts)
+            if self.ref_lmk is None:
+                self.ref_lmk = lmk.copy()
+            R_d = self.rot(st["ang"]["pitch"], st["ang"]["yaw"], st["ang"]["roll"])
+            ref = self.steady.ref
+            R0 = self.rot(ref["ang"]["pitch"], ref["ang"]["yaw"], ref["ang"]["roll"])
+            faces = [(src, self.move(src, R_d, R0, ref, st, follow)) for src in (s, self.next) if src is not None]
             t3 = time.perf_counter()
             t["warp"] = (t3 - t2) * 1000
         imgs = [self.paste_back(face, src["M_c2o"], src["img"], src["mask"]) for src, face in faces]
+        self.last_imgs = imgs
         t["paste"] = (time.perf_counter() - t3) * 1000
         head = _head_info(lmk, rgb.shape[1], rgb.shape[0], x_d["yaw"].item(), x_d["pitch"].item(), x_d["roll"].item())
         self.last_head, self.head_at = head, time.time()
-        return imgs, {"face": True, "head": head, "ms": t}
+        return imgs, {"face": True, "head": head, "ms": t, "steady": dict(self.steady.stat)}
 
-    def move(self, s, R_d, R0, x0, pose, follow):
-        """Your change since neutral, applied to one portrait's own pose and face -> its face, warped."""
+    def move(self, s, R_d, R0, x0, st, follow):
+        """Your change since neutral (steadied), applied to one portrait's own pose and face -> its face, warped."""
         w = self.w
-        xs = s["x_s_info"]
+        xs, pose = s["x_s_info"], st["pose"]
         R_new = (R_d @ R0.permute(0, 2, 1)) @ s["R_s"]
-        delta = xs["exp"] + (pose["exp"] - x0["exp"])
+        delta = xs["exp"] + st["exp"]
         scale = xs["scale"] * (1 + (pose["scale"] / x0["scale"] - 1) * follow)
         t_new = xs["t"] + (pose["t"] - x0["t"]) * follow
         t_new[..., 2].fill_(0)
