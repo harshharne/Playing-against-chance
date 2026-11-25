@@ -95,7 +95,7 @@
       ]
     ],
     "light_words": "dawn|morning|noon|midday|afternoon|evening|dusk|night|sunset|sunrise|light|lamp|glowing",
-    "means_until": 24,
+    "means_until": 18,
     "outcome": {
       "good": "the air clear and bright",
       "bad": "a grey, heavy sky",
@@ -110,7 +110,7 @@
     ],
     "weather": [
       "light rain",
-      "heavy monsoon rain",
+      "a downpour, gutters overflowing",
       "morning mist",
       "dust in the air",
       "wet streets after rain",
@@ -125,7 +125,7 @@
         [
           "a power cut, a candle on a window sill",
           "a kite caught in electric wires",
-          "monsoon water flooding the lane",
+          "flood water in the lane",
           "a stray dog asleep on warm steps",
           "a festival procession passing at the end of the street",
           "a vegetable cart under a streetlight"
@@ -134,10 +134,10 @@
       [
         13,
         [
-          "a new flyover being built, scaffolding and dust",
-          "a cricket match on an empty plot",
+          "a new overpass being built, scaffolding and dust",
+          "a ball game on an empty plot",
           "fireworks over the rooftops",
-          "a mobile tower rising over old houses",
+          "a phone mast rising over old houses",
           "a broken-down bus on a highway",
           "a crowded railway platform at night"
         ]
@@ -148,7 +148,7 @@
           "a crane over a half-built tower",
           "a traffic jam at night, red tail lights",
           "an airport window, planes waiting",
-          "a wedding band passing on the street",
+          "a wedding party passing on the street",
           "a hospital corridor at night",
           "a festival crowd by the sea"
         ]
@@ -171,7 +171,7 @@
           "a hospital waiting room",
           "the old neighbourhood rebuilt, unrecognisable",
           "grandchildren's toys on the floor",
-          "a temple bell at dawn",
+          "a bell ringing at dawn",
           "an empty railway station at night"
         ]
       ]
@@ -249,7 +249,7 @@
           "reveals": "The youngest region on earth. Everyone is your age.",
           "target": "2 or more",
           "scene": "a cot in a small room with a tin roof",
-          "place": "sub-saharan africa, red earth, acacia trees, tin roofs, warm dusty light",
+          "place": "sub-saharan africa, red earth, acacia trees, tin roofs",
           "heritage": "African"
         },
         {
@@ -265,7 +265,7 @@
           "reveals": "A billion and a half people, very few of them siblings.",
           "target": "3 or more",
           "scene": "a cot in a quiet small apartment",
-          "place": "east asia, dense city blocks, apartment towers, neon signs",
+          "place": "east asia, dense city blocks, apartment towers, busy streets",
           "heritage": "East Asian"
         },
         {
@@ -281,7 +281,7 @@
           "reveals": "Oil under the ground, history on top of it.",
           "target": "4 or more",
           "scene": "a cot in a sandstone house, oil derricks on the horizon",
-          "place": "middle east, desert, sandstone buildings, domes, golden light",
+          "place": "middle east, desert towns, sandstone buildings, domes",
           "heritage": "Middle Eastern"
         },
         {
@@ -297,7 +297,7 @@
           "reveals": "Free healthcare, expensive everything else.",
           "target": "a 6",
           "scene": "a cot in a tidy clinic, a nurse in a white uniform",
-          "place": "europe, old stone streets, tiled roofs, grey rainy sky",
+          "place": "europe, old stone streets, tiled roofs, small squares",
           "heritage": "European"
         },
         {
@@ -399,7 +399,7 @@
       "scene": "inside the home, a cot by the window, soft morning light",
       "objects": [
         "a cot mobile turning slowly",
-        "a steel tumbler of warm milk",
+        "a cup of warm milk",
         "a rattle on a woven mat",
         "small shoes by the door"
       ],
@@ -594,7 +594,7 @@
       "age": 8,
       "scene": "a school classroom, rows of wooden desks, a blackboard",
       "objects": [
-        "a tiffin box open on a desk",
+        "a lunch box open on a desk",
         "chalk dust on a blackboard ledge",
         "a school bag hanging on a hook",
         "an exercise book with ink blots"
@@ -606,10 +606,10 @@
       ],
       "passage": [
         "a narrow lane at dawn, children with school bags walking, a bicycle leaning on a wall",
-        "a dusty school playground at noon, a cricket bat on the ground, shade under a big tree",
+        "a dusty school playground at noon, a bat and ball on the ground, shade under a big tree",
         "a kitchen table in the evening, homework books under a single lamp, a cup of tea",
         "a crowded tuition room, rows of benches, a ceiling fan turning",
-        "a school courtyard strung with marigolds for annual day, rows of folding chairs"
+        "a school courtyard strung with paper garlands for sports day, rows of folding chairs"
       ],
       "outcomes": {
         "good": {
@@ -856,7 +856,7 @@
         {
           "text": "Your old school teacher spots you at a tea stall. Her nephew needs someone.",
           "job": "A job at the nephew's firm.",
-          "scene": "a family-run office, a tea stall outside"
+          "scene": "a family-run office, a food stall outside"
         },
         {
           "text": "A wrong-number call. The caller was hiring.",
@@ -1001,7 +1001,7 @@
       ],
       "passage": [
         "an office lobby in the morning, glass doors, people with lanyards",
-        "a weekend drive past green fields, a roadside tea stall"
+        "a weekend drive past green fields, a roadside food stall"
       ],
       "outcomes": {
         "good": {
@@ -1025,9 +1025,9 @@
       "type": "chosen",
       "age": 36,
       "setup": "Who do you want to spend your life with?",
-      "scene": "a wedding hall full of relatives and garlands",
+      "scene": "a wedding hall full of relatives and flowers",
       "objects": [
-        "marigold garlands strung over a doorway",
+        "flower garlands strung over a doorway",
         "a plate of sweets on a silver tray",
         "a heap of shoes outside a hall"
       ],
@@ -1211,7 +1211,7 @@
         "an evening bus ride, wet windows, city lights blurring",
         "a quiet office at dusk, half the desks empty",
         "a hospital visiting room, a fruit basket on a bedside table",
-        "a temple courtyard in the early morning, bells, flowers on the steps"
+        "a shrine courtyard in the early morning, bells, flowers on the steps"
       ],
       "bridge": "Eight more years. The office orders a cake."
     },

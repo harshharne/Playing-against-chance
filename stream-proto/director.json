@@ -1,7 +1,7 @@
 {
   "_how": "The director's rules (its style bible). Edit freely: it re-reads this file on every call, no restart. model = the Claude model it uses; line_words = the longest line it may write; never_in_pictures = words that make a scene prompt fall back to the written one. effort = how hard Claude thinks before writing (low / medium / high; low is fastest). api: leave it out (chosen by the model), or 'tool' / 'json' to force one.",
   "model": "claude-sonnet-5-5",
-  "timeout_s": 30,
+  "timeout_s": 50,
   "line_words": 28,
   "never_in_pictures": [
     "text",

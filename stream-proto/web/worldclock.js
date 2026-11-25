@@ -55,6 +55,7 @@ const clip = s => { const w = clean(s).split(" "); return clean(w.length > SUBJE
 export function createWorldClock({ live, sound = null, sleep, state, compose = null }) {
   let rng = Math.random, on = false, alive = false, gen = 0;
   let pool = [], past = [], recent = [], lastShot = "", mood = "", moodLeft = 0, age = 0;
+  let usedOut = new Set();             // the times coming in from outside (intrusions): each once a life, while there are others
   let queue = [];                    // { sh (painted) | null, p (promise), ctl, prompt, frag, shot, gen }
   let gate = Promise.resolve(), gateOpen = true, burst = 0, nextAt = 0, fails = 0, arriving = null;
   const stat = { mode: "off", shown: 0, painted: 0, failed: 0, dropped: 0, queue: 0, last: "", gap: 0, wait: "" };
@@ -76,7 +77,8 @@ export function createWorldClock({ live, sound = null, sleep, state, compose = n
     const kinds = Object.keys(byKind).map(k => [k, k === "memory" ? 0.15 + Math.min(1.4, age / 55) : (KIND_W[k] || 1)]);
     for (let tries = 0; tries < 6; tries++) {
       const k = weighted(kinds); if (!k) break;
-      const fresh = byKind[k].filter(f => !recentSet.has(f.text));
+      let fresh = byKind[k].filter(f => !recentSet.has(f.text));
+      if (k === "intrusion") { const unseen = fresh.filter(f => !usedOut.has(f.text)); if (unseen.length) fresh = unseen; }
       if (fresh.length) return pick(fresh);
     }
     const any = pool.filter(f => !recentSet.has(f.text));
@@ -89,8 +91,8 @@ export function createWorldClock({ live, sound = null, sleep, state, compose = n
   function rollLight() {
     const st = state();
     const parts = [];
-    if (R() < 0.7 && st.light) parts.push(st.light);           // the light of your age, most of the time
-    else parts.push(pick(TIMES));
+    if (st.light && R() < 0.92) parts.push(st.light);           // the light of your age, nearly always (the time of day
+    else parts.push(pick(TIMES));                               // doesn't jump about from one picture to the next)
     if (R() < 0.35) parts.push(pick(st.weather && st.weather.length ? st.weather : WEATHER));
     return parts;
   }
@@ -99,14 +101,19 @@ export function createWorldClock({ live, sound = null, sleep, state, compose = n
     let subject = clip(frag.text);
     if (frag.kind === "memory") subject = `${subject}, ${pick(["years later", "as remembered", "older now", "long after"])}`;
     const parts = [SHOTS[shot] ? SHOTS[shot].words(subject) : subject];
-    if (st.place) parts.push(st.place);                        // (before the light: if anything is cut off at the end, it isn't where)
+    // WHERE: the region always (things and people look like they belong there); its scenery (towers, palm trees, the
+    // sea) only on pictures of places, and not every time, so a rattle never gets palm trees and a life isn't all neon
+    const [region, ...scenery] = String(st.place || "").split(",").map(clean).filter(Boolean);
+    const isPlace = /^(place|weather|intrusion)$/.test(frag.kind) && !/^(close|detail)$/.test(shot);
+    if (region) parts.push(region);                            // (before the light: if anything is cut off at the end, it isn't where)
+    if (isPlace && scenery.length && R() < 0.6) parts.push(scenery.join(", "));
     let lt = (light || rollLight()).slice();
     if (st.lightWords && st.lightWords.test(subject)) lt = lt.filter(w => !TIMES.includes(w) && w !== st.light);   // it names its own light
     const wx = st.weather && st.weather.length ? st.weather : WEATHER;
     if (frag.kind === "weather" && !lt.some(w => wx.includes(w))) lt.push(pick(wx));
     if (mood && moodLeft > 0 && R() < 0.5) parts.push(...lt.filter(w => !wx.includes(w)), mood);   // after an outcome, its air (not a rival sky)
     else parts.push(...lt);
-    if (st.means) parts.push(st.means);
+    if (st.means && isPlace) parts.push(st.means);            // what the family had: on the places of a childhood only
     return parts.map(clean).filter(Boolean).join(", ");
   }
   function rollMove() {
@@ -163,6 +170,7 @@ export function createWorldClock({ live, sound = null, sleep, state, compose = n
     if (!frag) return null;
     const shot = rollShot(frag.kind);
     recent.push(frag.text); while (recent.length > REPEAT) recent.shift();
+    if (frag.kind === "intrusion") usedOut.add(frag.text);
     const prompt = promptFor(frag, shot);
     const ctl = new AbortController(), my = gen;
     const q = { sh: null, ctl, prompt, frag, shot, gen: my, done: false, seed: 1 + Math.floor(R() * 1e9) };
@@ -262,7 +270,7 @@ export function createWorldClock({ live, sound = null, sleep, state, compose = n
     life(seed) {
       gen++; dropQueue();
       rng = mulberry32((Math.floor(+seed) || 1) ^ 0x9E3779B9);
-      pool = []; past = []; recent = []; lastShot = ""; mood = ""; moodLeft = 0; age = 0; burst = 0; nextAt = 0; fails = 0;
+      pool = []; past = []; recent = []; lastShot = ""; mood = ""; moodLeft = 0; age = 0; burst = 0; nextAt = 0; fails = 0; usedOut = new Set();
       gate = Promise.resolve(); gateOpen = true; arriving = null; alive = true;
       Object.assign(stat, { shown: 0, painted: 0, failed: 0, dropped: 0, queue: 0, last: "", gap: 0, wait: "" });
     },

@@ -54,5 +54,19 @@ check(g[1000] > 0.8 && g[1000] < 3, "the median gap is out of range");
 const same1 = createWorldClock({ live, sleep, state: () => st }), same2 = createWorldClock({ live, sleep, state: () => st });
 same1.life(99); same2.life(99); same1.know({ scene: "a street", objects: ["a cup", "a key"] }); same2.know({ scene: "a street", objects: ["a cup", "a key"] }); same1.stop(); same2.stop();
 check([1, 2, 3, 4, 5].every(() => same1._roll.gap() === same2._roll.gap()), "the same seed didn't roll the same");
+// what goes into a picture: the region always; its scenery only on places (sometimes); the family's means only on
+// places; the light of the age nearly always (the time of day doesn't jump about)
+const sp = { ...st, place: "east asia, dense city blocks, apartment towers", means: "showy and privileged", light: "warm afternoon light" };
+const c3 = createWorldClock({ live, sleep, state: () => sp }); c3.life(11); c3.know({ scene: "x" }); c3.stop();
+const P = (kind, text, shot, n = 200) => Array.from({ length: n }, () => c3._roll.prompt({ kind, text }, shot));
+const obj = P("object", "a rattle on a mat", "detail"), ppl = P("people", "a grandmother folding clothes", "close"), plc = P("place", "a narrow lane", "wide");
+check(obj.every(x => /east asia/.test(x)), "a thing lost its region");
+check(!obj.some(x => /apartment towers|showy/.test(x)), "a close-up of a thing got the place's scenery or the family's means: " + obj.find(x => /apartment towers|showy/.test(x)));
+check(!ppl.some(x => /apartment towers|showy/.test(x)), "people got the place's scenery or the family's means");
+const withScenery = plc.filter(x => /apartment towers/.test(x)).length;
+check(withScenery > 60 && withScenery < 180, `a place got its scenery ${withScenery} times in 200 (want some, not always)`);
+check(plc.some(x => /showy/.test(x)), "a place never showed the family's means");
+const offLight = plc.filter(x => !/warm afternoon light/.test(x)).length;
+check(offLight < 30, `the light of the age was missing ${offLight} times in 200 (the time of day jumps)`);
 note(`${shown.length} pictures shown, ${closed} given back`);
 done("world clock");

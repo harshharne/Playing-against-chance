@@ -164,6 +164,8 @@ class Director:
         planted = "\n".join(f"- at {p['age']}: {p['text']}" for p in life.get("planted", [])) or "- none"
         who = ", ".join(x for x in [life.get("gender") or "", f"age {int(life.get('age', 0))}", life.get("place") or "",
                                     f"wears {life['wear']}" if life.get("wear") else "", ", ".join(life.get("traits", []))] if x)
+        if not life.get("place"):                                # Birth comes before Where: no country may be assumed
+            who += "\nWhere: not decided yet. Keep every detail free of any one country or culture (no national clothes, food, objects, weather or names)."
         if life.get("means"):                                    # what the family had (Whom): it shows in the worlds of youth
             who += f"\nBorn into: {life['means']}"
         if life.get("light"):                                    # the light of this age (a life as one day)
