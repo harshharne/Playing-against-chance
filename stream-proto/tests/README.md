@@ -6,7 +6,8 @@ your files and the tunnel (8766) are never touched.
 
     bash tests/run.sh          # the quick set, ~6 min
     bash tests/run.sh full     # + the soak: 6 lives back to back in one page, ~15 min more (LIVES=10 for more)
-    bash tests/run.sh life     # one test: files | clock | body | life | drills | panel | live | soak
+    bash tests/run.sh life     # one test: files | clock | body | life | drills | panel | live | whom | soak
+| whom | a life of Where, Whom, the baby: Whom is painted by the picture model (no drawing), with no avatar yet, and the screen never blank |
 
 The first run installs Playwright and its Chromium (~150 MB, into tests/node_modules). The stand-in needs
 `python3 -m pip install fastapi "uvicorn[standard]" pillow numpy`.

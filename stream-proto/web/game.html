@@ -112,7 +112,6 @@ button:focus-visible { outline: 3px solid #888; outline-offset: 2px; }
   <canvas id="baby" class="baby" aria-hidden="true"></canvas>
   <canvas id="birth" class="birth" aria-hidden="true"></canvas>
   <canvas id="map" class="birth" aria-hidden="true"></canvas>
-  <canvas id="house" class="birth" aria-hidden="true"></canvas>
   <video id="pip" class="pip" muted playsinline aria-label="Your camera"></video>
   <div class="say" id="say" aria-live="polite"></div>
   <div class="big" id="big" aria-live="polite"><div class="disc"><b id="bigN"></b><span id="bigW"></span></div></div>
@@ -144,7 +143,6 @@ import { createDiceReader as createRemoteReader } from "./dice-remote.js";
 import { findCamera } from "./cameras.js";
 import { createBirth } from "./birth.js";
 import { createWorldMap } from "./worldmap.js";
-import { createHouse } from "./house.js";
 import { createBaby } from "./baby.js";
 import { createFog } from "./ui-fog.js";
 import { createBookkeeper } from "./bookkeeper.js";
@@ -168,9 +166,8 @@ const nextFrame = () => new Promise(r => requestAnimationFrame(() => r()));
 const live = createLive({ out: $("out"), video: $("pip"), params: () => ({}) });
 const birth = createBirth($("birth"));                         // the egg and the sperm (Birth: "drawn": "egg")
 const worldmap = createWorldMap($("map"));                     // Where: the world map ("map")
-const house = createHouse($("house"));                         // Whom: the home being built ("house")
 const baby = createBaby($("baby"), live);                      // Body: the baby, then the live kid takes over ("baby")
-const SCENES = { egg: birth, map: worldmap, house };
+const SCENES = { egg: birth, map: worldmap };
 
 // ---------- the style of the screen: GLASS or FOG (U switches; remembered in this browser) ----------
 const fog = createFog({ root: $("gen"), sec: (k) => sec(k) });
@@ -209,7 +206,7 @@ addEventListener("pac-voice", (e) => sound.duck(!!(e.detail && e.detail.speaking
 const V = createBookkeeper({ onPick: (name) => deckPick ? deckPick(name) : { ok: false, reason: "the cards aren't up" } });
 let scene = null;                                              // the drawn scene on screen now
 let held = false;
-function holdAll(on) { held = !!on; live.hold(on); for (const x of [birth, worldmap, house, baby]) x.hold(on); }   // while the die rolls, everything holds still
+function holdAll(on) { held = !!on; live.hold(on); for (const x of [birth, worldmap, baby]) x.hold(on); }   // while the die rolls, everything holds still
 async function toScene(name) {                                 // crossfade from one drawn scene to the next (or to the painted world)
   const next = SCENES[name] || null;
   if (next === scene) return;
@@ -500,7 +497,7 @@ function world(scene, { keep = 0, fresh = false, breaths = null, dur = 0, direct
   else clock.know(known);                                       // (so ever-changing can take over at once from the panel)
   return worldDone;
 }
-const sceneCovers = () => !!scene;                            // the egg, the map or the house is drawn over the world: one picture is enough
+const sceneCovers = () => !!scene;                            // the egg or the map is drawn over the world: one picture is enough
 // ---------- the director: an LLM writes each moment's world (and its variations, clothes, a line) from the life so far ----------
 // It is asked AHEAD: the next event's arrival as soon as this one's outcome is known, and every branch of an event as it
 // begins, so the answers are there when the die lands. Not there in time (WK.director_wait), off, or rejected: the
@@ -818,7 +815,6 @@ async function chosen(ev) {
   } else {
     apply(got);
     const w = got.scene ? turnTo(`${ev.id}:card:${got.name}`, got.scene) : null;
-    if (ev.drawn === "house") house.build(got.name, sec("linger") * 0.9);                  // the home, built while it lingers
     const note = how === "hit" ? "" : how === "override" ? `${tries} throws, then the override.` : `You went for ${esc(c.name)}. Chance allotted this.`;
     S.ledger.push([S.ageF, ev.title, got.name, how === "hit" ? "" : how === "override" ? `went for ${c.name}; ${tries} throws, then the override` : `went for ${c.name}`]); prewriteNext();
     if (w) await Promise.race([w, sleep(250)]);
@@ -987,7 +983,7 @@ async function life(begun = false) {                            // begun: the th
   deckGone(); bigEl.classList.remove("on");
   live.setPerson(null); live.setReal(false); live.setPersonAlpha(1); live.setControl({ age: 0, ramp: 1 });
   live.portrait(null); pCache.clear(); photoBlob = null; pShown = { age: -99, wear: "" };
-  baby.hide(0); worldmap.reset(); house.reset(); if (scene) scene.hide(0); scene = null;
+  baby.hide(0); worldmap.reset(); if (scene) scene.hide(0); scene = null;
   worldmap.load().catch(() => {}); baby.preload();
   await live.whenReady();
   world(T.events[0].scene, { fresh: true, age: 0 });          // a new life: a fresh world, its own seed

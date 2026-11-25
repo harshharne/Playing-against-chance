@@ -65,7 +65,7 @@ the timings. Edit it and the next life uses it (no restart). The rules are in `w
 ## The opening (Birth → Where → Whom → Body)
 - Birth: the egg and sperm (web/birth.js). Where: a world map in pencil (web/worldmap.js, web/worldmap.json from Natural Earth);
   hovering a card warms its region, the drawn one fills in, an allotted one is found by a light running across the regions.
-  Whom: the home built stroke by stroke, one drawing per household (web/house.js).
+  Whom: painted like any other event (the household's home, by the painter; no avatar yet).
 - Body: a Chosen event like the others (cards in trajectory.json, each with its "genes"). The baby is painted once
   (GET /portrait), then each trait emerges on it one by one (your skin first, taken from your camera; never a card),
   each repainted lightly from the last. The browser animates it (web/baby.js): breathing, blinks, eyes that follow you,
@@ -214,7 +214,7 @@ picture morphing into the next. web/worldclock.js runs it; chance rolls everythi
   seconds the next one is painted in as a change of its own (PASSAGE: EACH TAKES, so several pictures, never a jump),
   each keeping PASSAGE: EACH KEEPS of the last. The director rewrites the passage for this life (4-6 scenes). When the
   passage is over the last scene BREATHES (small variations, BREATH DRIFT). Never during a change or the words between
-  events, never while the die rolls, never under the egg, map or house.
+  events, never while the die rolls, never under the egg or the map.
 - Scenes are written as things a painter can paint: no readable writing (notices, signs saying X): it comes out as
   scribble. Several were rewritten for that.
 - The server prints one line per picture ([world N] change 3/6 · time · how much repainted · how far the words are).
