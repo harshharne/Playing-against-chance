@@ -47,8 +47,6 @@ const L = require("../lib/standin.js"), { check, note, done } = require("../lib/
     await slide("dissolve", 0.2);  await sees("DISSOLVE", (x) => Math.abs(x.cfg.dissolve - 0.2) < 0.01);
     await tab("avatar");
     await seg("s_avatar", "portrait"); await sees("AVATAR portrait", (x) => x.cfg.avatar === "portrait");
-    await seg("s_body", "lean");   await sees("BODY lean", (x) => x.cfg.body === "lean");
-    await seg("s_body", "arms");   await sees("BODY arms", (x) => x.cfg.body === "arms");
     await slide("heritage", 0.9);  await sees("HERITAGE", (x) => Math.abs(x.heritage - 0.9) < 0.01);
 
     // the two typefaces
@@ -110,7 +108,7 @@ const L = require("../lib/standin.js"), { check, note, done } = require("../lib/
 
     // the game page reloads (NEW LIFE): it comes back with the panel's settings, not the defaults
     await L.post(s.url, "/game/command", { cmd: "new_life" }); await g.waitForTimeout(3500);
-    await sees("after a reload: everything still as set", (x) => Math.abs(x.tempo - 1.35) < 0.01 && Math.abs(x.bk.speed - 1.2) < 0.01 && x.sound.bed === -20 && x.cfg.body === "arms" && x.fonts[0] === pickE, 6000);
+    await sees("after a reload: everything still as set", (x) => Math.abs(x.tempo - 1.35) < 0.01 && Math.abs(x.bk.speed - 1.2) < 0.01 && x.sound.bed === -20 && x.fonts[0] === pickE, 6000);
 
     playing = false; await busy;
     check(errs.length === 0, "errors in the game:\n      " + errs.slice(0, 5).join("\n      "));

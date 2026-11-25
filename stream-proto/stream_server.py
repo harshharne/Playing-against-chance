@@ -150,8 +150,6 @@ TUNE_DEFAULTS = {
     "parallax": 0.03,         # browser: how far the world shifts with your head (0 = flat)
     "avatar": "portrait",     # the game's avatar: "portrait" = your face painted at each age, moved live by you (LivePortrait);
                               # "painted" = the camera repainted frame by frame (SDXL-Turbo)
-    "body": "arms",           # the portrait's body (web/bodywarp.js): "arms" = painted waist-up, leans, sways and moves its
-                              # arms with yours · "lean" = waist-up, leans and sways only · "still" = head and shoulders, still
     # the world's consistency (one life = one seed, sent by the game)
     "layout_hold": 0.5,       # how much of its noise every world of one life shares, so compositions rhyme (0 = each its own)
     "drift": 0.3,             # how far a breath's noise swings from its event's noise (0 = the same picture again, 1 = unrelated)
@@ -1529,7 +1527,7 @@ async def config():
             "filter": current_style().get("filter", ""), "skip_still": TUNE["skip_still"], "pace": pace_version,
             "out_scale": 2, "world_w": WORLD_W, "world_h": WORLD_H, "parallax": TUNE["parallax"],
             "dissolve": TUNE["dissolve"], "push": TUNE["push"], "move": TUNE["move"],
-            "avatar": TUNE["avatar"], "body": TUNE["body"], "animator": animator is not None,   # (the animator loads ~45 s after the painter)
+            "avatar": TUNE["avatar"], "animator": animator is not None,   # (the animator loads ~45 s after the painter)
             "server_pose": bool(_wb["model"]) or MOCK}
 
 
@@ -1559,8 +1557,6 @@ def clean_tune(d):
             if k == "shape" and v not in ("depth", "pose", "both", "off"):
                 continue
             if k == "avatar" and v not in ("portrait", "painted"):
-                continue
-            if k == "body" and v not in ("arms", "lean", "still"):
                 continue
             if k == "style" and v not in load_styles():
                 continue
@@ -2069,7 +2065,7 @@ def portrait_crop(img, frame="bust"):
         if frame == "half":                                  # the face's middle at ~20 % from the top
             side, cx, cy = s * 4.6, (x1 + x2) / 2, (y1 + y2) / 2 + s * 4.6 * 0.3
         else:
-            side, cx, cy = s * 2.6, (x1 + x2) / 2, (y1 + y2) / 2 + s * 0.35       # room for hair above, shoulders below
+            side, cx, cy = s * 2.9, (x1 + x2) / 2, (y1 + y2) / 2 + s * 0.3        # room for the hair above (never cut flat), shoulders below
     else:
         side, cx, cy = (min(w, h) * 1.3, w / 2, h * 0.7) if frame == "half" else (min(w, h) * 0.9, w / 2, h * 0.45)
     l, tp = cx - side / 2, cy - side / 2

@@ -364,13 +364,10 @@ function pWho(age) {
   return n <= 6 ? `a ${n}-year-old little ${kid}${h}` : n < 13 ? `a ${n}-year-old ${kid}${h}` : n < 20 ? `a ${n}-year-old teenage ${kid}${h}`
        : n < 60 ? `a ${n}-year-old ${adult}${h}` : `a ${n}-year-old elderly ${adult}${h}, grey hair, wrinkles`;
 }
-// BODY on /panel: a body that moves needs the portrait painted waist up, standing straight with the arms hanging
-// free at the sides (an arm painted across the body or holding something can't move, see bodywarp.js)
-const pFrame = () => (live.bodyMode() === "still" ? "bust" : "half");
+const pFrame = () => "bust";                                  // head and shoulders: only the face moves, with yours
 function pPrompt(age, wear, frame = pFrame()) {
-  const shot = frame === "half" ? `waist-up portrait of ${pWho(age)} standing straight` : `head and shoulders portrait of ${pWho(age)}`;
+  const shot = `head and shoulders portrait of ${pWho(age)}`;
   return [shot, S.gender === "nb" ? "androgynous" : "", wear ? `in ${wear}` : "", ...S.life,
-          frame === "half" ? "arms hanging relaxed at the sides, a little apart from the body, hands open and visible" : "",
           "looking straight at the viewer, calm face, mouth closed, soft plain background"].filter(Boolean).join(", ");
 }
 function getPhoto() {                                           // a still of you, taken once a life (again if it had no face)
@@ -945,7 +942,6 @@ async function arrive(ev, prev) {
   if (chapter) { S.phase = Math.min(PHASES.length - 1, S.phase + 1); setPhase(S.phase); }
   const dur = arriveMs(ev, prev);
   sound.age(ev.age); sound.cue("arrive", dur);                  // the bed moves with the years
-  live.resetBody();                                             // where you stand now is "upright, in the middle" (BODY)
   let handover = null;
   if (prev && prev.drawn === "baby") handover = takeover(sec("takeover"), ev);  // the baby becomes the live kid
   else if ((ev.drawn || null) !== (prev && prev.drawn || null)) toScene(ev.drawn === "baby" ? null : ev.drawn);   // drawn scene -> the next one, or the painted world

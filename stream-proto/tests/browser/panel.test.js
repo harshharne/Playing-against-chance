@@ -1,4 +1,4 @@
-// The panel: it loads with no errors, and its switches reach the server (world rules, body, heritage, tempo).
+// The panel: it loads with no errors, and its switches reach the server (world rules, heritage, tempo).
 const L = require("../lib/standin.js"), { check, done } = require("../lib/check.js");
 (async () => {
   const s = await L.standin({ life: "short" });
@@ -8,7 +8,6 @@ const L = require("../lib/standin.js"), { check, done } = require("../lib/check.
   const cfg = async () => (await fetch(s.url + "/config")).json();
   try {
     await p.goto(s.url + "/panel"); await p.waitForTimeout(2000);
-    for (const v of ["lean", "still", "arms"]) { await p.click(`#s_body button[data-v="${v}"]`); await p.waitForTimeout(900); check((await cfg()).body === v, `BODY ${v} didn't reach the server`); }
     await p.click('button[data-t="world"]'); await p.waitForTimeout(500);
     for (const v of ["continuous", "ever"]) { await p.click(`#s_rules button[data-v="${v}"]`); await p.waitForTimeout(900); check((await live()).world_rules === v, `WORLD RULES ${v} didn't reach the game`); }
     await p.click('button[data-t="avatar"]').catch(() => {});

@@ -253,19 +253,8 @@ picture morphing into the next. web/worldclock.js runs it; chance rolls everythi
   photo, with the birthplace's mixed in. Changes show from the next portrait.
 - The animator (LivePortrait) moves the portrait with your face. It is cut out of its plain background (MediaPipe, in
   the browser) and stands at the bottom of the world, in the middle, growing with your age.
-- BODY on /panel (web/bodywarp.js): the animator moves the face; the browser bends the rest of the painting to follow
-  your body (MediaPipe Pose on the camera, ~30 a second, mirrored like the screen):
-  - BODY + ARMS (default): portraits are painted waist up ("arms hanging relaxed at the sides"). The chest leans, sways
-    and grows a little as you lean in (against where you usually stand: reset at every event, then following you
-    slowly). An arm that hangs free at the side follows yours (upper arm and forearm, against your shoulder line),
-    drawn as its own layer over the body. An arm painted across the body, on the lap or holding something stays painted
-    on (moving it would leave a second arm behind): the D line says which arms move ("moves", "arm in front of the
-    body", "forearm not hanging").
-  - BODY LEANS: waist up, the chest moves, the arms don't. STILL: head and shoulders, as before.
-  - It is a 2D puppet of the same painting, so the face and clothes can't change. It can't do fingers or a body turning
-    away; a raised arm is rigid and shows a hard edge at the shoulder. If the pose reader or WebGL isn't there, or no
-    shoulders are found in the portrait, the portrait stands still.
-  - The framing changes at the next age (a new portrait is painted); the movement switches at once.
+- The portrait is a head-and-shoulders bust: only the face moves (the animator follows yours). (A moving body,
+  web/bodywarp.js, was tried and removed: it looked like a puppet.)
 - As the years pass you DISSOLVE into the next age: the server moves both portraits with the same motion
   (/animate/source?slot=next, then {"cmd":"promote"}), so both faces are alive while one becomes the other. A new
   portrait is only painted when the age moves 3+ years or the clothes change.

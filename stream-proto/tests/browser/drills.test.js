@@ -1,5 +1,5 @@
 // What goes wrong on a show day, on the stand-in: the server dies mid-life and comes back; pause and resume; the
-// panel switches world rules and body mid-life; NEW LIFE. The page must carry on with no errors and never go blank.
+// panel switches world rules mid-life; NEW LIFE. The page must carry on with no errors and never go blank.
 const L = require("../lib/standin.js"), { check, note, done } = require("../lib/check.js");
 (async () => {
   const s = await L.standin({ life: "short" });
@@ -17,9 +17,6 @@ const L = require("../lib/standin.js"), { check, note, done } = require("../lib/
       [63, "resume", async () => { at.pausedEnd = (await clock()).shown; await L.post(s.url, "/game/command", { cmd: "resume" }); }],
       [70, "continuous", async () => { at.cont = (await clock()).shown; await L.post(s.url, "/game/live", { world_rules: "continuous" }); }],
       [82, "ever", async () => { at.contEnd = (await clock()).shown; await L.post(s.url, "/game/live", { world_rules: "ever" }); }],
-      [86, "body lean", async () => { await L.post(s.url, "/settings", { body: "lean" }); }],
-      [90, "body still", async () => { await L.post(s.url, "/settings", { body: "still" }); }],
-      [94, "body arms", async () => { await L.post(s.url, "/settings", { body: "arms" }); }],
       [100, "new life", async () => { at.newAt = (Date.now() - T0) / 1000; await L.post(s.url, "/game/command", { cmd: "new_life" }); }],
     ];
     const did = new Set(); let started = 0; const T0 = Date.now();

@@ -10,11 +10,8 @@ const LIVES = +(process.env.LIVES || 6);
   const rows = [];
   try {
     await L.post(s.url, "/game/live", { tempo: 0.4, voice: false, world_rules: "ever" });
-    await L.post(s.url, "/settings", { avatar: "portrait", body: "arms" });
+    await L.post(s.url, "/settings", { avatar: "portrait" });
     await p.goto(s.url + "/game?test"); await p.waitForTimeout(2500);
-    await p.evaluate(() => { const bt = window.__pac.live._bodyTest;
-      bt.rest({ ls: [0.33, 0.42, 0.99], rs: [0.67, 0.42, 0.99], le: [0.30, 0.62, 0.95], re: [0.70, 0.62, 0.95], lw: [0.29, 0.80, 0.95], rw: [0.71, 0.80, 0.95] });
-      bt.live((now) => { const t = now / 1000, x = 640 + Math.sin(t * 0.4) * 40; return { ls: [x - 100, 360, 0.99], rs: [x + 100, 360, 0.99], le: [x - 100, 510, 0.95], lw: [x - 100, 640, 0.95], re: [x + 100, 510, 0.95], rw: [x + 100, 640, 0.95] }; }); });
     await p.mouse.click(640, 400);
     let lives = 0, ended = false, t0 = Date.now();
     await L.play(p, s.url, { secs: LIVES * 200,

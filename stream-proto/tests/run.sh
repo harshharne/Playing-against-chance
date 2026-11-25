@@ -1,9 +1,9 @@
 #!/bin/bash
 # The tests, in one command. Runs on the Mac (or anywhere with Python 3 and Node), with no GPU and no keys: the
 # server runs as a stand-in (MOCK mode) from a temporary copy, on its own port, so nothing of yours is touched.
-#   bash tests/run.sh          the quick set (~7 min): files, world clock, body maths, a life, the drills, the panel, the panel live
+#   bash tests/run.sh          the quick set (~7 min): files, world clock, a life, the drills, the panel, the panel live
 #   bash tests/run.sh full     the quick set + the soak (LIVES lives back to back in one page, ~2 min each; default 6)
-#   bash tests/run.sh life     one test by name (files | clock | body | life | drills | panel | live | whom | soak)
+#   bash tests/run.sh life     one test by name (files | clock | life | drills | panel | live | whom | soak)
 # The first run installs what the browser tests need (Playwright and its Chromium, ~150 MB, into tests/node_modules).
 cd "$(dirname "$0")" || exit 1
 PY="${PYTHON:-python3}"
@@ -17,17 +17,17 @@ fi
 cmd() {                                                   # (no associative arrays: the Mac's bash is 3.2)
   case "$1" in
     files) echo "$PY unit/check_files.py" ;;       clock) echo "node unit/worldclock.test.mjs" ;;
-    body) echo "node unit/bodywarp.test.mjs" ;;      life) echo "node browser/life.test.js" ;;
+    life) echo "node browser/life.test.js" ;;
     drills) echo "node browser/drills.test.js" ;;    panel) echo "node browser/panel.test.js" ;;
     soak) echo "node browser/soak.test.js" ;;        live) echo "node browser/live.test.js" ;;        whom) echo "node browser/whom.test.js" ;;
     *) echo "" ;;
   esac
 }
-QUICK="files clock body panel live whom life drills"
+QUICK="files clock panel live whom life drills"
 case "${1:-quick}" in
   quick) RUN="$QUICK" ;;
   full) RUN="$QUICK soak" ;;
-  *) [ -n "$(cmd "$1")" ] || { echo "no test called $1 (files clock body life drills panel live whom soak)"; exit 1; }; RUN="$1" ;;
+  *) [ -n "$(cmd "$1")" ] || { echo "no test called $1 (files clock life drills panel live whom soak)"; exit 1; }; RUN="$1" ;;
 esac
 pass=0; fail=0; failed=""
 for t in $RUN; do
