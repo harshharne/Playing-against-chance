@@ -1,6 +1,10 @@
 # Live generation — webcam → fast diffusion, you and the background separately
 
 
+Type: two typefaces, one for the EVENTS (the event's name, what happened, the die's number) and one for the
+OPTIONS (the cards, the one you pick, what chance gave instead), chosen on /panel (Event font, Option font), in both
+styles. Default: Noto Serif Display + IBM Plex Mono (a ledger's hand). All bundled in web/fonts (web/typefaces.js).
+
 Tests: `bash tests/run.sh` (quick, ~6 min) or `bash tests/run.sh full` (+ a soak of several lives in one page).
 No GPU or keys needed; see tests/README.md.
 

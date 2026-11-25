@@ -52,10 +52,11 @@ body.ui-fog .say, body.ui-fog .deck, body.ui-fog .big, body.ui-fog .flip, body.u
   background: radial-gradient(ellipse 60% 55% at 50% 62%, rgba(255,255,255,0.92), rgba(255,255,255,0.7) 50%, rgba(255,255,255,0) 100%);
   filter: blur(18px); opacity: 0; transition: opacity 1.2s ease; }
 .fogl .row.up::before { opacity: 1; }
-.fogl .note { font: 500 calc(clamp(11px, 0.9vw, 15px) * var(--ts, 1))/1 "PAC Display", serif; letter-spacing: 0.3em; text-transform: uppercase; color: #262626; }
+.fogl .note { font: 500 calc(clamp(11px, 0.9vw, 15px) * var(--ts, 1))/1 var(--font-event, "PAC Display", serif); letter-spacing: 0.3em; text-transform: uppercase; color: #262626; }
 .fogl .note b { font-weight: 600; color: var(--ink); }
-.art { font-family: "PAC Display", "Noto Serif Display", "Didot", serif; text-transform: uppercase; text-align: center; line-height: 1; white-space: nowrap;
+.art { font-family: var(--font-event, "PAC Display", "Noto Serif Display", "Didot", serif); text-transform: uppercase; text-align: center; line-height: 1; white-space: nowrap;
        text-shadow: 0 0 1px rgba(255,255,255,0.9), 0 0 9px rgba(255,255,255,0.7); user-select: none; font-kerning: normal; }
+.art.o { font-family: var(--font-option, "PAC Display", "Noto Serif Display", "Didot", serif); }   /* an option (see typefaces.js) */
 .art .ln { display: block; }
 .art .ln.a { font-weight: 560; letter-spacing: 0.05em; }
 .art .ln.b { font-weight: 300; letter-spacing: 0.13em; }
@@ -66,7 +67,7 @@ body.ui-fog .say, body.ui-fog .deck, body.ui-fog .big, body.ui-fog .flip, body.u
 .art .tall.dn { transform: translateY(0.31em); }
 .art .ch.pre { opacity: 0; filter: blur(12px); }
 .art .ch.out { opacity: 0; filter: blur(10px); }
-.prose { font: 400 calc(clamp(17px, 1.55vw, 28px) * var(--ts, 1))/1.4 "PAC Display", "Noto Serif Display", serif; text-align: center; max-width: 22em; text-wrap: balance;
+.prose { font: 400 calc(clamp(17px, 1.55vw, 28px) * var(--ts, 1))/1.4 var(--font-event, "PAC Display", "Noto Serif Display", serif); text-align: center; max-width: 22em; text-wrap: balance;
          text-shadow: 0 0 1px rgba(255,255,255,0.9), 0 0 8px rgba(255,255,255,0.7); transition: opacity 1s ease, filter 1s ease; }
 .prose.small { font-size: calc(clamp(15px, 1.25vw, 22px) * var(--ts, 1)); }
 .prose.quote { font-style: italic; }
@@ -76,9 +77,9 @@ body.ui-fog .say, body.ui-fog .deck, body.ui-fog .big, body.ui-fog .flip, body.u
 .fogl .opt:focus-visible { outline: none; }
 .fogl .opt.focus .art { text-shadow: 0 0 18px rgba(255,255,255,1); }
 .fogl .begin { pointer-events: auto; cursor: pointer; background: none; border: 0; padding: 8px 14px; color: inherit; }
-.fogl .num { font: 250 calc(clamp(120px, 30vh, 300px) * var(--ts, 1))/0.9 "PAC Display", "Noto Serif Display", serif; font-stretch: 62.5%; text-shadow: 0 0 30px rgba(255,255,255,0.9); transition: opacity 0.9s ease, filter 0.9s ease; }
+.fogl .num { font: 250 calc(clamp(120px, 30vh, 300px) * var(--ts, 1))/0.9 var(--font-event, "PAC Display", "Noto Serif Display", serif); font-stretch: 62.5%; text-shadow: 0 0 30px rgba(255,255,255,0.9); transition: opacity 0.9s ease, filter 0.9s ease; }
 .fogl .num.pre, .fogl .num.out { opacity: 0; filter: blur(16px); }
-.fogl .end { pointer-events: auto; max-height: 70vh; overflow: auto; font: 300 clamp(14px, 1.2vw, 18px)/1.5 "PAC Display", serif; text-shadow: 0 0 12px #fff; transition: opacity 1s; }
+.fogl .end { pointer-events: auto; max-height: 70vh; overflow: auto; font: 300 clamp(14px, 1.2vw, 18px)/1.5 var(--font-event, "PAC Display", serif); text-shadow: 0 0 12px #fff; transition: opacity 1s; }
 .fogl .end table { border-collapse: collapse; } .fogl .end td { padding: 1px 16px 1px 0; vertical-align: top; }
 .fogl .end td:first-child { font-size: 0.8em; color: #555; } .fogl .end td:nth-child(2) { font-size: 0.78em; letter-spacing: 0.16em; text-transform: uppercase; font-weight: 500; }
 .fogl .end i { font-style: italic; color: #555; }
@@ -164,7 +165,7 @@ function pickTall(lines, seed) {                              // [line, index, "
   return best < 0 ? null : [li, best, dir];
 }
 // the block as HTML: lines of letters, each its own span (they form out of the fog one by one)
-export function artHTML(text, { size = "5vw", weights = ["a", "b"], tall: tallSize = null, initial = false } = {}) {
+export function artHTML(text, { size = "5vw", weights = ["a", "b"], tall: tallSize = null, initial = false, option = false } = {}) {
   const t = String(text || "").replace(/\s+/g, " ").trim();
   const lines = splitLines(t);
   const tall = tallSize === 0 ? null : initial ? pickTall([lines[0]], 0) : pickTall(lines, hash(t));   // initial: only ever a tall first letter
@@ -177,7 +178,7 @@ export function artHTML(text, { size = "5vw", weights = ["a", "b"], tall: tallSi
     }).join("");
     return `<span class="ln ${w}">${chars}</span>`;
   }).join("");
-  return `<div class="art" style="font-size:${size}${tallSize ? `;--tall:${tallSize}em` : ""}">${out}</div>`;
+  return `<div class="art${option ? " o" : ""}" style="font-size:${size}${tallSize ? `;--tall:${tallSize}em` : ""}">${out}</div>`;
 }
 // after it's on the page: the lines of a block spread (gently) to one width; too far apart and they stay centred
 export function fitArt(el) {
@@ -297,7 +298,7 @@ export function createFog({ root, sec }) {
     row.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
     const size = sc(cards.length > 5 ? "clamp(15px, 1.4vw, 30px)" : cards.length > 3 ? "clamp(16px, 1.55vw, 32px)" : "clamp(18px, 1.85vw, 38px)");
     opts = cards.map((c, i) => {
-      const b = node(`<button type="button" class="opt" aria-label="${String(c.name).replace(/"/g, "&quot;")}">${artHTML(c.name, { size, tall: 1.55, initial: true })}</button>`);
+      const b = node(`<button type="button" class="opt" aria-label="${String(c.name).replace(/"/g, "&quot;")}">${artHTML(c.name, { size, tall: 1.55, initial: true, option: true })}</button>`);
       row.appendChild(b); return b;
     });
     veilTo = 0.26;
@@ -329,7 +330,7 @@ export function createFog({ root, sec }) {
     await placeCentre();
   }
   async function placeCentre() {
-    const els = [node(artHTML(chosen.name, { size: sizeFor(chosen.name, true) })),
+    const els = [node(artHTML(chosen.name, { size: sizeFor(chosen.name, true), option: true })),
                  node(`<div class="note">throw <b>${String(chosen.label).replace(/[&<>]/g, "")}</b></div>`)];
     if (chosen.hint) els.push(node(`<div class="note">${chosen.hint}</div>`));
     veilTo = 0.3;
@@ -360,7 +361,7 @@ export function createFog({ root, sec }) {
   }
   // what chance gave instead: it forms slowly where yours was
   async function turnOver(card, note) {
-    const lab = node(`<div class="note">${String(note).toLowerCase()}</div>`), name = node(artHTML(card.name, { size: sizeFor(card.name, true) }));
+    const lab = node(`<div class="note">${String(note).toLowerCase()}</div>`), name = node(artHTML(card.name, { size: sizeFor(card.name, true), option: true }));
     veilTo = 0.32;
     stage.appendChild(lab); stage.appendChild(name);
     await Promise.all([show(lab, 200), show(name, 1600)]);

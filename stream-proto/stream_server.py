@@ -1651,6 +1651,8 @@ GAME_LIVE_DEFAULTS = {
     "sound": {"on": True, "master": 0, "bed": -8, "place": -8, "cues": -4, "duck": 10},   # the game's sound (dB; duck = how far under the voice)
     "voice": True,          # the Bookkeeper speaks (from the next life; off = the text carries the words)
     "subtitles": "",        # "" = as bookkeeper.json says (show_text) · "on" = the words on screen as well · "off" = voice only
+    "font_event": "noto-serif-display",   # the events' typeface (web/typefaces.js): the event's name, what happened
+    "font_option": "plex-mono",           # the options' typeface: the cards / the options along the bottom, the one picked
     "heritage": 0.5,        # the face: 0 = yours (your photo, no birthplace words) .. 0.5 = a mix (your photo, "of mixed
                             # East Asian heritage") .. 1 = the birthplace's (its heritage, less of your photo)
     "world_rules": "ever",  # the background: "ever" = ever-changing (every picture its own, chance sets the rhythm) ·
@@ -1692,6 +1694,9 @@ def clean_live(body):
         out["voice"] = body["voice"]
     if body.get("subtitles") in ("", "on", "off"):
         out["subtitles"] = body["subtitles"]
+    for k in ("font_event", "font_option"):
+        if isinstance(body.get(k), str) and re.fullmatch(r"[a-z0-9-]{2,40}", body[k]):
+            out[k] = body[k]
     if body.get("world_rules") in ("ever", "continuous"):
         out["world_rules"] = body["world_rules"]
     if isinstance(body.get("bk"), dict):

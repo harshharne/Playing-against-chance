@@ -126,6 +126,9 @@ input[type=range]:disabled { opacity: 0.3; cursor: default; }
 .card .grid2 { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 20px 28px; }
 
 select, textarea, input[type=text] { background: var(--track); border: 0; border-radius: 14px; padding: 10px 14px; font-size: 13.5px; width: 100%; color: var(--ink); }
+.fontprev { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 14px; background: var(--track); margin: 2px 0 4px; }
+.fontprev .fe { font: 560 19px/1.1 var(--font-event, serif); letter-spacing: 0.04em; }
+.fontprev .fo { font: 500 12px/1.2 var(--font-option, monospace); letter-spacing: 0.1em; color: var(--soft, #555); }
 select { appearance: none; -webkit-appearance: none; padding-right: 34px; cursor: pointer;
   background-image: linear-gradient(45deg, transparent 50%, var(--dim) 50%), linear-gradient(135deg, var(--dim) 50%, transparent 50%);
   background-position: calc(100% - 18px) 52%, calc(100% - 13px) 52%; background-size: 5px 5px; background-repeat: no-repeat; }
@@ -233,6 +236,10 @@ label.txt { display: flex; flex-direction: column; gap: 8px; font-size: 13px; co
     </div>
     <label class="ctl"><span>Tempo</span><span class="v" id="tempoV">1.00×</span><input id="tempo" type="range" min="0.5" max="1.8" step="0.05" aria-describedby="tempoH"><small id="tempoH">Every timing at once. Above 1 = slower, below 1 = faster. The cards and the die still wait for the player.</small></label>
     <label class="ctl"><span>Type size (fog)</span><span class="v" id="tsV">1.00×</span><input id="type_scale" type="range" min="0.7" max="1.4" step="0.05"><small>The fog style's letters, all together.</small></label>
+    <div class="lora"><label class="txt">Event font<select id="font_event"></select></label></div>
+    <div class="lora"><label class="txt">Option font<select id="font_option"></select></label></div>
+    <div class="fontprev" aria-hidden="true"><span class="fe">THE SCHOOL YEAR</span><span class="fo">SCIENCE · ARTS · COMMERCE</span></div>
+    <div class="help">Events: the event's name, what happened, the die's number. Options: the cards, the one you pick, what chance gave instead. At once, in both styles.</div>
 
     </div>
     <div class="keys">In the game: <kbd>U</kbd> style · <kbd>F</kbd> fullscreen · <kbd>D</kbd> debug line · <kbd>R</kbd> roll · <kbd>C</kbd> next camera</div>
@@ -729,6 +736,18 @@ function liveSlider(id, key, label) {
   });
 }
 liveSlider("tempo", "tempo", "tempoV"); liveSlider("type_scale", "type_scale", "tsV");
+// the two typefaces (web/typefaces.js): the list, a preview in the faces themselves, sent to the game at once
+import("./typefaces.js").then(({ TYPEFACES, applyTypefaces }) => {
+  for (const id of ["font_event", "font_option"]) {
+    $(id).innerHTML = Object.entries(TYPEFACES).map(([k, f]) => `<option value="${k}">${f.name}</option>`).join("");
+    $(id).addEventListener("change", () => { applyTypefaces($("font_event").value, $("font_option").value); liveLater({ [id]: $(id).value }); });
+  }
+  window.__fontsShow = (L) => {
+    if (document.activeElement === $("font_event") || document.activeElement === $("font_option")) return;
+    if (L.font_event) $("font_event").value = L.font_event; if (L.font_option) $("font_option").value = L.font_option;
+    applyTypefaces($("font_event").value, $("font_option").value);
+  };
+}).catch(() => {});
 $("heritage").addEventListener("input", () => { $("heritageV").textContent = (+$("heritage").value).toFixed(2); liveLater({ heritage: +$("heritage").value }); });
 document.querySelectorAll("input[data-a]").forEach(inp => inp.addEventListener("input", () => {
   $(inp.id + "V").textContent = inp.dataset.a === "turn_limit" ? Math.round(inp.value) + "°" : (+inp.value).toFixed(2);
@@ -779,6 +798,7 @@ async function gamePoll() {
       liveShown = true;
       $("tempo").value = L.tempo || 1; $("tempoV").textContent = (+$("tempo").value).toFixed(2) + "×";
       $("type_scale").value = L.type_scale || 1; $("tsV").textContent = (+$("type_scale").value).toFixed(2) + "×";
+      if (window.__fontsShow) window.__fontsShow(L);
       $("heritage").value = L.heritage ?? 0.5; $("heritageV").textContent = (+$("heritage").value).toFixed(2);
       for (const [k, v] of Object.entries(L.animator || {})) { const el = $("a_" + k); if (el) { el.value = v; $("a_" + k + "V").textContent = k === "turn_limit" ? Math.round(v) + "°" : (+v).toFixed(2); } }
       bkShow(L.bk || {});

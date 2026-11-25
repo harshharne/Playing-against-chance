@@ -38,6 +38,7 @@ body.full .pip { opacity: 0; pointer-events: none; }        /* fullscreen: no ca
        transition: opacity var(--fade) ease, transform var(--fade) ease, bottom 0.7s cubic-bezier(.2,.75,.2,1); }
 .say.on { opacity: 1; transform: translate(-50%, 0); }
 body.cards .say { bottom: calc(var(--deck-h) + 4% + 14px); }
+.say { font-family: var(--font-event, inherit); }                 /* the event's words (typefaces.js) */
 .say .k { font-size: 9.5px; font-weight: 600; letter-spacing: 0.18em; color: #6d6d6d; text-transform: uppercase; }
 .say .t { font-size: 22px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.2; text-wrap: balance; }
 .say .s { font-size: 14.5px; line-height: 1.45; color: #333; text-wrap: balance; }
@@ -62,7 +63,7 @@ button:focus-visible { outline: 3px solid #888; outline-offset: 2px; }
 .big.on { opacity: 1; }
 .big .disc { width: clamp(180px, 38vh, 360px); aspect-ratio: 1; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
              background: rgba(255,255,255,0.72); border: 1px solid var(--edge); backdrop-filter: blur(18px) saturate(1.15); -webkit-backdrop-filter: blur(18px) saturate(1.15); box-shadow: 0 16px 50px rgba(0,0,0,0.14); color: var(--ink); }
-.big b { font-size: clamp(90px, 22vh, 210px); font-weight: 200; line-height: 1; }
+.big b { font-size: clamp(90px, 22vh, 210px); font-weight: 200; line-height: 1; font-family: var(--font-event, inherit); }
 .big span { font-size: 12px; font-weight: 600; letter-spacing: 0.3em; text-transform: uppercase; color: #444; opacity: 0; transition: opacity 0.6s; }
 .big span.on { opacity: 0.9; }
 
@@ -73,7 +74,7 @@ button:focus-visible { outline: 3px solid #888; outline-offset: 2px; }
         padding: 11px 11px; border-radius: 14px; background: var(--glass); border: 1px solid var(--edge);
         backdrop-filter: blur(14px) saturate(1.2); -webkit-backdrop-filter: blur(14px) saturate(1.2);
         box-shadow: 0 14px 34px rgba(0,0,0,0.14), inset 0 1px 0 rgba(255,255,255,0.8);
-        display: flex; flex-direction: column; gap: 6px; text-align: left; font: inherit; color: var(--ink); cursor: pointer;
+        display: flex; flex-direction: column; gap: 6px; text-align: left; font: inherit; font-family: var(--font-option, inherit); color: var(--ink); cursor: pointer;
         transform-origin: 50% 100%;
         transition: transform 0.8s cubic-bezier(.2,.75,.2,1), opacity 0.6s ease, height 0.6s ease, background 0.4s; }
 .card .nm { font-size: 12px; font-weight: 650; line-height: 1.2; letter-spacing: -0.005em; }
@@ -149,6 +150,7 @@ import { createFog } from "./ui-fog.js";
 import { createBookkeeper } from "./bookkeeper.js";
 import { createSound } from "./sound.js";
 import { createWorldClock } from "./worldclock.js";
+import { applyTypefaces } from "./typefaces.js";
 
 const $ = (id) => document.getElementById(id);
 const sayEl = $("say"), bigEl = $("big"), deckEl = $("deck"), flipEl = $("flip"), debugEl = $("debug");
@@ -218,7 +220,9 @@ async function toScene(name) {                                 // crossfade from
 const WK0 = { keep: 0.25, turn_keep: 0.45, chapter_keep: 0.1, breathe: 5, breathe_keep: 0.4, morph_steps: 12, director: 1, director_lines: 0, director_wait: 2 };
 let T = null, P = {}, WK = { ...WK0 };
 let tempo = 1;                                                  // TEMPO on /panel: every timing x this
-let heritageMix = 0.5;                                          // HERITAGE on /panel: whose face (0 yours .. 1 the birthplace's)
+let heritageMix = 0.5;
+let fontsNow = [null, null];                                     // EVENT FONT / OPTION FONT on /panel (typefaces.js)
+applyTypefaces();                                               // (the defaults until the panel's settings come)                                          // HERITAGE on /panel: whose face (0 yours .. 1 the birthplace's)
 const sec = (k) => Math.max(0, +P[k] || 0) * 1000 * tempo;
 function setPacing(doc) {
   P = doc.pacing || {}; WK = { ...WK0, ...(doc.world || {}) };
@@ -1053,6 +1057,7 @@ async function fromPanel() {
       if (L.sound) sound.setMix(L.sound);
       V.setLive(L.bk);                                          // speed, volume, line length, breath, which moments: at once
       voiceOn = L.voice !== false;
+      if (L.font_event !== fontsNow[0] || L.font_option !== fontsNow[1]) { fontsNow = [L.font_event, L.font_option]; applyTypefaces(L.font_event, L.font_option); }
       const rules = L.world_rules === "continuous" ? "continuous" : "ever";
       if (rules !== worldRules) { worldRules = rules; clock.run(EVER()); }
       if (!voiceOn && V.stat.state !== "off") { V.stop(); V.stat.note = "off on the panel"; }   // off: at once (on: from the next life)
