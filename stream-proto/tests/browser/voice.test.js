@@ -87,18 +87,37 @@ const L = require("../lib/standin.js"), { check, note, done } = require("../lib/
       // a game moment queued while it's answering: the answer is heard out, then the moment
       hear("one more question for you please"); const m = V.cue("[GAME] outcome\nsomething");
       await m; const cuts = window.__sent.filter(x => x.type === "response.cancel" || x.type === "output_audio_buffer.clear").length;
+      // ITS OWN VOICE HEARD BACK: the mic is shut while it speaks (not while the cards are up), and its own words
+      // coming back in are ignored, even naming a card; a real call still goes through
+      const g = {};
+      const speak = V.cue("[GAME] arrive\nx"); await new Promise(r => setTimeout(r, 500)); g.during = V.stat.micOpen;
+      await speak; await new Promise(r => setTimeout(r, 900)); g.after = V.stat.micOpen;
+      const emit = (ev) => dcRef.onmessage({ data: JSON.stringify(ev) });
+      emit({ type: "response.output_audio_transcript.delta", delta: "Old money looks easy on paper, but silence has a cost." });
+      emit({ type: "response.output_audio_transcript.done", transcript: "Old money looks easy on paper, but silence has a cost." });
+      const nPicked = picked.length;
+      V.listen("pick"); g.pickOpen = V.stat.micOpen;
+      hear("old money looks easy on paper"); g.echoPicked = picked.length - nPicked; g.echoWhat = V.stat.heardWhat;
+      hear("I want the artists one"); g.realPicked = picked.length - nPicked;
+      V.listen("open");
+      const before2 = creates(); hear("old money looks easy on paper but silence"); await new Promise(r => setTimeout(r, 300)); g.echoReplies = creates() - before2;
       // PAUSE: hush stops the line and drops what was queued
       const q1 = V.cue("[GAME] arrive\na"), q2 = V.cue("[GAME] outcome\nb");
       await new Promise(r => setTimeout(r, 500)); await V.hush(); await q1; await q2;
       const afterHush = window.__sent.filter(x => x.type === "response.cancel" || x.type === "output_audio_buffer.clear").length;
-      return { afterNoise, afterPick, afterTalk, picked, cuts, afterHush, overlap: window.__overlap, whatNoise, whatPick };
+      return { afterNoise, afterPick, afterTalk, picked, cuts, afterHush, overlap: window.__overlap, whatNoise, whatPick, g };
     });
     check(p.afterNoise === 0, `noise got a reply (${p.afterNoise})`);
     check(/ignored/.test(p.whatNoise || "") && /picked/.test(p.whatPick || ""), `the panel isn't told what it did with what it heard: "${p.whatNoise}" / "${p.whatPick}"`);
-    check(p.picked.length === 1 && /old money/i.test(p.picked[0]) && p.afterPick === 0, `a card named during the cards: picked ${JSON.stringify(p.picked)}, replies ${p.afterPick}`);
+    check(/old money/i.test(p.picked[0] || "") && p.afterPick === 0, `a card named during the cards: picked ${JSON.stringify(p.picked)}, replies ${p.afterPick}`);
     check(p.afterTalk === 1, `two real sentences in a row should get one answer, got ${p.afterTalk}`);
     check(p.cuts === 0, `a game moment cut the answer (${p.cuts} cancel/clear)`);
     check(p.afterHush > 0, "PAUSE didn't stop the line");
+    check(p.g.during === false && p.g.after === true, `the mic wasn't shut while it spoke / opened after (during: ${p.g.during}, after: ${p.g.after})`);
+    check(p.g.pickOpen === true, "the mic was shut while the cards were up (a card couldn't be called over its comment)");
+    check(p.g.echoPicked === 0 && /own voice/.test(p.g.echoWhat || ""), `its own words, heard back, picked a card (${p.g.echoPicked}, "${p.g.echoWhat}")`);
+    check(p.g.realPicked === 1, "a real call after its echo wasn't taken");
+    check(p.g.echoReplies === 0, "it answered its own echo");
     check(p.overlap === 0, `a line was asked for while another was still being made (${p.overlap} times)`);
     check(errs.length === 0, "errors:\n      " + errs.slice(0, 5).join("\n      "));
   } finally { await b.close(); s.stop(); }

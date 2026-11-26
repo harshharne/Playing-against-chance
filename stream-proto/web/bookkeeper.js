@@ -35,6 +35,25 @@ export function createBookkeeper({ onPick = () => ({ ok: false, reason: "the car
   // ONE LINE AT A TIME: every line waits for the one before it to be heard out. Nothing cuts a line but PAUSE or a new
   // life (hush / stop). The game awaits each cue, so the next moment waits for the voice too.
   let turn = Promise.resolve(), epoch = 0, cueSeq = 0, lastAnswer = 0;
+  // ITS OWN VOICE, HEARD BACK: the speakers are in the room with the mic, so what it says comes back in. While it
+  // speaks the mic is shut (it can't be interrupted anyway), and for a moment after (the room's echo), except while
+  // the cards are up (a card can be called over its comment). And anything heard that is mostly its own recent words
+  // is its echo, not the player: ignored (or its comment naming a card would pick that card).
+  let gateT = 0, stoppedAt = 0, startedInVoice = false;
+  const said = [];                                            // [time, words] of its last lines
+  function gate(open) { const tr = mic && mic.getAudioTracks()[0]; if (tr) tr.enabled = open; stat.micOpen = open; }
+  const wordsOf = (x) => String(x || "").toLowerCase().replace(/[’']/g, "").match(/[a-z]{3,}/g) || [];
+  let cur = null;                                             // the line being spoken now: its words, as they come
+  function remember(text) {
+    if (!cur) { cur = [Date.now(), new Set()]; said.push(cur); while (said.length > 8) said.shift(); }
+    cur[0] = Date.now(); for (const w of wordsOf(text)) cur[1].add(w);
+  }
+  function isEcho(t) {
+    const ws = wordsOf(t); if (!ws.length) return false;
+    const recent = new Set(); for (const [at, w] of said) if (Date.now() - at < 30000) for (const x of w) recent.add(x);
+    const frac = ws.filter(w => recent.has(w)).length / ws.length;
+    return ws.length >= 3 ? frac >= 0.6 : startedInVoice && frac === 1;   // (a short call over its voice that only repeats it: echo)
+  }
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   const idle = () => !generating && !speaking;
   async function waitIdle(maxMs) { const t0 = Date.now(); while (!idle() && Date.now() - t0 < maxMs) await sleep(80); }
@@ -113,17 +132,18 @@ export function createBookkeeper({ onPick = () => ({ ok: false, reason: "the car
         break;
       }
       case "output_audio_buffer.started":
-        speaking = true;
+        speaking = true; clearTimeout(gateT);
+        if (listening !== "pick") gate(false);                  // (its own voice mustn't come back in as the player's)
         dispatchEvent(new CustomEvent("pac-voice", { detail: { speaking: true } }));   // (the game's sound ducks under it)
         { const w = byId.get(ev.response_id); if (w) w.audio = true; }
         break;
       case "output_audio_buffer.stopped":
-        speaking = false;
+        speaking = false; stoppedAt = Date.now(); clearTimeout(gateT); gateT = setTimeout(() => gate(true), 700);
         dispatchEvent(new CustomEvent("pac-voice", { detail: { speaking: false } }));   // (the game's sound ducks under it)
         finish(byId.get(ev.response_id)); byId.delete(ev.response_id);
         break;
       case "output_audio_buffer.cleared":
-        speaking = false;
+        speaking = false; stoppedAt = Date.now(); clearTimeout(gateT); gateT = setTimeout(() => gate(true), 700);
         dispatchEvent(new CustomEvent("pac-voice", { detail: { speaking: false } }));   // (the game's sound ducks under it)
         for (const w of byId.values()) finish(w);
         byId.clear();
@@ -138,7 +158,13 @@ export function createBookkeeper({ onPick = () => ({ ok: false, reason: "the car
         break;
       }
       case "response.output_audio_transcript.done":
-        stat.said++; stat.last = ev.transcript || ""; log("bookkeeper", ev.transcript);
+        stat.said++; stat.last = ev.transcript || ""; log("bookkeeper", ev.transcript); remember(ev.transcript); cur = null;
+        break;
+      case "response.output_audio_transcript.delta":
+        if (ev.delta) remember(ev.delta);                       // (its words are known before the echo of them comes back)
+        break;
+      case "input_audio_buffer.speech_started":
+        startedInVoice = speaking || Date.now() - stoppedAt < 1000;
         break;
       case "conversation.item.input_audio_transcription.completed":
         heard(ev.transcript || "");
@@ -161,6 +187,7 @@ export function createBookkeeper({ onPick = () => ({ ok: false, reason: "the car
     const t = String(text || "").trim();
     const what = (w) => { stat.heardLast = t.slice(0, 120); stat.heardWhat = w; };   // (shown on /panel: what it did with it)
     if (!/[a-z]{2}/i.test(t) || NOISE.test(t)) { if (t) what("ignored: noise, or the transcriber guessing"); return; }
+    if (isEcho(t)) { log("game", `heard its own voice back: ${t}`); return what("ignored: its own voice, heard back"); }
     stat.heard++; log("player", t);
     if (listening === "pick") {                                // a card named: the game takes it (no reply needed)
       const r = onPick(t) || {};
@@ -269,7 +296,11 @@ export function createBookkeeper({ onPick = () => ({ ok: false, reason: "the car
 
   return {
     start, stop, cue, hush, stat,
-    listen: (mode) => { listening = mode; },
+    listen: (mode) => {
+      listening = mode;
+      if (mode === "pick") { clearTimeout(gateT); gate(true); }   // the cards: a card can be called over its comment
+      else if (speaking) gate(false);
+    },
     idle: () => waitIdle(45000),                               // resolves when it has finished speaking (the end of a life waits for it)
     get on() { return on(); },
     get showText() { return !on() || subs === "on" || (subs !== "off" && !!(cfg && cfg.show_text)); },
