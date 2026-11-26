@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 """
-dice_reader.py - standalone die reader: angled camera, round tray (Playing Against Chance)
+dice_reader.py - standalone die reader: angled camera, a round tray or a whole table (Playing Against Chance)
 
 How it reads a throw
-  1. You mark the round tray once (click points on its inside edge). Seen at an angle it is
-     an oval; the script fits it and flattens it back to a circle. Only the inside counts.
+  1. You mark where the die may land, once:
+     - a round tray (c): click points on its inside edge. Seen at an angle it is an oval; the
+       script fits it and flattens it back to a circle.
+     - a table, or any rectangle (t): click its 4 corners. Seen at an angle it is a trapezoid;
+       the script flattens it back to a rectangle.
+     Only the inside counts.
   2. The die is what differs from a photo of the EMPTY tray (or, without that photo,
      whatever is much brighter than the black tray).
   3. The top face is the far end of the die's shape (side faces lie toward the camera).
@@ -16,8 +20,12 @@ Run:     python dice_reader.py --list-cameras     find the overhead camera's num
          python dice_reader.py --camera 1         run live
 
 First run:
-  c  define the detection area: click 6-10 points around the INSIDE edge of the tray,
-     then press Enter. (r = start again, esc = cancel)
+  c  a round tray: click 6-10 points around the INSIDE edge of the tray, then press Enter.
+  t  a table (rectangle): click its 4 corners (any order), check the flattened preview,
+     press [ or ] until a round thing on the table looks round, then Enter.
+     (r = start again, esc = cancel)
+     A whole table needs the die big enough in the camera: at least ~40 pixels across in the
+     camera picture (the debug view d shows its size). Higher camera, or a bigger die.
   l  lock the area (press l again to unlock; c does nothing while locked)
   e  take the die OUT and press e to photograph the empty tray (recommended;
      press again if the light changes)
@@ -28,7 +36,7 @@ Sliders (window "controls"):
   sensitivity   lower = more counts as "die" (raise if glare or shadows show up)
   dot_dark      % of the die's brightness below which a pixel is a dot (raise if dots are missed)
   dot_round     how oval a dot may be, x10 (lower = stricter against side-face dots)
-  area_inset    % of the tray radius that is searched (lower it to skip the tray's rim/wall)
+  area_inset    % of the area that is searched (lower it to skip the tray's rim, the table's edge)
   motion        what counts as movement;  still_frames / confirm_frames  timing
 
 Output: throws/<time>_<value>.mp4 per throw, and throws/log.csv
@@ -58,6 +66,8 @@ EMPTY_FILE = HERE / "tray_empty.png"
 OUT_DIR = HERE / "throws"
 TRAY = 720                 # the flattened tray image is TRAY x TRAY pixels
 R = TRAY // 2 - 8          # tray radius in the flattened image
+SIZE = [TRAY, TRAY]        # the flattened area, (width, height): a tray is TRAY x TRAY, a table its own rectangle
+KIND = ["tray"]            # "tray" or "table" (the area now in use)
 
 P = {
     "sensitivity": 28,     # difference from the empty tray that counts as "die"
@@ -156,8 +166,40 @@ def save_area(area):
     AREA_FILE.write_text(json.dumps(area))
 
 
+def is_table(area):
+    return bool(area and area.get("quad"))
+
+
+def set_size(area):
+    """The flattened image's size for this area (a tray is square; a table is its own rectangle)."""
+    SIZE[:] = list(map(int, area["size"])) if is_table(area) else [TRAY, TRAY]
+    KIND[0] = "table" if is_table(area) else "tray"
+
+
+def order_corners(pts):
+    """4 clicked points, any order -> top-left, top-right, bottom-right, bottom-left (as the camera sees them)."""
+    p = np.array(pts, np.float32)
+    s, d = p.sum(1), np.diff(p, axis=1).ravel()
+    return np.float32([p[np.argmin(s)], p[np.argmin(d)], p[np.argmax(s)], p[np.argmax(d)]])
+
+
+def table_size(quad, aspect=None):
+    """The flattened table: its long side about as many pixels as the camera gives it (dots stay as sharp as
+    they can), its shape from the corners (or the aspect the user set, width / height)."""
+    tl, tr, br, bl = quad
+    w = (np.linalg.norm(tr - tl) + np.linalg.norm(br - bl)) / 2
+    h = (np.linalg.norm(bl - tl) + np.linalg.norm(br - tr)) / 2
+    aspect = aspect or (w / max(1.0, h))
+    long = float(np.clip(max(w, h * aspect if aspect >= 1 else h), 640, 1600))
+    return (int(long), int(long / aspect)) if aspect >= 1 else (int(long * aspect), int(long))
+
+
 def area_transform(area):
-    """Affine map that turns the tray's oval into a centred circle, far side up."""
+    """A tray: the affine map that turns its oval into a centred circle, far side up.
+    A table: the perspective map that turns its trapezoid into a rectangle, far side up."""
+    if is_table(area):
+        w, h = area["size"]
+        return ("persp", cv2.getPerspectiveTransform(np.float32(area["quad"]), np.float32([[0, 0], [w, 0], [w, h], [0, h]])))
     (cx, cy), (w, h), ang = area["ellipse"]
     t = np.radians(ang)
     a1 = np.array([np.cos(t), np.sin(t)]) * w / 2      # fitEllipse: width along angle
@@ -170,7 +212,7 @@ def area_transform(area):
     c = np.array([cx, cy])
     src = np.float32([c, c + major, c + minor])
     dst = np.float32([[TRAY / 2, TRAY / 2], [TRAY / 2 + R, TRAY / 2], [TRAY / 2, TRAY / 2 - R]])
-    return cv2.getAffineTransform(src, dst)
+    return ("affine", cv2.getAffineTransform(src, dst))
 
 
 def flatten(frame, M):
@@ -178,12 +220,25 @@ def flatten(frame, M):
         h, w = frame.shape[:2]
         s = min(h, w)
         return cv2.resize(frame[(h - s) // 2:(h + s) // 2, (w - s) // 2:(w + s) // 2], (TRAY, TRAY))
-    return cv2.warpAffine(frame, M, (TRAY, TRAY))
+    kind, m = M
+    if kind == "persp":
+        return cv2.warpPerspective(frame, m, tuple(SIZE))
+    return cv2.warpAffine(frame, m, (TRAY, TRAY))
 
 
-def area_mask(p=P):
-    m = np.zeros((TRAY, TRAY), np.uint8)
-    cv2.circle(m, (TRAY // 2, TRAY // 2), int(R * p["area_inset"] / 100), 255, -1)
+def area_side():
+    """The area's 'diameter' in the flattened image (die sizes are % of it)."""
+    return min(SIZE) if KIND[0] == "table" else 2 * R
+
+
+def area_mask(p=P, table=None):
+    w, h = SIZE
+    m = np.zeros((h, w), np.uint8)
+    if KIND[0] == "table" if table is None else table:      # a table: the rectangle, its edge left out
+        mx, my = int(w * (100 - p["area_inset"]) / 200), int(h * (100 - p["area_inset"]) / 200)
+        cv2.rectangle(m, (mx, my), (w - 1 - mx, h - 1 - my), 255, -1)
+    else:
+        cv2.circle(m, (TRAY // 2, TRAY // 2), int(R * p["area_inset"] / 100), 255, -1)
     return m
 
 
@@ -224,6 +279,57 @@ def define_area(cap):
             return area
 
 
+def define_table(cap, aspect=None):
+    """Click the table's 4 corners; the flattened preview shows it from above. [ ] change its shape."""
+    pts, adj = [], 1.0
+    win = "table: click its 4 corners, then Enter"
+    cv2.namedWindow(win)
+    cv2.setMouseCallback(win, lambda e, x, y, *_: pts.append((x, y)) if e == cv2.EVENT_LBUTTONDOWN and len(pts) < 4 else None)
+    while True:
+        ok, frame = cap.read()
+        if not ok:
+            continue
+        view = frame.copy()
+        for pt in pts:
+            cv2.circle(view, pt, 6, (0, 255, 255), -1)
+        msg = f"{len(pts)} of 4 corners   r = restart   esc = cancel"
+        if len(pts) == 4:
+            q = order_corners(pts)
+            cv2.polylines(view, [q.astype(np.int32)], True, (0, 255, 0), 2)
+            base = table_size(q, aspect)
+            a = base[0] / base[1] * adj
+            size = table_size(q, a)
+            area = {"quad": q.tolist(), "size": list(size), "points": pts, "locked": False}
+            SIZE[:] = list(size); KIND[0] = "table"
+            flat = flatten(frame, area_transform(area))
+            sc = min(1.0, 900 / max(size))
+            cv2.imshow("table, from above (a round thing should look round)", cv2.resize(flat, (int(size[0] * sc), int(size[1] * sc))))
+            msg = f"Enter = use this   [ ] = narrower / wider (shape {a:.2f})   r = restart   esc = cancel"
+        cv2.rectangle(view, (0, 0), (view.shape[1], 40), (0, 0, 0), -1)
+        cv2.putText(view, msg, (12, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 255), 2)
+        cv2.imshow(win, view)
+        k = cv2.waitKey(1) & 0xFF
+        if k == ord("r"):
+            pts.clear(); adj = 1.0
+        elif k == ord("["):
+            adj /= 1.04
+        elif k == ord("]"):
+            adj *= 1.04
+        elif k == 27:
+            for w in (win, "table, from above (a round thing should look round)"):
+                try: cv2.destroyWindow(w)
+                except cv2.error: pass
+            return None
+        elif k in (13, 10, 32) and len(pts) == 4:
+            save_area(area)
+            EMPTY_FILE.unlink(missing_ok=True)          # the old empty photo no longer lines up
+            for w in (win, "table, from above (a round thing should look round)"):
+                try: cv2.destroyWindow(w)
+                except cv2.error: pass
+            print(f"[area] table saved ({size[0]} x {size[1]} flattened). Check it, then press l to lock it.")
+            return area
+
+
 # ------------------------------------------------------------------ detection core
 
 def find_die(tray, empty, mask, p=P):
@@ -240,7 +346,7 @@ def find_die(tray, empty, mask, p=P):
     fg = cv2.morphologyEx(fg, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
     fg = cv2.morphologyEx(fg, cv2.MORPH_CLOSE, np.ones((7, 7), np.uint8))
     contours, _ = cv2.findContours(fg, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    d = 2 * R
+    d = area_side()
     a_min = (p["die_min"] / 100 * d) ** 2 * 0.6
     a_max = (p["die_max"] / 100 * d) ** 2 * 2.5        # side faces make the blob bigger
     best, best_a = None, 0
@@ -319,7 +425,12 @@ def setup_controls():
 
 def draw(view, r, state, value, motion, locked, has_area, has_empty):
     col_area = (0, 200, 0) if locked else (0, 165, 255)
-    cv2.circle(view, (TRAY // 2, TRAY // 2), int(R * P["area_inset"] / 100), col_area, 1)
+    W, H = SIZE
+    if KIND[0] == "table":
+        mx, my = int(W * (100 - P["area_inset"]) / 200), int(H * (100 - P["area_inset"]) / 200)
+        cv2.rectangle(view, (mx, my), (W - 1 - mx, H - 1 - my), col_area, 1)
+    else:
+        cv2.circle(view, (TRAY // 2, TRAY // 2), int(R * P["area_inset"] / 100), col_area, 1)
     if r["contour"] is not None:
         cv2.drawContours(view, [r["contour"]], -1, (0, 200, 0), 1)
     if r["box"] is not None:
@@ -330,14 +441,15 @@ def draw(view, r, state, value, motion, locked, has_area, has_empty):
             cv2.putText(view, str(r["value"]), (x + w + 8, y + h // 2 + 10), cv2.FONT_HERSHEY_SIMPLEX, 1.0, col, 2)
     for cx, cy in r["dots"]:
         cv2.circle(view, (int(cx), int(cy)), 4, (0, 0, 255), -1)
-    area_txt = "AREA LOCKED" if locked else ("area unlocked (l)" if has_area else "no area (c)")
+    area_txt = "AREA LOCKED" if locked else ("area unlocked (l)" if has_area else "no area (c tray / t table)")
     top = f"{state}  |  {area_txt}  |  {'empty tray ok' if has_empty else 'no empty photo (e)'}"
-    cv2.rectangle(view, (0, 0), (TRAY, 52), (0, 0, 0), -1)
+    cv2.rectangle(view, (0, 0), (W, 52), (0, 0, 0), -1)
     cv2.putText(view, top, (10, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1)
-    cv2.putText(view, f"motion {motion:4.1f}   read: {r['status']}", (10, 44),
+    side = f"   die {r['box'][2]}px" if r.get("box") is not None else ""
+    cv2.putText(view, f"motion {motion:4.1f}   read: {r['status']}{side}", (10, 44),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.55, (200, 200, 200), 1)
     if value is not None:
-        cv2.putText(view, str(value), (TRAY - 100, TRAY - 25), cv2.FONT_HERSHEY_SIMPLEX, 3.2, (0, 255, 255), 7)
+        cv2.putText(view, str(value), (W - 100, H - 25), cv2.FONT_HERSHEY_SIMPLEX, 3.2, (0, 255, 255), 7)
 
 
 def save_throw(frames, value, status, fps):
@@ -345,7 +457,7 @@ def save_throw(frames, value, status, fps):
     name = f"{datetime.now():%Y%m%d-%H%M%S}_{value if value else status}.mp4"
     if frames:
         vw = cv2.VideoWriter(str(OUT_DIR / name), cv2.VideoWriter_fourcc(*"mp4v"),
-                             max(5, min(60, round(fps))), (TRAY, TRAY))
+                             max(5, min(60, round(fps))), tuple(SIZE))
         for f in frames:
             vw.write(f)
         vw.release()
@@ -373,7 +485,7 @@ def capture_empty(cap, M, n=12):
     return empty
 
 
-def run_live(cam, port=8767):
+def run_live(cam, port=8767, aspect=None):
     cap = cv2.VideoCapture(cam, cv2.CAP_AVFOUNDATION)
     if not cap.isOpened():
         cap = cv2.VideoCapture(cam)
@@ -384,9 +496,13 @@ def run_live(cam, port=8767):
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
 
     area = load_area()
+    if area:
+        set_size(area)
     M = area_transform(area) if area else None
     empty = cv2.imread(str(EMPTY_FILE)) if area and EMPTY_FILE.exists() else None
-    print("[start]", "press c to define the detection area" if not area else
+    if empty is not None and empty.shape[:2] != (SIZE[1], SIZE[0]):
+        empty = None                              # (an empty photo from another area: take a new one)
+    print("[start]", "press c (a round tray) or t (a table) to define the detection area" if not area else
           "press l to lock the area" if not area.get("locked") else
           "take the die out and press e" if empty is None else "ready, throw")
     setup_controls()
@@ -455,26 +571,35 @@ def run_live(cam, port=8767):
         cv2.imshow("dice reader (flattened tray)", view)
         if debug:
             raw = frame.copy()
-            if area:
+            if area and is_table(area):
+                cv2.polylines(raw, [np.int32(area["quad"])], True, (0, 200, 0) if locked else (0, 165, 255), 2)
+            elif area:
                 cv2.ellipse(raw, (tuple(area["ellipse"][0]), tuple(area["ellipse"][1]), area["ellipse"][2]),
                             (0, 200, 0) if locked else (0, 165, 255), 2)
             raw = cv2.resize(raw, (640, int(640 * raw.shape[0] / raw.shape[1])))
-            fg = r["fg_mask"] if r["fg_mask"] is not None else np.zeros((TRAY, TRAY), np.uint8)
-            dm = r["dot_mask"] if r["dot_mask"] is not None else np.zeros((TRAY, TRAY), np.uint8)
+            fg = r["fg_mask"] if r["fg_mask"] is not None else np.zeros((SIZE[1], SIZE[0]), np.uint8)
+            dm = r["dot_mask"] if r["dot_mask"] is not None else np.zeros((SIZE[1], SIZE[0]), np.uint8)
             cv2.imshow("debug: camera", raw)
-            cv2.imshow("debug: die | dots", np.hstack([cv2.resize(fg, (360, 360)), cv2.resize(dm, (360, 360))]))
+            dh = int(360 * SIZE[1] / SIZE[0])
+            cv2.imshow("debug: die | dots", np.hstack([cv2.resize(fg, (360, dh)), cv2.resize(dm, (360, dh))]))
 
         k = cv2.waitKey(1) & 0xFF
         if k == ord("q"):
             break
-        elif k == ord("c"):
+        elif k in (ord("c"), ord("t")):
             if locked:
                 print("[area] locked. Press l to unlock first.")
             else:
-                new = define_area(cap)
+                new = define_area(cap) if k == ord("c") else define_table(cap, aspect)
                 if new:
+                    set_size(new)
                     area, M, empty = new, area_transform(new), None
+                    cv2.destroyWindow("dice reader (flattened tray)")   # (its size changes)
                     print("[area] now take the die out and press e")
+                elif area:
+                    set_size(area)                # (cancelled: back to the area there was)
+                else:
+                    SIZE[:] = [TRAY, TRAY]; KIND[0] = "tray"
         elif k == ord("l") and area:
             area["locked"] = not area.get("locked")
             save_area(area)
@@ -510,11 +635,21 @@ def main():
     ap.add_argument("--list-cameras", action="store_true")
     ap.add_argument("--image", help="raw camera photo with the die in it (uses the saved area)")
     ap.add_argument("--empty", help="raw camera photo of the empty tray, same camera position")
+    ap.add_argument("--table", help="the table's real size, e.g. 120x80 (cm, width x depth): sets its shape for t")
     a = ap.parse_args()
     if a.list_cameras:
         return list_cameras()
+    aspect = None
+    if a.table:
+        try:
+            tw, td = (float(x) for x in a.table.lower().split("x"))
+            aspect = tw / td
+        except ValueError:
+            raise SystemExit("--table wants width x depth, e.g. 120x80")
     if a.image:
         area = load_area()
+        if area:
+            set_size(area)
         M = area_transform(area) if area else None
         img = cv2.imread(a.image)
         emp = cv2.imread(a.empty) if a.empty else None
@@ -523,7 +658,7 @@ def main():
         r = read_die(flatten(img, M), flatten(emp, M) if emp is not None else None, area_mask())
         print(f"value: {r['value']}   status: {r['status']}")
         return
-    run_live(a.camera, a.port)
+    run_live(a.camera, a.port, aspect)
 
 
 if __name__ == "__main__":

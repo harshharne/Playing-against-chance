@@ -26,7 +26,9 @@ If the download stops halfway, run it again: it carries on.
 
 ## The die (optional)
 **Two ways to read it.** The game uses whichever is there when the page opens:
-1. `dice_reader.py`: OpenCV on the Mac, round tray, angled camera, its own window. It runs on the Mac, never on the cloud machine:
+1. `dice_reader.py`: OpenCV on the Mac, angled camera, its own window. The die lands in a round tray (press c, click
+   its edge) or anywhere on a table (press t, click its 4 corners; `--table 120x80` gives its real shape). On a
+   whole table the die must still be big enough in the camera: 40+ pixels across (the reader shows its size). It runs on the Mac, never on the cloud machine:
    `pip install opencv-python numpy`, then `python dice_reader.py --list-cameras`, then `python dice_reader.py --camera N`.
    Set it up in its window (c = mark the tray, l = lock, e = empty tray), THEN open the game. It tells the game on http://localhost:8767/events (`web/dice-remote.js`). Hover the DIE chip in the game to see which reader it's using.
 2. The browser reader below, if dice_reader.py isn't running.

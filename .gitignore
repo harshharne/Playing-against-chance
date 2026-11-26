@@ -32,3 +32,8 @@ stream-proto/server.env
 
 # test tooling (installed by tests/run.sh)
 stream-proto/tests/node_modules/
+
+# the die reader's per-room files (the area you marked, a photo of the empty table, recorded throws)
+stream-proto/tray_area.json
+stream-proto/tray_empty.png
+stream-proto/throws/
