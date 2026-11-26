@@ -41,7 +41,7 @@ and asks for the die camera's number (kept in ~/.chance/show.conf).
     ./show.sh on          one window, leave it open: starts the machine, sends newer code, keeps the tunnel up
                           (reconnects by itself), waits for the server, starts the die reader, keeps the Mac awake,
                           opens /panel and /game. If Google takes the spot machine back, it starts it again.
-                          Keys there: o pages again · d die reader · r restart the server · q stop the Mac side
+                          Keys there: o pages again · d die reader · c the die camera (lists them, asks, remembers) · r restart the server · q stop the Mac side
     ./show.sh off         saves the log to ~/.chance/logs, stops everything, switches the machine off and checks it
     ./show.sh status      what's on and ready         ./show.sh log save   the server's log onto the Desktop
     ./show.sh restart     restart the server only

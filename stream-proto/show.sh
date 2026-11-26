@@ -134,6 +134,23 @@ start_dice() {
   say "die reader started (camera $DICE): its window is open. First time or tray moved: c, Enter, l, e"
 }
 dice_alive() { [ -f "$STATE/dice.pid" ] && kill -0 "$(cat "$STATE/dice.pid")" 2>/dev/null; }
+# c in the watching loop: pick another camera for the die, remember it (show.conf), restart the reader on it
+change_dice_camera() {
+  stop_dice; sleep 1                                     # (the reader lets go of its camera, so every camera can be listed)
+  say "cameras on this Mac (the game in Chrome may be holding one: it then shows no picture):"
+  (cd "$HERE" && python3 dice_reader.py --list-cameras 2>/dev/null) | sed 's/^/           /'
+  printf '           die camera number [now %s, Enter keeps it]: ' "$DICE"; read -r n
+  case "$n" in
+    "") ;;
+    *[!0-9]*) warn "not a number: keeping camera $DICE" ;;
+    *) DICE=$n
+       mkdir -p "$STATE"; touch "$STATE/show.conf"
+       grep -v '^DICE=' "$STATE/show.conf" > "$STATE/show.conf.new" 2>/dev/null; echo "DICE=$DICE" >> "$STATE/show.conf.new"
+       mv "$STATE/show.conf.new" "$STATE/show.conf"
+       say "the die camera is now $DICE (saved for next time)" ;;
+  esac
+  start_dice
+}
 stop_dice() { pkill -f "dice_reader.py" 2>/dev/null; rm -f "$STATE/dice.pid"; }
 
 open_pages() {
@@ -200,7 +217,7 @@ cmd_on() {
   sleep 2
   open_pages
   echo
-  say "watching. Keys: o open pages · d die reader · r restart server · q stop (Mac side)"
+  say "watching. Keys: o open pages · d die reader · c die camera · r restart server · q stop (Mac side)"
 
   local last="" h line s miss=0 lastvm=0 vm="RUNNING" idle_warned=0
   while :; do
@@ -209,6 +226,7 @@ cmd_on() {
     case "$key" in
       o) open_pages ;;
       d) start_dice ;;
+      c) change_dice_camera ;;
       r) say "restarting the server ..."; gssh --command "sudo systemctl restart chance" >/dev/null 2>&1; sleep 5 ;;
       q) cleanup_mac; say "Mac side stopped. The machine is still ON and spending credit:  ./show.sh off"; exit 0 ;;
     esac

@@ -68,6 +68,7 @@ TRAY = 720                 # the flattened tray image is TRAY x TRAY pixels
 R = TRAY // 2 - 8          # tray radius in the flattened image
 SIZE = [TRAY, TRAY]        # the flattened area, (width, height): a tray is TRAY x TRAY, a table its own rectangle
 KIND = ["tray"]            # "tray" or "table" (the area now in use)
+CAM = [None]               # the camera this run reads (an area is marked for one camera)
 
 P = {
     "sensitivity": 28,     # difference from the empty tray that counts as "die"
@@ -163,6 +164,8 @@ def load_area():
 
 
 def save_area(area):
+    if CAM[0] is not None:
+        area["camera"] = CAM[0]
     AREA_FILE.write_text(json.dumps(area))
 
 
@@ -495,7 +498,12 @@ def run_live(cam, port=8767, aspect=None):
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)   # more pixels per dot; the camera picks its nearest size
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
 
+    CAM[0] = cam
     area = load_area()
+    if area and area.get("camera") is not None and area["camera"] != cam:
+        print(f"[area] it was marked with camera {area['camera']}, this is camera {cam}: it won't line up. "
+              "Press l to unlock, then c (tray) or t (table) to mark it again, then e.")
+        area["locked"] = False
     if area:
         set_size(area)
     M = area_transform(area) if area else None
