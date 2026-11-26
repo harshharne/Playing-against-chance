@@ -203,7 +203,8 @@ if (new URLSearchParams(location.search).has("test")) window.__pac = { clock, li
   panel: () => ({ tempo, heritage: heritageMix, ui, rules: worldRules, voiceOn, fonts: fontsNow.slice(), ts: getComputedStyle(document.querySelector(".fogl")).getPropertyValue("--ts").trim(),
                   fontVar: getComputedStyle(document.documentElement).getPropertyValue("--font-event").trim(), sound: sound._debug().mix, bk: V._live() }) };   // (for the automated tests only)
 addEventListener("pac-voice", (e) => sound.duck(!!(e.detail && e.detail.speaking)));
-const V = createBookkeeper({ onPick: (name) => deckPick ? deckPick(name) : { ok: false, reason: "the cards aren't up" } });
+const V = createBookkeeper({ onPick: (name) => deckPick ? deckPick(name) : { ok: false, reason: "the cards aren't up" },
+  context: () => S ? ["[GAME] record: the voice had to reconnect. The life so far, for your books (don't retell it):", ...lifeLines(), `age now: ${Math.floor(S.ageF)}`].join("\n") : "" });
 let scene = null;                                              // the drawn scene on screen now
 let held = false;
 function holdAll(on) { held = !!on; live.hold(on); for (const x of [birth, worldmap, baby]) x.hold(on); }   // while the die rolls, everything holds still
@@ -412,9 +413,9 @@ async function syncAvatar(ev) {
     } else { pMode = "painted"; avatarAt(S.ageF); }
   }
 }
-addEventListener("pac-portrait-lost", () => {                   // the animator stopped: the painted avatar until the next event
-  if (pMode !== "portrait") return;
-  pMode = "painted"; live.portrait(null); avatarAt(S.ageF);
+addEventListener("pac-portrait-lost", () => {                   // the animator stalled (a busy GPU): the face holds still and
+  if (pMode !== "portrait") return;                             // moves again when it answers. Never the painted avatar mid-life:
+  live.stat.portraitNote = "the animator paused: the face holds still";   // a still face is better than a different person
 });
 async function portraitTo(ev, ms) {                             // as the years pass, you dissolve into your next age
   if (!S.avatar || !pNeeds(ev.age)) return;
@@ -645,7 +646,24 @@ let deckKeys = null, deckPick = null;                          // deckPick(name)
 function matchCard(cards, said) {                               // what the player said -> that card (or -1)
   const STOP = new Set(["the", "a", "an", "and", "of", "to", "in", "on", "at", "for", "your", "you", "i", "id", "ill", "im", "want", "take",
                         "choose", "pick", "go", "with", "one", "card", "please", "that", "this", "it", "me", "my", "is", "be", "like", "would", "lets", "let"]);
-  const norm = (x) => String(x || "").toLowerCase().replace(/[’']/g, "").replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+  const norm = (x) => String(x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()   // (Európa -> europa)
+    .replace(/[’']/g, "").replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+  const near = (a, b) => {                                       // the same word, misheard a little (europa / europe)
+    if (a === b) return true;
+    if (Math.min(a.length, b.length) < 3) return false;           // (ats / arts)
+    if (Math.abs(a.length - b.length) > 3) return false;          // (south is not southeast)
+    if (a.length > 4 && (a.startsWith(b) || b.startsWith(a))) return true;
+    if (a.length >= 5 && b.length >= 5 && a.slice(0, 5) === b.slice(0, 5)) return true;   // (salary / salaried)
+    const L = Math.max(a.length, b.length) >= 6 ? 2 : 1;
+    if (Math.abs(a.length - b.length) > L) return false;
+    let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+    for (let i = 1; i <= a.length; i++) {
+      const cur = [i];
+      for (let j = 1; j <= b.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      prev = cur;
+    }
+    return prev[b.length] <= L;
+  };
   const words = (x) => norm(x).split(" ").filter(w => w.length > 2 && !STOP.has(w));
   const want = norm(said), names = cards.map(c => norm(c.name));
   let i = names.indexOf(want);
@@ -655,7 +673,9 @@ function matchCard(cards, said) {                               // what the play
   const o = want.match(/\b(first|second|third|fourth|fifth|sixth|seventh|eighth|last)\b/) || want.match(/\bnumber (one|two|three|four|five|six|seven|eight|[1-8])\b/);
   if (o) { const k = ORD[o[1]] ?? NUM[o[1]] ?? (+o[1] - 1); if (k >= 0 && k < cards.length) return k; }
   const heard = new Set(words(said));                            // the card whose name's words were heard most (and alone)
-  const score = names.map(nm => { const ws = words(nm); return ws.length ? ws.filter(w => heard.has(w) || [...heard].some(h => h.length > 4 && (h.startsWith(w) || w.startsWith(h)))).length / ws.length : 0; });
+  const hits = names.map(nm => words(nm).filter(w => [...heard].some(h => near(h, w))));
+  const owners = (w) => hits.filter(hs => hs.includes(w)).length;   // a word only one card has says more ("middle")
+  const score = names.map((nm, k) => { const ws = words(nm); return ws.length ? hits[k].length / ws.length + 0.2 * hits[k].filter(w => owners(w) === 1).length : 0; });
   const best = Math.max(...score), at = score.indexOf(best);
   return best >= 0.3 && score.filter(x => x === best).length === 1 ? at : -1;
 }

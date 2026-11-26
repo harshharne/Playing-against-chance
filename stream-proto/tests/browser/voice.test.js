@@ -119,6 +119,29 @@ const L = require("../lib/standin.js"), { check, note, done } = require("../lib/
     check(p.g.realPicked === 1, "a real call after its echo wasn't taken");
     check(p.g.echoReplies === 0, "it answered its own echo");
     check(p.overlap === 0, `a line was asked for while another was still being made (${p.overlap} times)`);
+    // LOST MID-LIFE: the call drops; the voice reconnects by itself, is told the life so far, and speaks again
+    const rc = await v.evaluate(async () => {
+      const pcs = []; const RT = window.RTCPeerConnection;
+      window.RTCPeerConnection = class extends RT { constructor() { super(); pcs.push(this); } };
+      const { createBookkeeper } = await import("/bookkeeper.js?3");
+      window.__sent.length = 0;
+      const V = createBookkeeper({ context: () => "[GAME] record: the life so far\n- age 0, Birth: Girl" });
+      V.setLive({ speed: 1, breath: 0, length: 1, moments: {} });
+      await V.start("t3");
+      const p0 = pcs[pcs.length - 1];
+      p0.connectionState = "failed"; p0.onconnectionstatechange();
+      const lostState = V.stat.state, lostNote = V.stat.note;
+      const t0 = Date.now(); while (V.stat.state !== "ready" && Date.now() - t0 < 8000) await new Promise(r => setTimeout(r, 100));
+      const back = V.stat.state, told = window.__sent.some(m => m.type === "conversation.item.create" && /record: the life so far/.test(JSON.stringify(m)));
+      const n = window.__sent.filter(m => m.type === "response.create").length;
+      await V.cue("[GAME] outcome\nsomething");
+      return { lostState, lostNote, back, told, spoke: window.__sent.filter(m => m.type === "response.create").length - n, calls: pcs.length };
+    });
+    check(rc.lostState === "lost" && /reconnecting/.test(rc.lostNote), `a dropped call wasn't noticed (${rc.lostState}, "${rc.lostNote}")`);
+    check(rc.back === "ready" && rc.calls >= 2, `the voice didn't come back by itself (${rc.back}, ${rc.calls} calls)`);
+    check(rc.told, "after reconnecting it wasn't told the life so far");
+    check(rc.spoke === 1, "after reconnecting it didn't speak the next moment");
+    note(`a dropped call: back by itself (${rc.calls} calls), told the life so far, speaking again`);
     check(errs.length === 0, "errors:\n      " + errs.slice(0, 5).join("\n      "));
   } finally { await b.close(); s.stop(); }
   done("voice (one line at a time, nothing cut, the room ignored)");

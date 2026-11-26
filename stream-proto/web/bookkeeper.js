@@ -16,7 +16,8 @@
 //  every answer. The player is heard all the time; it answers them only when the game lets it (listen).
 //  onPick(name) -> {ok, picked} | {ok: false, reason}: the player chose a card by voice (the choose_card tool).
 // ============================================================================
-export function createBookkeeper({ onPick = () => ({ ok: false, reason: "the cards aren't up" }) } = {}) {
+export function createBookkeeper({ onPick = () => ({ ok: false, reason: "the cards aren't up" }), context = () => "" } = {}) {
+  // context(): the game's record of the life so far, for a voice that had to reconnect mid-life
   const stat = { state: "off", note: "", said: 0, heard: 0, last: "" };
   let pc = null, dc = null, mic = null, cfg = null, life = "", session = 0, subs = "";   // subs: the panel's SUBTITLES ("" / "on" / "off")
   // the panel's Voice tab, live: how fast, how loud, how long its lines, a breath before each, which moments it speaks at
@@ -73,10 +74,24 @@ export function createBookkeeper({ onPick = () => ({ ok: false, reason: "the car
   addEventListener("pointerdown", unlock); addEventListener("keydown", unlock);
 
   // ---------- a life's session ----------
-  async function start(lifeId = "") {
+  // LOST MID-LIFE (the network, OpenAI dropping the call): it comes back by itself, told the life so far. A
+  // "disconnected" call often recovers on its own: it gets 5 s first. At most 4 tries a life, further apart each time.
+  let tries = 0, retryT = 0;
+  function lost(mine, why) {
+    if (mine !== session) return;
+    stat.state = "lost"; stat.note = "connection " + why; finishAll();
+    if (tries >= 4) { stat.note += " (gave up for this life)"; return; }
+    const wait = [2000, 5000, 10000, 20000][tries++];
+    stat.note += ` · reconnecting in ${wait / 1000} s`;
+    clearTimeout(retryT);
+    retryT = setTimeout(() => { if (mine === session) start(life, { resume: true }); }, wait);
+  }
+  async function start(lifeId = "", { resume = false } = {}) {
+    const was = listening;
     stop();
+    if (!resume) { tries = 0; clearTimeout(retryT); }
     const mine = ++session;
-    life = String(lifeId); stat.state = "connecting"; stat.note = "";
+    life = String(lifeId); stat.state = resume ? "reconnecting" : "connecting"; if (!resume) stat.note = "";
     try {
       const t = await (await fetch("/voice/token", { cache: "no-store" })).json();
       if (!t.token) throw new Error(t.error || "no voice key");
@@ -87,9 +102,10 @@ export function createBookkeeper({ onPick = () => ({ ok: false, reason: "the car
       pc.ontrack = (e) => { audio.srcObject = e.streams[0]; audio.play().catch(() => { stat.note = "sound blocked: click or press a key once"; }); };
       pc.addTrack(mic.getAudioTracks()[0], mic);
       pc.onconnectionstatechange = () => {
-        if (["failed", "closed", "disconnected"].includes(pc && pc.connectionState) && mine === session) {
-          stat.state = "lost"; stat.note = "connection " + pc.connectionState; finishAll();
-        }
+        const st = pc && pc.connectionState;
+        if (mine !== session || stat.state === "connecting" || stat.state === "reconnecting") return;
+        if (st === "failed" || st === "closed") lost(mine, st);
+        else if (st === "disconnected") setTimeout(() => { if (mine === session && pc && pc.connectionState !== "connected") lost(mine, "disconnected"); }, 5000);
       };
       dc = pc.createDataChannel("oai-events");
       dc.onmessage = (e) => { try { handle(JSON.parse(e.data)); } catch (err) { console.warn("[voice]", err); } };
@@ -102,17 +118,26 @@ export function createBookkeeper({ onPick = () => ({ ok: false, reason: "the car
       await pc.setRemoteDescription({ type: "answer", sdp: await r.text() });
       await opened;
       if (mine !== session) return false;
-      stat.state = "ready"; stat.said = stat.heard = 0; speedSent = cfg.speed || 1;
+      stat.state = "ready"; speedSent = cfg.speed || 1;
+      if (!resume) stat.said = stat.heard = 0;
       inputSent = JSON.stringify(cfg.input || {}); applyInput();   // (the panel may have changed while it connected)
+      if (resume) {                                               // back mid-life: it's told the life so far, then carries on
+        const rec = String(context() || "");
+        if (rec) send({ type: "conversation.item.create", item: { type: "message", role: "user", content: [{ type: "input_text", text: rec }] } });
+        listening = was; stat.note = "reconnected"; log("game", "(the voice reconnected mid-life)");
+      }
       return true;
     } catch (e) {
-      if (mine === session) { stop(); stat.state = "off"; stat.note = String(e.message || e).slice(0, 180); }
+      if (mine === session) {
+        stop(); stat.state = "off"; stat.note = String(e.message || e).slice(0, 180);
+        if (resume) { const m = session; lost(m, "failed again"); }   // (try again, while there are tries left)
+      }
       console.warn("[voice] no voice this life:", e);
       return false;
     }
   }
   function stop() {
-    session++;
+    session++; clearTimeout(retryT);
     finishAll();
     try { dc && dc.close(); } catch (e) {}
     try { pc && pc.close(); } catch (e) {}

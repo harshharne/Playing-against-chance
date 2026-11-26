@@ -134,7 +134,7 @@ def session(s, instructions):
         "audio": {
             "input": {
                 "noise_reduction": {"type": s.get("mic") or "near_field"},
-                "transcription": {"model": "gpt-4o-mini-transcribe"},
+                "transcription": {"model": "gpt-4o-mini-transcribe", "language": "en"},   # (English only: no guessing other scripts on noise)
                 # It never answers by itself: the game asks for each answer (and lets it answer the player).
                 # It doesn't stop talking when someone in the room makes a sound either.
                 "turn_detection": {"type": "semantic_vad", "eagerness": s.get("listen_eagerness") or "low",

@@ -442,11 +442,12 @@ export function createLive({ out, video, params }) {
         }
         stat.times.push(performance.now()); while (stat.times.length && performance.now() - stat.times[0] > 2000) stat.times.shift();
         P.lastOk = performance.now();
+        if (P.lost) { P.lost = false; stat.portraitNote = ""; }   // it answers again: the face moves again
       }
     };
   }
-  // the animator stopped answering (the server restarted, the GPU is gone): let the game fall back to the painted
-  // avatar instead of showing a frozen face. It tries the portrait again at the next event.
+  // the animator stopped answering (a busy GPU, the server restarting): the game is told (the face holds still, the
+  // stream reconnects by itself); when frames come again it moves again.
   setInterval(() => {
     if (!P.main || P.lost || held || document.hidden) return;
     if (!P.lastOk) P.lastOk = performance.now();
