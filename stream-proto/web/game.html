@@ -19,7 +19,7 @@
 html, body { height: 100%; margin: 0; overflow: hidden; }
 body { background: var(--bg); color: var(--ink); font-family: "Inter", ui-sans-serif, system-ui, -apple-system, "Helvetica Neue", sans-serif; -webkit-font-smoothing: antialiased; }
 .gen { position: fixed; inset: 0; overflow: hidden; background: #eceae6; }
-/* the screen is OFF (black) until a throw begins a life; it fades up over WAKE, and back down REST after the ledger */
+/* the screen is OFF (black) until a throw begins a life; the black fog rolls away over WAKE (offfog.js), and back in after the ledger */
 .off { position: absolute; inset: 0; z-index: 1000; background: #000; opacity: 1; transition: opacity var(--offT, 3s) ease; cursor: none; }
 .off.up { opacity: 0; pointer-events: none; }
 .gen .debug { z-index: 1001; }
@@ -145,6 +145,7 @@ import { createBirth } from "./birth.js";
 import { createWorldMap } from "./worldmap.js";
 import { createBaby } from "./baby.js";
 import { createFog } from "./ui-fog.js";
+import { createOffFog } from "./offfog.js";
 import { createBookkeeper } from "./bookkeeper.js";
 import { createSound } from "./sound.js";
 import { createWorldClock } from "./worldclock.js";
@@ -993,14 +994,13 @@ async function arrive(ev, prev) {
 }
 
 // ---------- the screen: off (black) until the die begins a life ----------
-const offEl = $("off");
+const offEl = $("off"), offFog = createOffFog(offEl);
 let screenUp = false;
 async function screenTo(up, ms) {
   screenUp = up;
   if (up) sound.wake(ms); else sound.sleep(ms);                 // black is silent
-  offEl.style.setProperty("--offT", Math.max(0, ms) / 1000 + "s");
   offEl.classList.toggle("up", up);
-  await sleep(ms);
+  await offFog.to(up, ms);                                      // the black fog rolls away from the middle (and back in)
 }
 
 // BACK (on /panel): the life as it stood when each event began, kept in this tab (sessionStorage survives a reload).

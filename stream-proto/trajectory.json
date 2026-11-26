@@ -39,7 +39,7 @@
     "chapter": 5.0,
     "final_silence": 5.0,
     "rest": 30.0,
-    "wake": 3.0,
+    "wake": 5.0,
     "gene": 3.0,
     "takeover": 4.0
   },
