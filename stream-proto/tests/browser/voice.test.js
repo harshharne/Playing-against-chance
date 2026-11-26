@@ -18,6 +18,15 @@ const L = require("../lib/standin.js"), { check, note, done } = require("../lib/
           const emit = (ev) => setTimeout(() => dc.onmessage && dc.onmessage({ data: JSON.stringify(ev) }), 0);
           dc.send = (m) => {
             const ev = JSON.parse(m); window.__sent.push({ t: performance.now(), ...ev });
+            if (ev.type === "response.create" && ev.response && ev.response.tools) {   // the voice judging a card: a tool call, no sound
+              if (busy) { window.__overlap++; emit({ type: "error", error: { message: "Conversation already has an active response in progress" } }); return; }
+              busy = true; const id = "j" + (++n), ins = ev.response.instructions || "";
+              const card = /transcriber wrote it as "(is|it's|the) ?(ats|arts?)/i.test(ins) ? "Artists" : /second one/i.test(ins) ? ev.response.tools[0].parameters.properties.card.enum[1] : "none";
+              window.__judged = (window.__judged || []).concat([{ tools: ev.response.tools, choice: ev.response.tool_choice, mod: ev.response.output_modalities, card }]);
+              emit({ type: "response.created", response: { id } });
+              setTimeout(() => { busy = false; emit({ type: "response.done", response: { id, status: "completed", output: [{ type: "function_call", name: "choose_card", call_id: "c" + id, arguments: JSON.stringify({ card }) }] } }); }, 400);
+              return;
+            }
             if (ev.type === "response.create") {
               if (busy) { window.__overlap++; emit({ type: "error", error: { message: "Conversation already has an active response in progress" } }); return; }
               busy = true; const id = "r" + (++n);
@@ -34,7 +43,7 @@ const L = require("../lib/standin.js"), { check, note, done } = require("../lib/
       };
     });
     await v.route("**/voice/token", (r) => r.fulfill({ json: { token: "fake", model: "m", voice: "cedar", speed: 1, max_wait_s: 18, player_can_talk: true,
-      input: { noise_reduction: { type: "near_field" }, turn_detection: { type: "semantic_vad", eagerness: "low", create_response: false, interrupt_response: false } } } }));
+      input: { noise_reduction: { type: "near_field" }, transcription: { model: "gpt-4o-transcribe", language: "en" }, turn_detection: { type: "semantic_vad", eagerness: "low", create_response: false, interrupt_response: false } } } }));
     await v.route("https://api.openai.com/**", (r) => r.fulfill({ status: 200, body: "v=0" }));
     await v.goto(s.url + "/start");
     const r = await v.evaluate(async () => {
@@ -105,7 +114,28 @@ const L = require("../lib/standin.js"), { check, note, done } = require("../lib/
       const q1 = V.cue("[GAME] arrive\na"), q2 = V.cue("[GAME] outcome\nb");
       await new Promise(r => setTimeout(r, 500)); await V.hush(); await q1; await q2;
       const afterHush = window.__sent.filter(x => x.type === "response.cancel" || x.type === "output_audio_buffer.clear").length;
-      return { afterNoise, afterPick, afterTalk, picked, cuts, afterHush, overlap: window.__overlap, whatNoise, whatPick, g };
+      // THE VOICE JUDGES: the transcriber's words name no card -> the voice model is asked (text only, the cards as the
+      // only answers), and its answer picks; "none" picks nothing; the cards' names go to the transcriber as a hint
+      const j = {}; const picks0 = picked.length;
+      const NAMES = ["Sciences", "Commerce", "Artists"];
+      const choosers = [];
+      const V2 = createBookkeeper({ onPick: (said) => { choosers.push(said); const i = NAMES.findIndex(n => n.toLowerCase() === String(said).toLowerCase()); return i >= 0 ? { ok: true, picked: NAMES[i] } : { ok: false, reason: "no card" }; } });
+      V2.setLive({ speed: 1, breath: 0, length: 1, moments: {} }); await V2.start("t2b");
+      V2.listen("pick", NAMES);
+      const ups = window.__sent.filter(m => m.type === "session.update" && m.session.audio && m.session.audio.input);
+      j.prompt = ((ups[ups.length - 1] || {}).session || { audio: { input: {} } }).audio.input.transcription.prompt || "";
+      const hear2 = (t) => dcRef.onmessage({ data: JSON.stringify({ type: "conversation.item.input_audio_transcription.completed", transcript: t }) });
+      hear2("Is ats."); await new Promise(r => setTimeout(r, 1500));
+      j.what1 = V2.stat.heardWhat; j.got1 = choosers.slice();
+      hear2("give me the second one"); await new Promise(r => setTimeout(r, 1500));
+      j.what2 = V2.stat.heardWhat;
+      hear2("what do you think we should do"); await new Promise(r => setTimeout(r, 1500));
+      j.what3 = V2.stat.heardWhat; j.judged = window.__judged || [];
+      V2.listen("closed");
+      const ups2 = window.__sent.filter(m => m.type === "session.update" && m.session.audio && m.session.audio.input);
+      j.promptAfter = ((ups2[ups2.length - 1] || {}).session).audio.input.transcription.prompt || "";
+      V2.stop();
+      return { afterNoise, afterPick, afterTalk, picked, cuts, afterHush, overlap: window.__overlap, whatNoise, whatPick, g, j };
     });
     check(p.afterNoise === 0, `noise got a reply (${p.afterNoise})`);
     check(/ignored/.test(p.whatNoise || "") && /picked/.test(p.whatPick || ""), `the panel isn't told what it did with what it heard: "${p.whatNoise}" / "${p.whatPick}"`);
@@ -118,6 +148,14 @@ const L = require("../lib/standin.js"), { check, note, done } = require("../lib/
     check(p.g.echoPicked === 0 && /own voice/.test(p.g.echoWhat || ""), `its own words, heard back, picked a card (${p.g.echoPicked}, "${p.g.echoWhat}")`);
     check(p.g.realPicked === 1, "a real call after its echo wasn't taken");
     check(p.g.echoReplies === 0, "it answered its own echo");
+    const j = p.j;
+    note(`judged: ${j.judged.map(x => x.card).join(", ")} · "${j.what1}" · "${j.what2}" · "${j.what3}"`);
+    check(/Sciences, Commerce, Artists/.test(j.prompt) && !j.promptAfter, `the cards' names weren't a hint to the transcriber while up (or stayed after): "${j.prompt}" / "${j.promptAfter}"`);
+    check(j.judged.length === 3 && j.judged.every(x => x.mod && x.mod[0] === "text" && x.choice && x.choice.name === "choose_card"), `the voice wasn't asked to judge, text only, with the card tool (${j.judged.length})`);
+    check(j.judged[0] && JSON.stringify(j.judged[0].tools[0].parameters.properties.card.enum) === JSON.stringify(["Sciences", "Commerce", "Artists", "none"]), "the judge's answers weren't the cards + none");
+    check(/picked: Artists \(the voice heard it\)/.test(j.what1), `a misheard "Is ats." wasn't recovered by the voice: "${j.what1}"`);
+    check(/picked: Commerce/.test(j.what2), `"the second one" wasn't taken: "${j.what2}"`);
+    check(/no card chosen/.test(j.what3), `talk that chose nothing should pick nothing: "${j.what3}"`);
     check(p.overlap === 0, `a line was asked for while another was still being made (${p.overlap} times)`);
     // LOST MID-LIFE: the call drops; the voice reconnects by itself, is told the life so far, and speaks again
     const rc = await v.evaluate(async () => {

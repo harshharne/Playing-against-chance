@@ -21,16 +21,16 @@ cmd() {                                                   # (no associative arra
     voice) echo "node browser/voice.test.js" ;;
     dice) echo "python3 unit/dice_table.test.py" ;;
     life) echo "node browser/life.test.js" ;;
-    drills) echo "node browser/drills.test.js" ;;    back) echo "node browser/back.test.js" ;;    panel) echo "node browser/panel.test.js" ;;
+    drills) echo "node browser/drills.test.js" ;;    back) echo "node browser/back.test.js" ;;    feed) echo "node browser/feed.test.js" ;;    panel) echo "node browser/panel.test.js" ;;
     soak) echo "node browser/soak.test.js" ;;        live) echo "node browser/live.test.js" ;;        whom) echo "node browser/whom.test.js" ;;
     *) echo "" ;;
   esac
 }
-QUICK="files clock face dice voice panel live whom life drills back"
+QUICK="files clock face dice voice panel live whom life drills back feed"
 case "${1:-quick}" in
   quick) RUN="$QUICK" ;;
   full) RUN="$QUICK soak" ;;
-  *) [ -n "$(cmd "$1")" ] || { echo "no test called $1 (files clock face dice voice life drills back panel live whom soak)"; exit 1; }; RUN="$1" ;;
+  *) [ -n "$(cmd "$1")" ] || { echo "no test called $1 (files clock face dice voice life drills back feed panel live whom soak)"; exit 1; }; RUN="$1" ;;
 esac
 pass=0; fail=0; failed=""
 for t in $RUN; do

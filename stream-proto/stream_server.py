@@ -1770,7 +1770,30 @@ async def game_commands(after: int = 0):
     """For the game: commands newer than `after` (the last 20 s only, so a reloaded page doesn't replay old ones),
     and the live settings."""
     now = time.time()
-    return {"seq": game_seq, "cmds": [c for c in game_cmds if c["seq"] > after and now - c["at"] < 20], "live": game_live}
+    return {"seq": game_seq, "cmds": [c for c in game_cmds if c["seq"] > after and now - c["at"] < 20], "live": game_live,
+            "watched": now - game_frame["watched"] < 5}   # (the game sends its screen only while the panel shows it)
+
+
+# The panel's SCREEN: a small picture of what the game shows, sent by the game twice a second while the panel watches.
+game_frame = {"jpeg": b"", "at": 0.0, "watched": 0.0}
+
+
+@app.post("/game/frame")
+async def game_frame_in(request: Request):
+    body = await request.body()
+    if not body.startswith(b"\xff\xd8") or len(body) > 600_000:
+        return Response(status_code=400)
+    game_frame.update(jpeg=body, at=time.time())
+    return {"ok": True}
+
+
+@app.get("/game/frame")
+async def game_frame_out():
+    game_frame["watched"] = time.time()
+    if not game_frame["jpeg"] or time.time() - game_frame["at"] > 10:
+        return Response(status_code=204, headers={"Cache-Control": "no-store"})
+    return Response(game_frame["jpeg"], media_type="image/jpeg",
+                    headers={"Cache-Control": "no-store", "X-Age": f"{time.time() - game_frame['at']:.1f}"})
 
 
 @app.post("/game/report")

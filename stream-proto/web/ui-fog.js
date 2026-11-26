@@ -133,7 +133,7 @@ void main() {
 }`;
 
 function frame(canvas) {
-  const gl = canvas.getContext("webgl", { premultipliedAlpha: true, alpha: true, antialias: false });
+  const gl = canvas.getContext("webgl", { premultipliedAlpha: true, alpha: true, antialias: false, preserveDrawingBuffer: true });   // (kept: the panel's SCREEN copies it)
   if (!gl) return null;
   const sh = (ty, src) => { const s = gl.createShader(ty); gl.shaderSource(s, src); gl.compileShader(s); return s; };
   const pr = gl.createProgram();

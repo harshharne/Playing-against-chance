@@ -32,7 +32,7 @@ export function createBookkeeper({ onPick = () => ({ ok: false, reason: "the car
   // one waiter per answer asked for: resolved when its sound has finished (or it was cut, or it took too long)
   const asked = [];                          // asked for, not yet created by the server (FIFO)
   const byId = new Map();                    // response id -> waiter
-  let generating = 0, speaking = false, listening = "closed";
+  let generating = 0, speaking = false, listening = "closed", cards = [];
   // ONE LINE AT A TIME: every line waits for the one before it to be heard out. Nothing cuts a line but PAUSE or a new
   // life (hush / stop). The game awaits each cue, so the next moment waits for the voice too.
   let turn = Promise.resolve(), epoch = 0, cueSeq = 0, lastAnswer = 0;
@@ -189,7 +189,10 @@ export function createBookkeeper({ onPick = () => ({ ok: false, reason: "the car
         if (ev.delta) remember(ev.delta);                       // (its words are known before the echo of them comes back)
         break;
       case "input_audio_buffer.speech_started":
-        startedInVoice = speaking || Date.now() - stoppedAt < 1000;
+        startedInVoice = speaking || Date.now() - stoppedAt < 1000; speechFrom = ev.audio_start_ms || 0;
+        break;
+      case "input_audio_buffer.speech_stopped":
+        speechMs = Math.max(0, (ev.audio_end_ms || 0) - speechFrom);
         break;
       case "conversation.item.input_audio_transcription.completed":
         heard(ev.transcript || "");
@@ -208,18 +211,23 @@ export function createBookkeeper({ onPick = () => ({ ok: false, reason: "the car
   // reply); anything else is answered only if it's a real sentence, at most once every 25 s, after the current line,
   // and never instead of the game's next moment. Nothing that isn't understood gets a reply (no "say it again").
   const NOISE = /^(thank you|thanks|thanks for watching|thank you for watching|you|bye|bye bye|okay|ok|hmm+|uh+|um+|yeah|yes|no|oh|ah|so|right|wow|hello|hi)[.!?]*$/i;
+  let speechFrom = 0, speechMs = 0;
   function heard(text) {
     const t = String(text || "").trim();
     const what = (w) => { stat.heardLast = t.slice(0, 120); stat.heardWhat = w; };   // (shown on /panel: what it did with it)
-    if (!/[a-z]{2}/i.test(t) || NOISE.test(t)) { if (t) what("ignored: noise, or the transcriber guessing"); return; }
+    const noisy = !/[a-z]{2}/i.test(t) || NOISE.test(t);
     if (isEcho(t)) { log("game", `heard its own voice back: ${t}`); return what("ignored: its own voice, heard back"); }
-    stat.heard++; log("player", t);
-    if (listening === "pick") {                                // a card named: the game takes it (no reply needed)
-      const r = onPick(t) || {};
-      log("game", `heard during the cards -> ${r.ok ? "picked " + r.picked : "no card named"}`);
-      what(r.ok ? `picked: ${r.picked}` : "the cards are up and no card was named: no reply");
-      return;
+    if (listening === "pick") {                                // the cards are up: the game takes a card (no reply needed)
+      const r = noisy ? {} : onPick(t) || {};
+      if (r.ok) { stat.heard++; log("player", t); log("game", `heard during the cards -> picked ${r.picked}`); return what(`picked: ${r.picked} (from the words)`); }
+      if (noisy && (!cards.length || speechMs < 350)) { if (t) what("ignored: a noise"); return; }
+      stat.heard++; log("player", t);
+      if (!cards.length) return what("the cards are up and no card was named: no reply");
+      what("the words named no card: the voice is listening to how it sounded…");
+      return judge(t);                                         // the words missed: the voice itself heard the sound
     }
+    if (noisy) { if (t) what("ignored: noise, or the transcriber guessing"); return; }
+    stat.heard++; log("player", t);
     if (!cfg || !cfg.player_can_talk || !P.talk_back) return what("not answered: talking back is off");
     if (listening !== "open") return what("not answered: the die is being thrown / the game is mid-moment");
     if (t.split(/\s+/).length < 3) return what("not answered: under 3 words");
@@ -233,20 +241,48 @@ export function createBookkeeper({ onPick = () => ({ ok: false, reason: "the car
       await speakNow("none", 15000);
     });
   }
+  // THE VOICE JUDGES: when the transcriber's words name no card, the voice model, which heard the sound itself, is
+  // asked which card (if any) the player chose: by name, by a word of it, by its place ("the second one"), or by
+  // what it is. Text only, it says nothing; one at a time, the latest words win.
+  let judging = false, judgeNext = null;
+  async function judge(t) {
+    if (judging) { judgeNext = t; return; }
+    judging = true;
+    try {
+      await waitIdle(9000);                                    // (one answer at a time: its comment on the cards first)
+      if (listening !== "pick" || !cards.length || !on()) return;
+      if (!idle()) { stat.heardWhat = "the words named no card (the voice was still speaking: say it again)"; return; }
+      const names = cards.slice();
+      stat.heardJudge = (stat.heardJudge || 0) + 1;
+      await speakNow({ type: "function", name: "choose_card" }, 9000, {
+        output_modalities: ["text"],
+        tools: [{ type: "function", name: "choose_card", description: "The card the player chose just now, or none.",
+                  parameters: { type: "object", properties: { card: { type: "string", enum: [...names, "none"] } }, required: ["card"] } }],
+        instructions: `The player is choosing one of these cards, in this order: ${names.map((n, i) => `${i + 1}. ${n}`).join("; ")}. ` +
+          `Listen to what the player said aloud just now (their latest speech; not your own words). A transcriber wrote it as "${t}", but it often mishears accents and short words: trust the sound. ` +
+          `If they chose a card, by its name, a word of it, a word that sounds like it, its place (first, second, third, the last one) or by describing it, call choose_card with that card's exact name. ` +
+          `If they did not choose (talking to someone else, thinking aloud, a noise, repeating your words), call choose_card with "none". Say nothing.` });
+    } finally {
+      judging = false;
+      if (judgeNext) { const n = judgeNext; judgeNext = null; if (listening === "pick") judge(n); }
+    }
+  }
   function toolCall(item) {
     let res = { ok: false, reason: "not now" };
     if (item.name === "choose_card") {
       let card = "";
       try { card = JSON.parse(item.arguments || "{}").card || ""; } catch (e) {}
-      res = listening === "pick" ? (onPick(card) || res) : { ok: false, reason: "the cards aren't up now" };
+      if (card === "none") res = { ok: false, reason: "no card chosen" };
+      else res = listening === "pick" ? (onPick(card) || res) : { ok: false, reason: "the cards aren't up now" };
       log("game", `choose_card(${card}) -> ${JSON.stringify(res)}`);
+      if (listening === "pick" || res.ok) stat.heardWhat = res.ok ? `picked: ${res.picked} (the voice heard it)` : card === "none" ? "no card chosen (the voice listened too)" : `the voice heard "${card}": ${res.reason || "not taken"}`;
     }
     send({ type: "conversation.item.create", item: { type: "function_call_output", call_id: item.call_id, output: JSON.stringify(res) } });
     // (no reply either way: a wrong name gets silence, not a lecture)
   }
 
   // ---------- asking it to speak ----------
-  function speakNow(toolChoice, maxMs) {
+  function speakNow(toolChoice, maxMs, extra = {}) {
     if (Math.abs(P.speed - speedSent) > 0.001) {               // a new speed: between lines is the only time it can change
       send({ type: "session.update", session: { type: "realtime", audio: { output: { speed: P.speed } } } });
       speedSent = P.speed;
@@ -255,7 +291,7 @@ export function createBookkeeper({ onPick = () => ({ ok: false, reason: "the car
       const w = { resolve, done: false, audio: false };
       w.timer = setTimeout(() => finish(w), maxMs ?? ((cfg && cfg.max_wait_s) || 18) * 1000);
       asked.push(w); generating++;
-      send({ type: "response.create", response: { tool_choice: toolChoice } });
+      send({ type: "response.create", response: { tool_choice: toolChoice, ...extra } });
     });
   }
   async function hush() {                                     // PAUSE / a new life only: stops the line and drops the queue
@@ -285,6 +321,7 @@ export function createBookkeeper({ onPick = () => ({ ok: false, reason: "the car
       if (moment === "cards" && (listening !== "pick" || mine !== cueSeq)) return;   // the pick is made: a comment on the cards is stale
       send({ type: "conversation.item.create", item: { type: "message", role: "user", content: [{ type: "input_text", text }] } });
       if (P.breath > 0) await sleep(P.breath * 1000);          // a beat before it speaks
+      if (P.breath > 0) await waitIdle(10000);                 // (a card being judged meanwhile: after it)
       if (e !== epoch || !on()) return;
       const words = BUDGET[moment] ? BUDGET[moment] * P.length : 40;
       await speakNow("none", Math.max(15000, (words / 2.2 / Math.max(0.5, P.speed) + 8) * 1000));   // long enough for the whole line
@@ -307,6 +344,10 @@ export function createBookkeeper({ onPick = () => ({ ok: false, reason: "the car
     const input = JSON.parse(JSON.stringify(cfg.input));
     input.noise_reduction = { type: P.mic ? P.mic + "_field" : cfg.mic_default || "near_field" };
     if (input.turn_detection) input.turn_detection.eagerness = P.listen || cfg.listen_default || "low";
+    if (input.transcription) {                                 // the cards' names, as a hint: short answers are heard as them
+      if (listening === "pick" && cards.length) input.transcription.prompt = `The player is choosing one of: ${cards.join(", ")}. They may say its name, or "the first", "the second", "the last one".`;
+      else delete input.transcription.prompt;
+    }
     return input;
   }
   function applyInput() {
@@ -321,8 +362,10 @@ export function createBookkeeper({ onPick = () => ({ ok: false, reason: "the car
 
   return {
     start, stop, cue, hush, stat,
-    listen: (mode) => {
+    listen: (mode, names = null) => {                        // names: the cards, while they're up ("pick")
       listening = mode;
+      cards = mode === "pick" && Array.isArray(names) ? names.map(String) : [];
+      applyInput();
       if (mode === "pick") { clearTimeout(gateT); gate(true); }   // the cards: a card can be called over its comment
       else if (speaking) gate(false);
     },

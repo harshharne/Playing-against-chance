@@ -146,6 +146,7 @@ import { createWorldMap } from "./worldmap.js";
 import { createBaby } from "./baby.js";
 import { createFog } from "./ui-fog.js";
 import { createOffFog } from "./offfog.js";
+import { startFeed } from "./screenfeed.js";
 import { createBookkeeper } from "./bookkeeper.js";
 import { createSound } from "./sound.js";
 import { createWorldClock } from "./worldclock.js";
@@ -801,7 +802,7 @@ async function chosen(ev) {
   if (ev.drawn === "baby") await babyArrives();
   await say({ k: kickAge(), t: esc(ev.title), s: esc(ev.setup) });
   await sleep(sec("settle"));
-  V.listen("pick"); V.cue(cardsCue(ev));                       // the voice has an opinion while the cards rise
+  V.listen("pick", ev.cards.map(c => c.name)); V.cue(cardsCue(ev));                       // the voice has an opinion while the cards rise
   const { i, els } = await deck(ev.cards, ev.drawn === "map" ? (k) => worldmap.hover(k >= 0 ? ev.cards[k].name : null) : null);
   V.listen("closed");                                           // (its comment on the cards, if already speaking, finishes: nothing is cut)
   const c = ev.cards[i], tg = target(c.target);
@@ -1187,6 +1188,7 @@ function status() {                                             // the hidden de
 }
 status();
 live.camera.catch(e => { screenTo(true, 0); say({ k: "NO CAMERA", s: esc(e.message || e.name), force: true }); });
+startFeed({ isOff: () => !screenUp });                         // the panel's SCREEN (only while it's watched)
 life(false, takeResume()).catch(e => { screenTo(true, 0); say({ k: "COULDN'T START", s: esc(e.message || e), force: true }); });
 </script>
 </body>

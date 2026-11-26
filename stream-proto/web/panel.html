@@ -76,6 +76,11 @@ h3 { margin: 0; font-size: 17px; font-weight: 500; letter-spacing: -0.01em; }
 .now .warn { align-self: flex-start; font-size: 12px; padding: 6px 11px; border-radius: 12px; background: #161616; color: var(--lime); }
 
 /* the four actions */
+.feed { margin: 0; border-radius: 18px; overflow: hidden; background: #111; }
+.feed img { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: contain; background: #111; }
+.feed.off img { display: none; }
+.feed figcaption { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 12px; font-size: 12px; color: #aaa; }
+.feed button { font: inherit; color: #ddd; background: none; border: 1px solid #444; border-radius: 999px; padding: 2px 10px; cursor: pointer; }
 .acts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .btn { border: 0; background: var(--card); box-shadow: var(--shadow); border-radius: 22px; min-height: 64px; padding: 14px 16px; cursor: pointer; font-size: 14.5px; font-weight: 500; text-align: left; display: flex; flex-direction: column; justify-content: center; gap: 3px; transition: transform 0.12s ease, background 0.2s ease; }
 .btn small { font-weight: 400; color: var(--dim); font-size: 11.5px; line-height: 1.3; }
@@ -202,6 +207,11 @@ label.txt { display: flex; flex-direction: column; gap: 8px; font-size: 13px; co
       <div class="world" id="n_heard" hidden></div>
       <div class="warn" id="n_warn" hidden></div>
     </section>
+
+    <figure class="feed" id="feed" aria-label="What the game shows now">
+      <img id="f_img" alt="">
+      <figcaption><span id="f_note">The game's screen shows here</span><button type="button" id="f_btn" aria-pressed="true">Hide</button></figcaption>
+    </figure>
 
     <div class="acts">
       <button class="btn primary" id="b_new" type="button">New life<small>starts over (press twice)</small></button>
@@ -789,6 +799,24 @@ $("b_new").addEventListener("click", () => {                   // twice, so a st
   setTimeout(() => { if (armed && Date.now() - armed >= 3000) { armed = 0; $("b_new").classList.remove("armed"); $("b_new").firstChild.textContent = "New life"; } }, 3100);
 });
 let isPaused = false;
+// SCREEN: what the game shows, twice a second (the game sends it only while this asks for it)
+let feedOn = true, feedUrl = "";
+$("f_btn").addEventListener("click", () => {
+  feedOn = !feedOn; $("feed").classList.toggle("off", !feedOn);
+  $("f_btn").textContent = feedOn ? "Hide" : "Show"; $("f_btn").setAttribute("aria-pressed", String(feedOn));
+  if (!feedOn) $("f_note").textContent = "Hidden (the game stops sending it)";
+});
+setInterval(async () => {
+  if (!feedOn || document.hidden) return;
+  try {
+    const r = await fetch("/game/frame", { cache: "no-store" });
+    if (r.status !== 200) { $("f_note").textContent = "No picture from the game yet"; return; }
+    const url = URL.createObjectURL(await r.blob());
+    $("f_img").src = url; if (feedUrl) URL.revokeObjectURL(feedUrl); feedUrl = url;
+    const age = +(r.headers.get("X-Age") || 0);
+    $("f_note").textContent = age > 3 ? `The game's screen, ${Math.round(age)} s ago` : "The game's screen, live";
+  } catch (e) { $("f_note").textContent = "Can't reach the server"; }
+}, 500);
 let backArmed = 0;                                              // twice too: a stray click never undoes a moment
 $("b_back").addEventListener("click", () => {
   const b = $("b_back");
