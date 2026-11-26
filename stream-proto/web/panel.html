@@ -205,6 +205,7 @@ label.txt { display: flex; flex-direction: column; gap: 8px; font-size: 13px; co
 
     <div class="acts">
       <button class="btn primary" id="b_new" type="button">New life<small>starts over (press twice)</small></button>
+      <button class="btn" id="b_back" type="button">◀ Back<small>the previous event plays again (press twice)</small></button>
       <button class="btn" id="b_pause" type="button">Pause<small>holds the life where it is</small></button>
       <button class="btn" id="b_roll" type="button">Roll<small>a throw for the player (also wakes the screen)</small></button>
       <button class="btn" id="b_redraw" type="button">Redraw world<small>the same place, painted again</small></button>
@@ -788,6 +789,13 @@ $("b_new").addEventListener("click", () => {                   // twice, so a st
   setTimeout(() => { if (armed && Date.now() - armed >= 3000) { armed = 0; $("b_new").classList.remove("armed"); $("b_new").firstChild.textContent = "New life"; } }, 3100);
 });
 let isPaused = false;
+let backArmed = 0;                                              // twice too: a stray click never undoes a moment
+$("b_back").addEventListener("click", () => {
+  const b = $("b_back");
+  if (Date.now() - backArmed < 3000) { command("back"); backArmed = 0; b.classList.remove("armed"); b.firstChild.textContent = "◀ Back"; return; }
+  backArmed = Date.now(); b.classList.add("armed"); b.firstChild.textContent = "Press again";
+  setTimeout(() => { if (backArmed && Date.now() - backArmed >= 3000) { backArmed = 0; b.classList.remove("armed"); b.firstChild.textContent = "◀ Back"; } }, 3100);
+});
 $("b_pause").addEventListener("click", () => command(isPaused ? "resume" : "pause"));
 $("b_roll").addEventListener("click", () => command("roll"));
 $("b_redraw").addEventListener("click", () => command("redraw"));

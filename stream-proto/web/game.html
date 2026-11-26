@@ -201,10 +201,13 @@ function intrusionsAt(age) { let w = []; for (const [a, list] of CX().intrusions
 const evNow = () => (T && T.events[Math.max(0, evIdx)]) || {};
 if (new URLSearchParams(location.search).has("test")) window.__pac = { clock, live, sound,   // (for the automated tests only)
   panel: () => ({ tempo, heritage: heritageMix, ui, rules: worldRules, voiceOn, fonts: fontsNow.slice(), ts: getComputedStyle(document.querySelector(".fogl")).getPropertyValue("--ts").trim(),
-                  fontVar: getComputedStyle(document.documentElement).getPropertyValue("--font-event").trim(), sound: sound._debug().mix, bk: V._live() }) };   // (for the automated tests only)
+                  fontVar: getComputedStyle(document.documentElement).getPropertyValue("--font-event").trim(), sound: sound._debug().mix, bk: V._live() }),
+  life: () => S && { ledger: S.ledger.map(r => r[1]), age: S.ageF, avatar: S.avatar, baby: babyShown, ended: !!S.ended, evIdx, snaps: snaps.length } };   // (for the automated tests only)
 addEventListener("pac-voice", (e) => sound.duck(!!(e.detail && e.detail.speaking)));
 const V = createBookkeeper({ onPick: (name) => deckPick ? deckPick(name) : { ok: false, reason: "the cards aren't up" },
-  context: () => S ? ["[GAME] record: the voice had to reconnect. The life so far, for your books (don't retell it):", ...lifeLines(), `age now: ${Math.floor(S.ageF)}`].join("\n") : "" });
+  context: () => S ? [wentBack ? "[GAME] record: the game went back one moment, so this part of the life plays again. The life so far, for your books (don't retell it, don't mention going back):"
+                               : "[GAME] record: the voice had to reconnect. The life so far, for your books (don't retell it):", ...lifeLines(), `age now: ${Math.floor(S.ageF)}`].join("\n") : "" });
+let wentBack = false;                                           // this page picked the life up after BACK
 let scene = null;                                              // the drawn scene on screen now
 let held = false;
 function holdAll(on) { held = !!on; live.hold(on); for (const x of [birth, worldmap, baby]) x.hold(on); }   // while the die rolls, everything holds still
@@ -1000,12 +1003,38 @@ async function screenTo(up, ms) {
   await sleep(ms);
 }
 
-async function life(begun = false) {                            // begun: the throw that starts it already came (on the ledger)
+// BACK (on /panel): the life as it stood when each event began, kept in this tab (sessionStorage survives a reload).
+// Back saves the one to return to and reloads the page; the page picks the life up there, as it was.
+let snaps = [];
+function snap(i) {
+  snaps[i] = JSON.parse(JSON.stringify(S)); snaps.length = i + 1;
+  try { sessionStorage.setItem("pac-snaps", JSON.stringify(snaps)); } catch (e) {}
+}
+function goBack() {
+  if (!S || evIdx < 0) return false;                            // nothing to go back to yet
+  const i = S.ended ? evIdx : Math.max(0, evIdx - 1);           // the event before this one (after the death: the death again)
+  if (!snaps[i]) return false;
+  try { sessionStorage.setItem("pac-resume", JSON.stringify({ i, S: snaps[i], snaps: snaps.slice(0, i) })); } catch (e) { return false; }
+  location.reload(); return true;
+}
+function takeResume() {                                          // once: a plain reload starts a new life as before
+  try {
+    const r = JSON.parse(sessionStorage.getItem("pac-resume") || "null"); sessionStorage.removeItem("pac-resume");
+    return r && r.S && r.i >= 0 ? r : null;
+  } catch (e) { return null; }
+}
+
+async function life(begun = false, resume = null) {             // begun: the throw that starts it already came (on the ledger)
   if (screenUp) await screenTo(false, begun ? 1200 : sec("wake"));   // the last life goes dark first
   await unsay();
   if (!T) await loadLife();
-  S = freshLife(); setPhase(0); D.clear(); evIdx = -1; lastLine = "";
-  S.seed = await Promise.race([draw(1, 999999999), sleep(3000).then(() => S.seed)]);   // one draw seeds every roll of this life
+  if (resume && !(resume.i < T.events.length)) resume = null;  // (the trajectory changed under it: a new life)
+  S = resume ? resume.S : freshLife(); setPhase(resume ? S.phase || 0 : 0); D.clear(); lastLine = "";
+  S.ended = false;
+  const start = resume ? resume.i : 0, prev0 = start > 0 ? T.events[start - 1] : null;
+  evIdx = resume ? start : -1; snaps = resume ? resume.snaps || [] : [];   // (back: the panel names the event coming up)
+  wentBack = !!prev0;
+  if (!resume) S.seed = await Promise.race([draw(1, 999999999), sleep(3000).then(() => S.seed)]);   // one draw seeds every roll of this life
   clock.life(S.seed); clock.run(EVER());
   V.stop();                                                     // each life gets a fresh voice, with no memory of the last
   deckGone(); bigEl.classList.remove("on");
@@ -1014,20 +1043,27 @@ async function life(begun = false) {                            // begun: the th
   baby.hide(0); babyShown = false; worldmap.reset(); if (scene) scene.hide(0); scene = null;
   worldmap.load().catch(() => {}); baby.preload();
   await live.whenReady();
-  world(T.events[0].scene, { fresh: true, age: 0 });          // a new life: a fresh world, its own seed
-  if (T.events[0].drawn === "egg") { birth.reset(); toScene("egg"); }
-  if (!begun) await waitThrow("begin");                         // black, still, until the die is thrown (or R / Enter, or ROLL on /panel)
+  const here = prev0 || T.events[0];                            // back: the world of the event before, as it was left
+  world(here.scene, { fresh: true, age: S.ageF });              // a new life: a fresh world, its own seed
+  if (here.drawn === "egg") { birth.reset(); toScene("egg"); }
+  else if (prev0 && prev0.drawn && prev0.drawn !== "baby" && SCENES[prev0.drawn]) toScene(prev0.drawn);
+  if (prev0 && prev0.drawn === "baby" && S.baby) {              // back to just after the Body: the baby again, for the takeover
+    const bmp = await Promise.race([portrait([S.baby, skinWords(), ...S.life].join(", "), false), sleep(15000).then(() => null)]);
+    if (bmp) { babyShown = true; baby.show(bmp, 0); }
+  }
+  if (!begun && !resume) await waitThrow("begin");              // black, still, until the die is thrown (or R / Enter, or ROLL on /panel)
   const lit = screenTo(true, sec("wake"));                      // the screen comes up on the first world
-  const voice = voiceOn ? V.start(`${new Date().toISOString().slice(0, 19)}-${S.seed}`)   // you're at the screen now: the voice comes in
-                        : (V.stat.note = "off on the panel", false);
+  const voice = voiceOn ? V.start(`${new Date().toISOString().slice(0, 19)}-${S.seed}`, { resume: !!prev0 })   // you're at the screen now: the voice comes in
+                        : (V.stat.note = "off on the panel", false);   // (back: it's told the life so far)
   pMode = live.avatarWanted() === "portrait" ? "portrait" : "painted";   // (set on /panel; the animator only has to be up by age 8)
   if (pMode === "portrait") lit.then(() => getPhoto());         // your photo, for your portraits (once the screen lights your face)
   setTurn("watch"); holdAll(false);
-  avatarAt(0);
+  avatarAt(S.ageF);
   await Promise.all([lit, sleep(sec("arrive") * 0.6), Promise.race([voice, sleep(8000)])]);
-  let prev = null;
-  for (const ev of T.events) {
-    evIdx++;
+  let prev = prev0;
+  for (let k = start; k < T.events.length; k++) {
+    const ev = T.events[k];
+    evIdx = k; snap(k);                                         // (BACK returns here)
     if (!prev) { prewrite(ev); prewriteNext(); V.cue(arriveCue(ev, null)); await sleep(sec("settle")); }
     if (prev) await arrive(ev, prev);
     prepPortrait(T.events[evIdx + 1]);                          // your next age, painted while this one plays
@@ -1069,6 +1105,7 @@ async function fromPanel() {
     const first = ctlSeq < 0; ctlSeq = j.seq;
     if (!first) for (const c of j.cmds || []) {                  // (a page that just opened doesn't replay old commands)
       if (c.cmd === "new_life") location.reload();
+      else if (c.cmd === "back") goBack();
       else if (c.cmd === "pause") { paused = true; V.hush(); sound.pause(true); }   // (the voice stops mid-line; the next moment speaks again)
       else if (c.cmd === "resume") { paused = false; sound.pause(false); }
       else if (c.cmd === "roll") { if (beginAction) beginAction(); else if (screenRoll && turn === "throw") screenRoll(); }
@@ -1150,7 +1187,7 @@ function status() {                                             // the hidden de
 }
 status();
 live.camera.catch(e => { screenTo(true, 0); say({ k: "NO CAMERA", s: esc(e.message || e.name), force: true }); });
-life().catch(e => { screenTo(true, 0); say({ k: "COULDN'T START", s: esc(e.message || e), force: true }); });
+life(false, takeResume()).catch(e => { screenTo(true, 0); say({ k: "COULDN'T START", s: esc(e.message || e), force: true }); });
 </script>
 </body>
 </html>

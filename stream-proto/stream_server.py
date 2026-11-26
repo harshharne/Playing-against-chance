@@ -1750,7 +1750,7 @@ async def game_command(request: Request):
     except ValueError:
         return JSONResponse({"error": "not JSON"}, status_code=400)
     cmd = str((body or {}).get("cmd") or "")
-    if cmd not in ("new_life", "pause", "resume", "roll", "redraw", "pick"):
+    if cmd not in ("new_life", "pause", "resume", "roll", "redraw", "pick", "back"):
         return JSONResponse({"error": "unknown command"}, status_code=400)
     c = {"cmd": cmd}
     if cmd == "pick":
