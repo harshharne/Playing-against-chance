@@ -199,6 +199,7 @@ label.txt { display: flex; flex-direction: column; gap: 8px; font-size: 13px; co
       <div class="meta" id="n_meta"></div>
       <div class="world" id="n_world" hidden></div>
       <div class="world" id="n_voice" hidden></div>
+      <div class="world" id="n_heard" hidden></div>
       <div class="warn" id="n_warn" hidden></div>
     </section>
 
@@ -831,10 +832,11 @@ async function gamePoll() {
       $("n_meta").innerHTML = (off ? [] : [[s.ui, ""], s.avatar && s.avatar !== "none yet" ? [s.avatar, ""] : null, [s.screen_fps, " fps"], s.place ? [String(s.place).split(",")[0], ""] : null])
         .filter(x => x && x[0] !== undefined && x[0] !== "").map(([a, b]) => `<span>${String(a).replace(/</g, "&lt;")}${b}</span>`).join("");
       $("n_voice").hidden = !(s.voice === "ready" && s.voice_last); $("n_voice").textContent = s.voice_last ? "Said: " + s.voice_last : "";
+      $("n_heard").hidden = !s.voice_heard_last; $("n_heard").textContent = s.voice_heard_last ? `Heard: “${s.voice_heard_last}” → ${s.voice_heard_what}` : "";
       $("n_world").hidden = !s.world; $("n_world").textContent = s.world ? "Painting: " + s.world : "";
       const warn = s.portrait || s.director_error || (s.voice !== "ready" && s.voice_note && s.voice_note !== "off on the panel" ? "voice: " + s.voice_note : "") || (s.screen_fps && s.screen_fps < 30 ? `the game's screen runs at ${s.screen_fps} fps: the computer showing it is struggling` : "");
       $("n_warn").hidden = !warn; $("n_warn").textContent = warn;
-    } else { $("n_age").textContent = "No game connected"; $("n_moment").textContent = ""; $("n_big").textContent = "--"; $("n_ev").textContent = "Open the game"; $("n_meta").innerHTML = ""; $("n_world").hidden = true; $("n_voice").hidden = true; $("n_warn").hidden = true; }
+    } else { $("n_age").textContent = "No game connected"; $("n_moment").textContent = ""; $("n_big").textContent = "--"; $("n_ev").textContent = "Open the game"; $("n_meta").innerHTML = ""; $("n_world").hidden = true; $("n_voice").hidden = true; $("n_heard").hidden = true; $("n_warn").hidden = true; }
     isPaused = !!(fresh && s.paused);
     $("b_pause").firstChild.textContent = isPaused ? "Resume" : "Pause";
     $("b_pause").querySelector("small").textContent = isPaused ? "the life carries on" : "holds the life where it is";

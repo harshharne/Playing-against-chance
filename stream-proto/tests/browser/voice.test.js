@@ -79,9 +79,9 @@ const L = require("../lib/standin.js"), { check, note, done } = require("../lib/
       V.listen("open");
       for (const t of ["Thank you.", "Bye.", "you", "Hmm.", "Okay.", "Thanks for watching!"]) hear(t);
       await new Promise(r => setTimeout(r, 600));
-      const afterNoise = creates();
+      const afterNoise = creates(), whatNoise = V.stat.heardWhat;
       V.listen("pick"); hear("I'll take old money"); await new Promise(r => setTimeout(r, 600));
-      const afterPick = creates();
+      const afterPick = creates(), whatPick = V.stat.heardWhat;
       V.listen("open"); hear("what is this game even about"); hear("and who are you anyway really"); await new Promise(r => setTimeout(r, 3500));
       const afterTalk = creates();
       // a game moment queued while it's answering: the answer is heard out, then the moment
@@ -91,9 +91,10 @@ const L = require("../lib/standin.js"), { check, note, done } = require("../lib/
       const q1 = V.cue("[GAME] arrive\na"), q2 = V.cue("[GAME] outcome\nb");
       await new Promise(r => setTimeout(r, 500)); await V.hush(); await q1; await q2;
       const afterHush = window.__sent.filter(x => x.type === "response.cancel" || x.type === "output_audio_buffer.clear").length;
-      return { afterNoise, afterPick, afterTalk, picked, cuts, afterHush, overlap: window.__overlap };
+      return { afterNoise, afterPick, afterTalk, picked, cuts, afterHush, overlap: window.__overlap, whatNoise, whatPick };
     });
     check(p.afterNoise === 0, `noise got a reply (${p.afterNoise})`);
+    check(/ignored/.test(p.whatNoise || "") && /picked/.test(p.whatPick || ""), `the panel isn't told what it did with what it heard: "${p.whatNoise}" / "${p.whatPick}"`);
     check(p.picked.length === 1 && /old money/i.test(p.picked[0]) && p.afterPick === 0, `a card named during the cards: picked ${JSON.stringify(p.picked)}, replies ${p.afterPick}`);
     check(p.afterTalk === 1, `two real sentences in a row should get one answer, got ${p.afterTalk}`);
     check(p.cuts === 0, `a game moment cut the answer (${p.cuts} cancel/clear)`);

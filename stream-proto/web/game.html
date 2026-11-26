@@ -1083,7 +1083,7 @@ setInterval(() => {                                              // what the gam
     world: EVER() ? (st.shotPrompt || worldOn || "") : (worldOn || ""), directed: st.directed || 0,
     shots: EVER() ? `ever-changing · ${clock.stat.shown} shown · ${clock.stat.last || "–"}${clock.stat.wait ? " · waiting: " + clock.stat.wait : ""}` : "continuous", director_error: st.directorError || "", paused, turn, tempo,
     place: S.place || "", gender: S.gender || "", wear: S.wear || "", screen: screenUp ? "on" : "off",
-    voice: V.stat.state, voice_note: V.stat.note || "", voice_said: V.stat.said, voice_heard: V.stat.heard, voice_last: (V.stat.last || "").slice(0, 240),
+    voice: V.stat.state, voice_note: V.stat.note || "", voice_said: V.stat.said, voice_heard: V.stat.heard, voice_last: (V.stat.last || "").slice(0, 240), voice_heard_last: V.stat.heardLast || "", voice_heard_what: V.stat.heardWhat || "",
     voice_model: V.model, subtitles: V.showText,
     sound: sound.stat.ready ? (sound.stat.on ? [sound.stat.kits.join(" + ") || "quiet", sound.stat.bed].filter(Boolean).join(" · ") : "off") : (sound.stat.note || "waiting for a click") }) }).catch(() => {});
 }, 1000);

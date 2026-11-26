@@ -159,20 +159,25 @@ export function createBookkeeper({ onPick = () => ({ ok: false, reason: "the car
   const NOISE = /^(thank you|thanks|thanks for watching|thank you for watching|you|bye|bye bye|okay|ok|hmm+|uh+|um+|yeah|yes|no|oh|ah|so|right|wow|hello|hi)[.!?]*$/i;
   function heard(text) {
     const t = String(text || "").trim();
-    if (!/[a-z]{2}/i.test(t) || NOISE.test(t)) return;          // a cough, a chair, the transcriber guessing
+    const what = (w) => { stat.heardLast = t.slice(0, 120); stat.heardWhat = w; };   // (shown on /panel: what it did with it)
+    if (!/[a-z]{2}/i.test(t) || NOISE.test(t)) { if (t) what("ignored: noise, or the transcriber guessing"); return; }
     stat.heard++; log("player", t);
     if (listening === "pick") {                                // a card named: the game takes it (no reply needed)
       const r = onPick(t) || {};
       log("game", `heard during the cards -> ${r.ok ? "picked " + r.picked : "no card named"}`);
+      what(r.ok ? `picked: ${r.picked}` : "the cards are up and no card was named: no reply");
       return;
     }
-    if (!cfg || !cfg.player_can_talk || !P.talk_back || listening !== "open") return;
-    if (t.split(/\s+/).length < 3 || Date.now() - lastAnswer < 25000) return;
+    if (!cfg || !cfg.player_can_talk || !P.talk_back) return what("not answered: talking back is off");
+    if (listening !== "open") return what("not answered: the die is being thrown / the game is mid-moment");
+    if (t.split(/\s+/).length < 3) return what("not answered: under 3 words");
+    if (Date.now() - lastAnswer < 25000) return what("not answered: it answered someone less than 25 s ago");
     lastAnswer = Date.now();
+    what("answering (after the current line)");
     const mine = cueSeq, e = epoch;
     enqueue(async () => {
       await waitIdle(30000);
-      if (e !== epoch || mine !== cueSeq || listening !== "open" || !on()) return;   // the game moved on: its moment comes first
+      if (e !== epoch || mine !== cueSeq || listening !== "open" || !on()) return what("not answered: the game's next moment came first");
       await speakNow("none", 15000);
     });
   }
