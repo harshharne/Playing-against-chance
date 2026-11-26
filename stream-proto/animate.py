@@ -32,6 +32,12 @@ JUMP_EXP = 0.08          # the same for the face (eyes, mouth)
 HOLD_MAX = 4             # ...for at most this many frames in a row (then it believes the new pose)
 EXP_LIMIT = 0.1          # how far the face may move from its neutral before it eases off (a yawn, a hand over the
                          # mouth, a bad frame can't tear the painting)
+EYES = [11, 13, 15, 16, 18]       # LivePortrait's implicit keypoints that carry the eyes (its retargeting uses these)
+LIPS = [6, 12, 14, 17, 19, 20]    # ...and the mouth
+EYE_SMOOTH = 0.05        # a blink lasts 3-4 frames: the eyes are barely smoothed, or it never shows
+LIP_SMOOTH = 0.15        # the mouth: a little (talking, a smile coming)
+FEATURE_ROOM = 1.8       # the eyes and the mouth may move this much further than the rest before easing off (a full
+                         # smile, eyes shut)
 DRIFT = 0.003            # per frame, the neutral drifts toward the player's resting face (a neutral caught mid-word,
                          # or a player standing at an angle, doesn't bend the portrait for the rest of the life)
 
@@ -53,13 +59,25 @@ class Steady:
         self.held = 0            # frames held in a row
         self.stat = {"held": 0, "eased": 0}
 
+    @staticmethod
+    def _per(t, rest, eyes, lips):
+        """A per-keypoint value shaped like t[..., :1]: `rest` everywhere, `eyes` on the eyes, `lips` on the mouth."""
+        w = t[..., :1] * 0 + rest
+        w[:, EYES] = eyes
+        w[:, LIPS] = lips
+        return w
+
+    def _calm(self, t):
+        """1 on the face's slow parts, 0 on the eyes and the mouth (for the glitch test)."""
+        return self._per(t, 1.0, 0.0, 0.0)
+
     def step(self, raw, opts):
         """raw: {pitch, yaw, roll, t, scale, exp}. -> {"ang": {...}, "exp": change since neutral (eased), "pose": smoothed}
         or None (hold the last frame: the tracker slipped)."""
         f = lambda v: float(v.max()) if hasattr(v, "max") else float(v)
         if self.raw is not None and self.held < HOLD_MAX:
             jump = max(abs(f(raw[k] - self.raw[k])) for k in self.ANG)
-            jexp = f((raw["exp"] - self.raw["exp"]).abs())
+            jexp = f(((raw["exp"] - self.raw["exp"]) * self._calm(raw["exp"])).abs())   # (blinks and the mouth are fast: not glitches)
             if jump > JUMP_DEG or jexp > JUMP_EXP:
                 self.held += 1; self.stat["held"] += 1
                 return None
@@ -69,7 +87,9 @@ class Steady:
         b = max(0.0, min(0.9, float(opts.get("face_smooth", 0.3))))
         pose = dict(raw)
         if self.prev is not None:
-            pose = {k: self.prev[k] * (b if k == "exp" else a) + v * (1 - (b if k == "exp" else a)) for k, v in raw.items()}
+            pose = {k: self.prev[k] * a + v * (1 - a) for k, v in raw.items() if k != "exp"}
+            wb = self._per(raw["exp"], b, min(b, EYE_SMOOTH), min(b, LIP_SMOOTH))   # the face: the eyes and mouth quicker
+            pose["exp"] = self.prev["exp"] * wb + raw["exp"] * (1 - wb)
         self.prev = pose
         if self.ref is None:
             self.ref = {"exp": pose["exp"], "t": pose["t"], "scale": pose["scale"], "ang": {k: pose[k] for k in self.ANG}}
@@ -83,9 +103,10 @@ class Steady:
             L = lim * fac
             ang[k] = self.ref["ang"][k] + L * self.tanh((pose[k] - self.ref["ang"][k]) / L)
         d = pose["exp"] - self.ref["exp"]
-        L = float(opts.get("face_limit", EXP_LIMIT))
+        L0 = float(opts.get("face_limit", EXP_LIMIT))
+        L = self._per(d, L0, L0 * FEATURE_ROOM, L0 * FEATURE_ROOM)
         eased = L * self.tanh(d / L)                            # soft: small changes pass, big ones ease off
-        if f((d - eased).abs()) > L * 0.1:
+        if f((d - eased).abs()) > L0 * 0.1:
             self.stat["eased"] += 1
         return {"ang": ang, "exp": eased, "pose": pose}
 

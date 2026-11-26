@@ -22,7 +22,7 @@ export function createBookkeeper({ onPick = () => ({ ok: false, reason: "the car
   // the panel's Voice tab, live: how fast, how loud, how long its lines, a breath before each, which moments it speaks at
   const P = { speed: 1, volume: 1, length: 1, breath: 0.4, moments: {}, talk_back: true, mic: "", listen: "" };
   let speedSent = 1;                                           // the speed the session has now (it changes between lines only)
-  const BUDGET = { arrive: 45, cards: 30, outcome: 35, happened: 35, fluke: 18, close: 70 };   // words, as bookkeeper.md has them
+  const BUDGET = { arrive: 22, cards: 14, outcome: 20, happened: 20, fluke: 12, close: 40 };   // words, as bookkeeper.md has them (a life in ~10 min)
   const GROUP = { arrive: "arrive", cards: "cards", outcome: "outcome", happened: "outcome", fluke: "fluke", close: "close" };
   const audio = Object.assign(document.createElement("audio"), { autoplay: true });
   audio.setAttribute("aria-hidden", "true");

@@ -46,26 +46,47 @@ for i in range(10): s.step(pose(), OPTS)
 outs = [s.step(pose(yaw=40), OPTS) for _ in range(animate.HOLD_MAX + 3)]
 check(any(o is not None for o in outs), "a pose that lasted was never believed (frozen)")
 
-# 4. a huge expression (a yawn, a hand over the mouth) eases off: never more than the limit
+# 4. a huge expression (a yawn, a hand over the face) eases off: never more than the limit (the eyes and the mouth
+#    have more room: a full smile, eyes shut)
 s = Steady(torch.tanh)
 for i in range(10): s.step(pose(), OPTS)
-big = torch.zeros(1, 21, 3); big[0, 14:21, :] = 0.4                    # mouth points, way out
+big = torch.full((1, 21, 3), 0.4)                                       # everything, way out
 for i in range(1, 12): out = s.step(pose(exp=big * i / 11), OPTS) or out   # (grows over 11 frames: not a glitch)
-m = float(out["exp"].abs().max())
-check(m <= animate.EXP_LIMIT + 1e-6, f"a huge expression reached {m:.3f} (limit {animate.EXP_LIMIT})")
-check(m > animate.EXP_LIMIT * 0.6, f"a huge expression was flattened to {m:.3f}: the face would look dead")
+L = animate.EXP_LIMIT
+rest = [k for k in range(21) if k not in animate.EYES + animate.LIPS]
+m_rest = float(out["exp"][0, rest].abs().max()); m_feat = float(out["exp"][0, animate.EYES + animate.LIPS].abs().max())
+check(m_rest <= L + 1e-6, f"a huge expression reached {m_rest:.3f} on the face (limit {L})")
+check(m_feat <= L * animate.FEATURE_ROOM + 1e-6, f"a huge expression reached {m_feat:.3f} on the eyes/mouth (limit {L * animate.FEATURE_ROOM:.2f})")
+check(m_rest > L * 0.6, f"a huge expression was flattened to {m_rest:.3f}: the face would look dead")
+
+# 4b. a blink: the eyes shut within a frame, stay 2 frames, open again. Never held as a glitch, and it shows
+s = Steady(torch.tanh)
+for i in range(15): s.step(pose(noise=0.002), OPTS)
+shut = torch.zeros(1, 21, 3); shut[0, animate.EYES, 1] = -0.12
+outs = [s.step(pose(exp=shut), OPTS) for _ in range(2)] + [s.step(pose(), OPTS)]
+check(all(o is not None for o in outs), "a blink was held as a glitch (the eyes never close)")
+closed = float(outs[0]["exp"][0, animate.EYES, 1].mean()) if outs[0] is not None else 0
+check(closed < -0.08, f"a blink shows only {closed:.3f} of -0.12 in its first frame (too smoothed: it would never be seen)")
+
+# 4c. a broad smile passes nearly whole
+s = Steady(torch.tanh)
+for i in range(10): s.step(pose(), OPTS)
+grin = torch.zeros(1, 21, 3); grin[0, animate.LIPS, 0] = 0.13
+for i in range(1, 9): out = s.step(pose(exp=grin * min(1, i / 4)), OPTS) or out
+got = float(out["exp"][0, animate.LIPS, 0].mean())
+check(got > 0.1, f"a broad smile (0.13) came out as {got:.3f}")
 
 # 5. a small expression (a smile) passes almost unchanged
 s = Steady(torch.tanh)
 for i in range(10): s.step(pose(), OPTS)
-smile = torch.zeros(1, 21, 3); smile[0, 14:21, 1] = 0.02
+smile = torch.zeros(1, 21, 3); smile[0, animate.LIPS, 1] = 0.02
 for i in range(12): out = s.step(pose(exp=smile), OPTS)
-got = float(out["exp"][0, 14:21, 1].mean())
+got = float(out["exp"][0, animate.LIPS, 1].mean())
 check(abs(got - 0.02) < 0.004, f"a small smile came out as {got:.4f} (wanted ~0.02)")
 
 # 6. a neutral caught mid-word drifts back to the resting face (the portrait doesn't keep a bent mouth all night)
 s = Steady(torch.tanh)
-talk = torch.zeros(1, 21, 3); talk[0, 14:21, 1] = 0.05
+talk = torch.zeros(1, 21, 3); talk[0, animate.LIPS, 1] = 0.05
 s.step(pose(exp=talk), OPTS)                                            # the first frame: mouth open
 first = None
 for i in range(1500):                                                   # then a minute of resting face
@@ -83,4 +104,4 @@ check(abs(float(out["ang"]["yaw"])) <= 28, f"an 80 degree turn reached {float(ou
 
 if fails:
     print("FAIL face (steadying)"); [print("   x " + f) for f in fails]; sys.exit(1)
-print("PASS face (steadying: glitches held, big faces eased, neutral drifts back)")
+print("PASS face (steadying: glitches held, big faces eased, blinks and smiles come through, neutral drifts back)")

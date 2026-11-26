@@ -965,8 +965,8 @@ async function arrive(ev, prev) {
   const w = ev.scene ? worldFor(`${ev.id}:arrive`, ev.scene, { keep: +(chapter ? WK.chapter_keep : WK.keep), dur: dur * 0.92, age: ev.age, passage: ev.passage }) : null;
   prewrite(ev);                                                 // its branches, if they weren't asked for yet
   bridging = false;
-  await Promise.all([ageTo(ev.age, dur * 0.85), sleep(dur), w, handover, spoken]);
-  await unsay();
+  await Promise.all([ageTo(ev.age, dur * 0.85), sleep(dur), w, handover]);   // (the line goes on while the event begins:
+  await unsay();                                                //  the next line waits for it, nothing is cut)
 }
 
 // ---------- the screen: off (black) until the die begins a life ----------
@@ -1008,7 +1008,7 @@ async function life(begun = false) {                            // begun: the th
   let prev = null;
   for (const ev of T.events) {
     evIdx++;
-    if (!prev) { prewrite(ev); prewriteNext(); await V.cue(arriveCue(ev, null)); }
+    if (!prev) { prewrite(ev); prewriteNext(); V.cue(arriveCue(ev, null)); await sleep(sec("settle")); }
     if (prev) await arrive(ev, prev);
     prepPortrait(T.events[evIdx + 1]);                          // your next age, painted while this one plays
     if (ev.type === "chosen") await chosen(ev);
@@ -1017,6 +1017,8 @@ async function life(begun = false) {                            // begun: the th
     await unsay();
     prev = ev;
   }
+  S.ended = true;                                               // dead: you leave the picture
+  (async () => { for (let k = 1; k <= 30; k++) { live.setPersonAlpha(1 - k / 30); await sleep(100); } })();
   if (prev && prev.bridge) { await say({ s: esc(prev.bridge), cls: "bridge" }); await sleep(sec("arrive")); await unsay(); }
   V.listen("closed");
   clock.stop();                                                 // the world stops changing: the last picture stays
@@ -1034,8 +1036,7 @@ async function life(begun = false) {                            // begun: the th
 
 async function ending() {                                       // the life, read back
   setPhase(PHASES.length);
-  S.ended = true;                                               // the ledger takes the middle; you fade back behind it
-  (async () => { for (let k = 1; k <= 20; k++) { live.setPersonAlpha(1 - 0.8 * k / 20); await sleep(60); } })();
+  live.setPersonAlpha(0);                                       // (gone since the death: the ledger has the middle)
   const rows = S.ledger.map(([a, t, what, note]) => `<tr><td>${Math.floor(a)}</td><td>${esc(t)}</td><td>${esc(what)}${note ? ` <i>(${esc(note)})</i>` : ""}</td></tr>`).join("");
   await say({ k: "A LIFE", t: "", s: `<table>${rows}</table>` + (diceOn ? `<br><span style="color:#777;font-size:12px">Throw the die for another life.</span>` : ""), cls: "end", begin: true });
 }
